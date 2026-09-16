@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: skiptrack-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:$PORT server:app
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false

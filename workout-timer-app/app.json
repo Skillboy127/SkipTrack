@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Skiptrack",
+    "slug": "workout-timer-app",
+    "scheme": "skiptrack",
+    "_buildComment": "NOTE: A full native rebuild (npx expo run:android) is required after changing native config plugins or AndroidManifest intent filters, not just a JS reload.",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
+      "package": "com.anonymous.workouttimerapp"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
+      ],
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you import workouts from images."
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": [
+            "text/*"
+          ],
+          "disableIOS": true
+        }
+      ]
+    ]
+  }
+}

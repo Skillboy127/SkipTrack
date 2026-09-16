@@ -1,0 +1,72 @@
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../types';
+import { expandWorkout } from '../workoutLogic';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Completion'>;
+
+const formatTime = (seconds: number) => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+export function CompletionScreen({ route, navigation }: Props) {
+  const { totalElapsed, workout } = route.params;
+  const phases = useMemo(() => expandWorkout(workout), [workout]);
+  const activeSeconds = phases.filter(phase => phase.type === 'work').reduce((total, phase) => total + phase.duration, 0);
+  const restSeconds = phases.filter(phase => phase.type === 'rest').reduce((total, phase) => total + phase.duration, 0);
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.statusBarSpacer} />
+      <View style={styles.centerContent}>
+        <View style={styles.checkmarkBadge}><Text style={styles.checkmark}>✓</Text></View>
+        <View style={styles.titlesGroup}>
+          <Text style={styles.title}>Workout Complete</Text>
+          <Text style={styles.subtitle} numberOfLines={1}>{workout.name || 'Workout'}</Text>
+        </View>
+        <View style={styles.timeGroup}>
+          <Text style={styles.elapsedTime}>{formatTime(totalElapsed)}</Text>
+          <Text style={styles.timeLabel}>Total Elapsed Time</Text>
+        </View>
+        <View style={styles.statsRow}>
+          <View style={styles.statColumn}><Text style={styles.statValue}>{workout.exercises.length}</Text><Text style={styles.statLabel}>Exercises</Text></View>
+          <View style={styles.statDivider} />
+          <View style={styles.statColumn}><Text style={styles.statValue}>{formatTime(activeSeconds)}</Text><Text style={styles.statLabel}>Active Time</Text></View>
+          <View style={styles.statDivider} />
+          <View style={styles.statColumn}><Text style={styles.statValue}>{formatTime(restSeconds)}</Text><Text style={styles.statLabel}>Rest Time</Text></View>
+        </View>
+      </View>
+      <View style={styles.footerWrapper}>
+        <TouchableOpacity style={styles.doneButton} onPress={() => navigation.popToTop()}>
+          <Text style={styles.doneCheck}>✓</Text><Text style={styles.doneLabel}>Done</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#09090A' },
+  statusBarSpacer: { height: 44 },
+  centerContent: { flex: 1, paddingHorizontal: 24, paddingVertical: 20, alignItems: 'center', justifyContent: 'center', gap: 36 },
+  checkmarkBadge: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, borderColor: '#CCFF00', backgroundColor: 'rgba(204, 255, 0, 0.1)', alignItems: 'center', justifyContent: 'center' },
+  checkmark: { color: '#CCFF00', fontSize: 32, fontWeight: '500' },
+  titlesGroup: { width: '100%', alignItems: 'center', gap: 8 },
+  title: { color: '#FFFFFF', fontSize: 28, fontWeight: '800', lineHeight: 36, textAlign: 'center' },
+  subtitle: { width: '100%', color: '#94A3B8', fontSize: 16, fontWeight: '500', lineHeight: 21, textAlign: 'center' },
+  timeGroup: { alignItems: 'center', gap: 4 },
+  elapsedTime: { color: '#CCFF00', fontFamily: 'monospace', fontSize: 72, fontWeight: '800', lineHeight: 72, fontVariant: ['tabular-nums'] },
+  timeLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '700', lineHeight: 16, textTransform: 'uppercase' },
+  statsRow: { width: '100%', height: 74, paddingVertical: 16, paddingHorizontal: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#1F1F24', flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  statColumn: { flex: 1, alignItems: 'center', gap: 4 },
+  statValue: { color: '#FFFFFF', fontFamily: 'monospace', fontSize: 18, fontWeight: '700', lineHeight: 24 },
+  statLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '600', lineHeight: 14, textTransform: 'uppercase' },
+  statDivider: { width: 1, height: 24, backgroundColor: '#1F1F24' },
+  footerWrapper: { height: 112, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 8, borderTopWidth: 1, borderTopColor: '#1F1F24', backgroundColor: '#09090A' },
+  doneButton: { height: 54, borderRadius: 12, backgroundColor: '#CCFF00', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  doneCheck: { color: '#09090A', fontSize: 24, lineHeight: 24 },
+  doneLabel: { color: '#09090A', fontSize: 18, fontWeight: '700', lineHeight: 23, textTransform: 'uppercase' },
+});
