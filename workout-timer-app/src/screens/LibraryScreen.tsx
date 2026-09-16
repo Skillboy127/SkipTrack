@@ -127,27 +127,30 @@ export function LibraryScreen({ navigation }: Props) {
                   <View style={styles.downloadArrow} />
                   <View style={styles.downloadTray} />
                 </View>
-                <Text style={styles.primaryButtonLabel}>Import Your First Workout</Text>
+                <Text style={styles.primaryButtonLabel}>Import Workout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => navigation.navigate('WorkoutEditor', {})}
+              >
+                <Text style={styles.secondaryButtonLabel}>+ Build Custom Workout</Text>
               </TouchableOpacity>
             </View>
           </View>
         }
       />
-      {workouts.length > 0 && (
-        <View style={styles.floatingAndFooter}>
-          <View style={styles.fabRow}>
-            <TouchableOpacity
-              style={styles.fab}
-              onPress={() => navigation.navigate('WorkoutEditor', {})}
-              accessibilityLabel="Create new workout"
-            >
-              <Text style={styles.plusIcon}>+</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.footerSpace} />
+      <View style={styles.floatingAndFooter}>
+        <View style={styles.fabRow}>
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => navigation.navigate('WorkoutEditor', {})}
+            accessibilityLabel="Create new workout"
+          >
+            <Text style={styles.plusIcon}>+</Text>
+          </TouchableOpacity>
         </View>
-      )}
-      {workouts.length === 0 && <View style={styles.footerSpace} />}
+        <View style={styles.footerSpace} />
+      </View>
     </View>
   );
 }
@@ -358,6 +361,7 @@ const styles = StyleSheet.create({
   buttonWrap: {
     alignSelf: 'stretch',
     paddingTop: 8,
+    gap: 12,
   },
   primaryButton: {
     height: 54,
@@ -374,6 +378,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 21,
+  },
+  secondaryButton: {
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonLabel: {
+    color: '#94A3B8',
+    fontFamily: 'Geist',
+    fontSize: 15,
+    fontWeight: '600',
+    lineHeight: 20,
   },
   downloadIcon: {
     width: 20,
