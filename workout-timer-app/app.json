@@ -59,6 +59,11 @@
           "disableIOS": true
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e4cf83a7-2137-47ed-9641-4edd19b187c9"
+      }
+    }
   }
 }

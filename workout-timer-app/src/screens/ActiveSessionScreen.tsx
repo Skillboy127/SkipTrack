@@ -80,16 +80,13 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
 
       <View style={styles.countdownContainer}>
         <View style={styles.timerRing}>
-          <View style={styles.timerRingBackground} />
+          <View style={[styles.timerRingBackground, { borderColor: isRest ? 'rgba(107, 158, 250, 0.15)' : 'rgba(204, 255, 0, 0.15)' }]} />
           <View
             style={[
               styles.timerRingProgress,
               {
-                borderTopColor: phaseAccent,
-                borderRightColor: phaseProgress > 0.25 ? phaseAccent : 'transparent',
-                borderBottomColor: phaseProgress > 0.5 ? phaseAccent : 'transparent',
-                borderLeftColor: phaseProgress > 0.75 ? phaseAccent : 'transparent',
-                transform: [{ rotate: '-90deg' }],
+                borderColor: phaseAccent,
+                opacity: 0.3 + (phaseProgress * 0.7),
               },
             ]}
           />

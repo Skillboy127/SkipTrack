@@ -25,9 +25,13 @@ export function useAudio() {
   }, []);
 
   const playBeep = useCallback(() => {
-    if (player) {
-      player.seekTo(0);
-      player.play();
+    try {
+      if (player) {
+        player.seekTo(0).catch(() => {});
+        player.play();
+      }
+    } catch (e) {
+      console.warn('Audio playback error silenced to prevent crash:', e);
     }
   }, [player]);
 

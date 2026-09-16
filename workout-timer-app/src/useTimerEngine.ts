@@ -129,31 +129,19 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
       }
 
       if (newRemaining <= 0) {
-        let nextIndex = phaseIndexRef.current;
-        let nextStartTime = phaseStartTimeRef.current;
-        let nextDuration = durationRef.current;
-        let completedDuration = 0;
-
-        while (nextStartTime !== null && now >= nextStartTime + nextDuration * 1000 && nextIndex < phasesRef.current.length - 1) {
-          completedDuration += nextDuration;
-          nextIndex += 1;
-          nextStartTime += nextDuration * 1000;
-          nextDuration = phasesRef.current[nextIndex].duration;
-        }
-
-        if (nextStartTime !== null && now >= nextStartTime + nextDuration * 1000 && nextIndex === phasesRef.current.length - 1) {
-          setAccumulatedTime(prev => prev + completedDuration + nextDuration);
+        const nextIndex = phaseIndexRef.current + 1;
+        if (nextIndex >= phasesRef.current.length) {
+          setAccumulatedTime(prev => prev + durationRef.current);
           setTimerState('completed');
           setRemainingSeconds(0);
         } else {
-          setAccumulatedTime(prev => prev + completedDuration);
+          setAccumulatedTime(prev => prev + durationRef.current);
+          const nextDuration = phasesRef.current[nextIndex].duration;
           setCurrentPhaseIndex(nextIndex);
           setCurrentPhaseDuration(nextDuration);
-          setRemainingSeconds(Math.max(0, nextDuration - (now - (nextStartTime ?? now)) / 1000));
-          setPhaseStartTime(nextStartTime);
+          setRemainingSeconds(nextDuration);
+          setPhaseStartTime(Date.now());
           lastBeepTimeRef.current = -1;
-          // Do not play audio while mounting the next phase. On Android, rapidly seeking
-          // the same player during the work → rest transition can terminate the app.
         }
       } else {
         setRemainingSeconds(newRemaining);
