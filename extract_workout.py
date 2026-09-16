@@ -10,8 +10,14 @@ import argparse
 import subprocess
 import base64
 import mimetypes
+import os
 from pathlib import Path
 import time
+from dotenv import load_dotenv
+
+load_dotenv()
+if not os.getenv('GEMINI_API_KEY') and os.getenv('GOOGLE_API_KEY'):
+    os.environ['GEMINI_API_KEY'] = os.getenv('GOOGLE_API_KEY')
 
 from youtube_transcript_api import YouTubeTranscriptApi
 from google import genai
@@ -310,9 +316,8 @@ def extract(transcript: str, description: str, youtube_url: str, start_time: str
     )
     
     video_part = {
-        "type": "video", 
-        "uri": youtube_url, 
-        "media_resolution": MEDIA_RESOLUTION
+        "type": "video",
+        "uri": youtube_url,
     }
     
     video_metadata = {}
@@ -337,11 +342,14 @@ def extract(transcript: str, description: str, youtube_url: str, start_time: str
     except Exception as video_error:
         error_msg = str(video_error)
         print(f"  [Video Extraction Error] {error_msg}")
-        if "403" in error_msg or "permission" in error_msg.lower():
+        is_access_error = "403" in error_msg or "permission" in error_msg.lower()
+        is_invalid_request = "400" in error_msg or "invalid_request" in error_msg.lower() or "unknown parameter" in error_msg.lower()
+        if is_access_error or is_invalid_request:
             has_transcript = transcript and "[NO TRANSCRIPT AVAILABLE" not in transcript
             has_desc = description and "[NO DESCRIPTION]" not in description and "[COULD NOT FETCH" not in description
             if has_transcript or has_desc:
-                print("  [Fallback] Direct video analysis restricted by YouTube/Gemini (403). Extracting from transcript and description...")
+                reason = "restricted by YouTube/Gemini (403)" if is_access_error else "rejected video parameters (400)"
+                print(f"  [Fallback] Direct video analysis {reason}. Extracting from transcript and description...")
                 text_content = f"VIDEO DESCRIPTION & CHAPTERS:\n{description}\n\nVIDEO TRANSCRIPT:\n{transcript}"
                 return extract_from_text(text_content)
         raise
