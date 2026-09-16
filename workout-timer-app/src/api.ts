@@ -39,16 +39,45 @@ function mapResponseToWorkout(data: any): Workout {
   };
 }
 
-async function postJson(path: string, body: Record<string, string>): Promise<Workout> {
-  let response: Response;
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 60000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    response = await fetch(`${API_BASE}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new Error('Could not connect to the workout server. Check your connection and try again.');
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+async function postJson(path: string, body: Record<string, string>): Promise<Workout> {
+  let response: Response | null = null;
+
+  // Try up to 2 attempts to handle Render free-tier cold starts (server wake-up delay)
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      response = await fetchWithTimeout(
+        `${API_BASE}${path}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+        60000,
+      );
+      break;
+    } catch {
+      if (attempt === 1) {
+        // Wait 3 seconds for Render container wake-up before retrying
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+  }
+
+  if (!response) {
+    throw new Error('Could not connect to the server. Render free tier is waking up — please wait 15 seconds and try again.');
   }
 
   const payload = await response.json().catch(() => null);
