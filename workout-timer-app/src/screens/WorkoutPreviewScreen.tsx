@@ -5,8 +5,12 @@ import { PencilIcon } from '../components/WorkoutIcons';
 import { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
-type WheelField = 'workSeconds' | 'restSeconds' | 'sets';
+type WheelField = 'workSeconds' | 'restSeconds' | 'sets' | 'reps';
 type WheelSelection = { exerciseId: string; field: WheelField } | null;
+
+function isRepBased(ex: { reps?: number | null; workSeconds: number }): boolean {
+  return ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0;
+}
 
 export function WorkoutPreviewScreen({ route, navigation }: Props) {
   const { workout } = route.params;
@@ -18,7 +22,7 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
   const dragOffset = useRef(0);
   const nameInputs = useRef<Record<string, TextInput | null>>({});
 
-  const updateExercise = (id: string, field: 'name' | 'workSeconds' | 'restSeconds' | 'sets', value: string) => {
+  const updateExercise = (id: string, field: 'name' | 'workSeconds' | 'restSeconds' | 'sets' | 'reps', value: string) => {
     setExercises(currentExercises => currentExercises.map(exercise => {
       if (exercise.id !== id) return exercise;
       if (field === 'name') return { ...exercise, name: value };
@@ -90,16 +94,20 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
     : undefined;
   const wheelValues = wheelSelection?.field === 'sets'
     ? Array.from({ length: 20 }, (_, index) => index + 1)
-    : Array.from({ length: 301 }, (_, index) => index);
+    : wheelSelection?.field === 'reps'
+      ? Array.from({ length: 100 }, (_, index) => index + 1)
+      : Array.from({ length: 301 }, (_, index) => index);
   const selectedValue = selectedExercise && wheelSelection
     ? selectedExercise[wheelSelection.field]
     : 0;
-  const selectedWheelIndex = Math.max(0, wheelValues.indexOf(selectedValue));
+  const selectedWheelIndex = Math.max(0, wheelValues.indexOf(selectedValue ?? 0));
   const wheelLabel = wheelSelection?.field === 'workSeconds'
     ? 'WORK TIME'
     : wheelSelection?.field === 'restSeconds'
       ? 'REST TIME'
-      : 'SETS';
+      : wheelSelection?.field === 'reps'
+        ? 'REPS'
+        : 'SETS';
 
   const commitWheelValue = (offsetY: number) => {
     if (!wheelSelection) return;
@@ -157,9 +165,9 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
               <View style={styles.metricsInputs}>
                 <TouchableOpacity
                   style={[styles.metricInput, styles.workInput]}
-                  onPress={() => setWheelSelection({ exerciseId: ex.id, field: 'workSeconds' })}
+                  onPress={() => setWheelSelection({ exerciseId: ex.id, field: isRepBased(ex) ? 'reps' : 'workSeconds' })}
                 >
-                  <Text style={styles.workValue}>{ex.workSeconds}s</Text>
+                  <Text style={styles.workValue}>{isRepBased(ex) ? `${ex.reps}r` : `${ex.workSeconds}s`}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.metricInput, styles.restInput]}
@@ -217,7 +225,11 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
                 {wheelValues.map(value => (
                   <View key={value} style={styles.wheelRow}>
                     <Text style={styles.wheelValue}>
-                      {wheelSelection?.field === 'sets' ? `${value}×` : `${value}s`}
+                      {wheelSelection?.field === 'sets'
+                        ? `${value}×`
+                        : wheelSelection?.field === 'reps'
+                          ? `${value} reps`
+                          : `${value}s`}
                     </Text>
                   </View>
                 ))}

@@ -25,14 +25,19 @@ export function useAudio() {
   }, []);
 
   const playBeep = useCallback(() => {
-    try {
-      if (player) {
-        player.seekTo(0).catch(() => {});
+    if (!player) return;
+    (async () => {
+      try {
+        // Stop and rewind before replaying so rapid, back-to-back beeps
+        // (e.g. the 3-2-1 countdown) don't race a still-playing instance
+        // and get truncated or silently dropped.
+        player.pause();
+        await player.seekTo(0);
         player.play();
+      } catch (e) {
+        console.warn('Audio playback error silenced to prevent crash:', e);
       }
-    } catch (e) {
-      console.warn('Audio playback error silenced to prevent crash:', e);
-    }
+    })();
   }, [player]);
 
   return { playBeep };

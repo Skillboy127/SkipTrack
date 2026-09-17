@@ -16,12 +16,14 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
   // The total duration of the current phase (accounting for adjustments)
   const [currentPhaseDuration, setCurrentPhaseDuration] = useState<number>(0);
 
-  // Actual time spent across all previous phases
-  const [accumulatedTime, setAccumulatedTime] = useState<number>(0);
+  // Wall-clock time from the moment the session was started, unaffected by
+  // skips, rest adjustments, or how any individual phase's duration changes.
+  const [sessionElapsedSeconds, setSessionElapsedSeconds] = useState<number>(0);
+  const sessionStartTimeRef = useRef<number | null>(null);
 
   // For tracking when to beep (3, 2, 1)
   const lastBeepTimeRef = useRef<number>(-1);
-  
+
   // Refs to read the latest values inside the setInterval without re-triggering it
   const stateRef = useRef(timerState);
   const phaseIndexRef = useRef(currentPhaseIndex);
@@ -47,7 +49,8 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
     setCurrentPhaseDuration(initialDuration);
     setRemainingSeconds(initialDuration);
     setPhaseStartTime(Date.now());
-    setAccumulatedTime(0);
+    sessionStartTimeRef.current = Date.now();
+    setSessionElapsedSeconds(0);
     lastBeepTimeRef.current = -1;
   }, [phases]);
 
@@ -68,8 +71,9 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
   }, [timerState, phaseStartTime, currentPhaseDuration, remainingSeconds]);
 
   const skipToNextPhase = useCallback(() => {
-    const timeSpent = currentPhaseDuration - remainingSeconds;
-    setAccumulatedTime(prev => prev + timeSpent);
+    if (sessionStartTimeRef.current != null) {
+      setSessionElapsedSeconds((Date.now() - sessionStartTimeRef.current) / 1000);
+    }
 
     if (currentPhaseIndex >= phases.length - 1) {
       setTimerState('completed');
@@ -84,11 +88,15 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
       // Manual skips are intentionally silent. They should never compete with the timer's
       // countdown audio while the next phase is mounting.
     }
-  }, [currentPhaseIndex, phases, onBeep, currentPhaseDuration, remainingSeconds]);
+  }, [currentPhaseIndex, phases]);
 
   const completeRepPhase = useCallback(() => {
     const currentPhase = phases[currentPhaseIndex];
     if (!currentPhase || currentPhase.mode !== 'reps') return;
+
+    if (sessionStartTimeRef.current != null) {
+      setSessionElapsedSeconds((Date.now() - sessionStartTimeRef.current) / 1000);
+    }
 
     if (currentPhaseIndex >= phases.length - 1) {
       setTimerState('completed');
@@ -98,14 +106,13 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
 
     const nextIndex = currentPhaseIndex + 1;
     const nextDuration = phases[nextIndex].duration;
-    setAccumulatedTime(prev => prev + currentPhaseDuration - remainingSeconds);
     setCurrentPhaseIndex(nextIndex);
     setCurrentPhaseDuration(nextDuration);
     setRemainingSeconds(nextDuration);
     setPhaseStartTime(Date.now());
     lastBeepTimeRef.current = -1;
     onBeep();
-  }, [currentPhaseIndex, phases, currentPhaseDuration, remainingSeconds, onBeep]);
+  }, [currentPhaseIndex, phases, onBeep]);
 
   const skipToPreviousPhase = useCallback(() => {
     const previousIndex = Math.max(0, currentPhaseIndex - 1);
@@ -114,7 +121,6 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
     if (previousDuration == null) return;
 
     setCurrentPhaseIndex(previousIndex);
-    setAccumulatedTime(phases.slice(0, previousIndex).reduce((total, phase) => total + phase.duration, 0));
     setCurrentPhaseDuration(previousDuration);
     setRemainingSeconds(previousDuration);
     setPhaseStartTime(Date.now());
@@ -136,10 +142,18 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
   // Main Timer Tick Engine
   useEffect(() => {
     const interval = setInterval(() => {
+      const now = Date.now();
+
+      // The overall session timer runs continuously from start() to completion —
+      // it never resets or rewinds on skip/rest adjustments, so it always reflects
+      // real time-to-finish regardless of what happens to individual phases.
+      if (sessionStartTimeRef.current != null && stateRef.current !== 'idle' && stateRef.current !== 'completed') {
+        setSessionElapsedSeconds((now - sessionStartTimeRef.current) / 1000);
+      }
+
       if (stateRef.current !== 'running' || phaseStartTimeRef.current === null) return;
       if (phasesRef.current[phaseIndexRef.current]?.mode === 'reps') return;
 
-      const now = Date.now();
       const elapsedSeconds = (now - phaseStartTimeRef.current) / 1000;
       const newRemaining = durationRef.current - elapsedSeconds;
 
@@ -153,11 +167,9 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
       if (newRemaining <= 0) {
         const nextIndex = phaseIndexRef.current + 1;
         if (nextIndex >= phasesRef.current.length) {
-          setAccumulatedTime(prev => prev + durationRef.current);
           setTimerState('completed');
           setRemainingSeconds(0);
         } else {
-          setAccumulatedTime(prev => prev + durationRef.current);
           const nextDuration = phasesRef.current[nextIndex].duration;
           setCurrentPhaseIndex(nextIndex);
           setCurrentPhaseDuration(nextDuration);
@@ -174,10 +186,6 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
   }, []);
 
   const totalWorkoutDuration = phases.reduce((sum, p) => sum + p.duration, 0);
-  
-  const totalElapsed = timerState === 'idle' ? 0 
-    : timerState === 'completed' ? accumulatedTime 
-    : accumulatedTime + (currentPhaseDuration - remainingSeconds);
 
   return {
     timerState,
@@ -185,7 +193,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
     currentPhaseIndex,
     currentPhaseDuration,
     remainingSeconds: Math.max(0, remainingSeconds),
-    totalElapsed: Math.max(0, totalElapsed),
+    totalElapsed: Math.max(0, sessionElapsedSeconds),
     totalWorkoutDuration,
     start,
     pause,
