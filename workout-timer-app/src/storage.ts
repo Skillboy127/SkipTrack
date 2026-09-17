@@ -16,6 +16,7 @@ function normalizeWorkout(value: unknown): Workout | null {
         id: typeof item.id === 'string' ? item.id : `${candidate.id}-${index}`,
         name: typeof item.name === 'string' ? item.name : 'Exercise',
         workSeconds: Math.max(0, Number(item.workSeconds) || 0),
+        reps: item.reps == null ? null : Math.max(0, Number(item.reps) || 0),
         restSeconds: Math.max(0, Number(item.restSeconds) || 0),
         sets: Math.max(1, Math.floor(Number(item.sets) || 1)),
       };

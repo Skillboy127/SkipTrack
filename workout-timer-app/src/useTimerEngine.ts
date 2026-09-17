@@ -86,6 +86,27 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
     }
   }, [currentPhaseIndex, phases, onBeep, currentPhaseDuration, remainingSeconds]);
 
+  const completeRepPhase = useCallback(() => {
+    const currentPhase = phases[currentPhaseIndex];
+    if (!currentPhase || currentPhase.mode !== 'reps') return;
+
+    if (currentPhaseIndex >= phases.length - 1) {
+      setTimerState('completed');
+      setRemainingSeconds(0);
+      return;
+    }
+
+    const nextIndex = currentPhaseIndex + 1;
+    const nextDuration = phases[nextIndex].duration;
+    setAccumulatedTime(prev => prev + currentPhaseDuration - remainingSeconds);
+    setCurrentPhaseIndex(nextIndex);
+    setCurrentPhaseDuration(nextDuration);
+    setRemainingSeconds(nextDuration);
+    setPhaseStartTime(Date.now());
+    lastBeepTimeRef.current = -1;
+    onBeep();
+  }, [currentPhaseIndex, phases, currentPhaseDuration, remainingSeconds, onBeep]);
+
   const skipToPreviousPhase = useCallback(() => {
     const previousIndex = Math.max(0, currentPhaseIndex - 1);
     const previousDuration = phases[previousIndex]?.duration;
@@ -116,6 +137,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
   useEffect(() => {
     const interval = setInterval(() => {
       if (stateRef.current !== 'running' || phaseStartTimeRef.current === null) return;
+      if (phasesRef.current[phaseIndexRef.current]?.mode === 'reps') return;
 
       const now = Date.now();
       const elapsedSeconds = (now - phaseStartTimeRef.current) / 1000;
@@ -169,6 +191,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
     pause,
     resume,
     skipToNextPhase,
+    completeRepPhase,
     skipToPreviousPhase,
     adjustRest,
   };

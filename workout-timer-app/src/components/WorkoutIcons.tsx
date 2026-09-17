@@ -30,6 +30,19 @@ export function TrashIcon({ color = '#475569', size = 18 }: IconProps) {
   );
 }
 
+export function DumbbellIcon({ color = '#94A3B8', size = 16 }: IconProps) {
+  const barThickness = Math.max(2, Math.round(size * 0.18));
+  const plateWidth = Math.max(2, Math.round(size * 0.2));
+
+  return (
+    <View style={[styles.dumbbell, { width: size, height: size }]} accessible={false}>
+      <View style={[styles.dumbbellBar, { height: barThickness, borderRadius: barThickness / 2, backgroundColor: color, width: size * 0.56 }]} />
+      <View style={[styles.dumbbellPlate, { left: 0, width: plateWidth, height: size * 0.72, borderColor: color, borderWidth: barThickness }]} />
+      <View style={[styles.dumbbellPlate, { right: 0, width: plateWidth, height: size * 0.72, borderColor: color, borderWidth: barThickness }]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   pencil: {
     alignItems: 'center',
@@ -56,5 +69,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderBottomLeftRadius: 2,
     borderBottomRightRadius: 2,
+  },
+  dumbbell: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dumbbellBar: {},
+  dumbbellPlate: {
+    position: 'absolute',
+    borderRadius: 3,
   },
 });

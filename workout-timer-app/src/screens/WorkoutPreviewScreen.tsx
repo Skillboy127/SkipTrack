@@ -126,7 +126,9 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
         </View>
 
         <View style={styles.listHeader}>
-          <Text style={styles.listTitle}>EXERCISE LIST ({exercises.length} ITEMS)</Text>
+          <Text style={styles.listTitle}>
+            EXERCISE LIST ({exercises.length} ITEMS{workout.rounds && workout.rounds > 1 ? ` • ${workout.rounds} ROUNDS` : ''})
+          </Text>
         </View>
         <View style={styles.exerciseList}>
           {exercises.map((ex, index) => (

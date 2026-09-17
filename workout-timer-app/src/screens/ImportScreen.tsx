@@ -86,7 +86,7 @@ export function ImportScreen({ navigation, route }: Props) {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         base64: true,
-        quality: 0.8,
+        quality: 0.6,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {

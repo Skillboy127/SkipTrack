@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
+import { RootStackParamList, RepSetLog } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { expandWorkout } from '../workoutLogic';
@@ -11,27 +11,40 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
-  
+
   const { playBeep } = useAudio();
   const engine = useTimerEngine(phases, playBeep);
+
+  const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
+  const [pendingWeight, setPendingWeight] = useState<number | null>(null);
+  const [weightInputVisible, setWeightInputVisible] = useState(false);
+  const [weightInputValue, setWeightInputValue] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Auto-start on mount
   useEffect(() => {
     engine.start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset per-set weight entry whenever the phase advances
+  useEffect(() => {
+    setPendingWeight(null);
+    setWeightInputVisible(false);
+    setWeightInputValue('');
+  }, [engine.currentPhaseIndex]);
+
   // Handle completion
   useEffect(() => {
     if (engine.timerState === 'completed') {
-      navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout });
+      navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout, repLogs });
     }
-  }, [engine.timerState, engine.totalElapsed, navigation]);
+  }, [engine.timerState, engine.totalElapsed, navigation, workout, repLogs]);
 
   if (!engine.currentPhase) {
     return (
       <View style={styles.container}>
-        <Text style={styles.emptySessionTitle}>No timed exercises</Text>
-        <Text style={styles.emptySessionText}>Add a work duration and at least one set before starting.</Text>
+        <Text style={styles.emptySessionTitle}>No exercises</Text>
+        <Text style={styles.emptySessionText}>Add a timed or rep-based exercise and at least one set before starting.</Text>
         <TouchableOpacity style={styles.emptySessionButton} onPress={() => navigation.goBack()}>
           <Text style={styles.emptySessionButtonText}>GO BACK</Text>
         </TouchableOpacity>
@@ -40,6 +53,13 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   }
 
   const isRest = engine.currentPhase.type === 'rest';
+  const isRepPhase = !isRest && engine.currentPhase.mode === 'reps';
+  const currentSetNumber = isRepPhase
+    ? phases
+        .slice(0, engine.currentPhaseIndex + 1)
+        .filter(phase => phase.mode === 'reps' && phase.exerciseName === engine.currentPhase.exerciseName)
+        .length
+    : 0;
   const totalExerciseCount = phases.filter(phase => phase.type === 'work').length;
   const completedExerciseCount = phases
     .slice(0, engine.currentPhaseIndex)
@@ -55,8 +75,30 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
      ? Math.min(1, Math.max(0, (engine.currentPhaseDuration - engine.remainingSeconds) / engine.currentPhaseDuration))
     : 0;
 
+  const handleSaveWeight = () => {
+    const parsed = parseFloat(weightInputValue);
+    setPendingWeight(Number.isFinite(parsed) && parsed > 0 ? parsed : null);
+    setWeightInputVisible(false);
+  };
+
+  const handleRepDone = () => {
+    if (!isRepPhase) return;
+    const reps = engine.currentPhase.reps ?? 0;
+    const weight = pendingWeight;
+
+    setRepLogs(prev => [...prev, { exerciseName: engine.currentPhase.exerciseName, setNumber: currentSetNumber, reps, weight }]);
+    setToastMessage(`Nice work – ${reps} reps${weight != null ? ` at ${weight} lb` : ''} logged!`);
+    setTimeout(() => setToastMessage(null), 2500);
+    engine.completeRepPhase();
+  };
+
   return (
     <View style={styles.container}>
+      {toastMessage && (
+        <View style={styles.toast} pointerEvents="none">
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
       <View style={styles.statusBarSpacer} />
       <View style={styles.progressTracker}>
         <View style={styles.progressLabels}>
@@ -78,23 +120,30 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         </Text>
       </View>
 
-      <View style={styles.countdownContainer}>
-        <View style={styles.timerRing}>
-          <View style={[styles.timerRingBackground, { borderColor: isRest ? 'rgba(107, 158, 250, 0.15)' : 'rgba(204, 255, 0, 0.15)' }]} />
-          <View
-            style={[
-              styles.timerRingProgress,
-              {
-                borderColor: phaseAccent,
-                opacity: 0.3 + (phaseProgress * 0.7),
-              },
-            ]}
-          />
-          <View style={styles.digitsGroup}>
-            <Text style={[styles.timer, isRest && styles.timerRest]}>{Math.ceil(engine.remainingSeconds)}</Text>
-            <Text style={styles.secondsUnit}>{isRest ? 'SECONDS REST' : 'SECONDS LEFT'}</Text>
+      <View style={[styles.countdownContainer, isRepPhase && styles.repContainer]}>
+        {isRepPhase ? (
+          <View style={styles.repContent}>
+            <Text style={styles.repCount}>{engine.currentPhase.reps}</Text>
+            <Text style={styles.secondsUnit}>REPS</Text>
           </View>
-        </View>
+        ) : (
+          <View style={styles.timerRing}>
+            <View style={[styles.timerRingBackground, { borderColor: isRest ? 'rgba(107, 158, 250, 0.15)' : 'rgba(204, 255, 0, 0.15)' }]} />
+            <View
+              style={[
+                styles.timerRingProgress,
+                {
+                  borderColor: phaseAccent,
+                  opacity: 0.3 + (phaseProgress * 0.7),
+                },
+              ]}
+            />
+            <View style={styles.digitsGroup}>
+              <Text style={[styles.timer, isRest && styles.timerRest]}>{Math.ceil(engine.remainingSeconds)}</Text>
+              <Text style={styles.secondsUnit}>{isRest ? 'SECONDS REST' : 'SECONDS LEFT'}</Text>
+            </View>
+          </View>
+        )}
         {isRest && (
           <View style={styles.restAdjustments}>
             <TouchableOpacity style={styles.adjustBtn} onPress={() => engine.adjustRest(-5)} accessibilityLabel="Subtract five seconds">
@@ -106,6 +155,42 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           </View>
         )}
         {isRest && <Text style={styles.adjustmentCue}>Tweak rest time (+/- 5s) directly during rest phase</Text>}
+        {isRepPhase && (
+          <View style={styles.repActionsGroup}>
+            {weightInputVisible ? (
+              <View style={styles.weightInputRow}>
+                <TextInput
+                  style={styles.weightInput}
+                  value={weightInputValue}
+                  onChangeText={setWeightInputValue}
+                  keyboardType="number-pad"
+                  placeholder="lb"
+                  placeholderTextColor="#475569"
+                  autoFocus
+                  selectionColor="#CCFF00"
+                />
+                <TouchableOpacity style={styles.weightSaveBtn} onPress={handleSaveWeight}>
+                  <Text style={styles.weightSaveBtnText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.addWeightButton}
+                onPress={() => {
+                  setWeightInputValue(pendingWeight != null ? String(pendingWeight) : '');
+                  setWeightInputVisible(true);
+                }}
+              >
+                <Text style={styles.addWeightButtonText}>
+                  {pendingWeight != null ? `Weight: ${pendingWeight} lb` : '+ Add Weight'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.repDoneButton} onPress={handleRepDone}>
+              <Text style={styles.repDoneButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       <View style={styles.sessionFooter}>
@@ -117,7 +202,11 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
             </Text>
           </View>
           <Text style={styles.nextDuration}>
-            {nextPhase ? `${Math.ceil(nextPhase.duration)}s ${nextPhase.type === 'work' ? 'Work' : 'Rest'}` : 'Done'}
+            {nextPhase
+              ? nextPhase.mode === 'reps'
+                ? `${nextPhase.reps} Reps`
+                : `${Math.ceil(nextPhase.duration)}s ${nextPhase.type === 'work' ? 'Work' : 'Rest'}`
+              : 'Done'}
           </Text>
         </View>
 
@@ -125,13 +214,15 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           <TouchableOpacity style={styles.secondaryControl} onPress={engine.skipToPreviousPhase} accessibilityLabel="Previous phase">
             <Text style={styles.controlIcon}>‹</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.primaryControl}
-            onPress={engine.timerState === 'paused' ? engine.resume : engine.pause}
-            accessibilityLabel={engine.timerState === 'paused' ? 'Resume workout' : 'Pause workout'}
-          >
-            <Text style={styles.pauseIcon}>{engine.timerState === 'paused' ? '▶' : 'Ⅱ'}</Text>
-          </TouchableOpacity>
+          {!isRepPhase && (
+            <TouchableOpacity
+              style={styles.primaryControl}
+              onPress={engine.timerState === 'paused' ? engine.resume : engine.pause}
+              accessibilityLabel={engine.timerState === 'paused' ? 'Resume workout' : 'Pause workout'}
+            >
+              <Text style={styles.pauseIcon}>{engine.timerState === 'paused' ? '▶' : 'Ⅱ'}</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.secondaryControl} onPress={engine.skipToNextPhase} accessibilityLabel="Skip to next phase">
             <Text style={styles.controlIcon}>▶|</Text>
           </TouchableOpacity>
@@ -205,6 +296,99 @@ const styles = StyleSheet.create({
     minHeight: 433,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  repContainer: {
+    gap: 28,
+  },
+  repContent: {
+    alignItems: 'center',
+  },
+  repCount: {
+    color: '#CCFF00',
+    fontFamily: 'monospace',
+    fontSize: 100,
+    fontWeight: '800',
+    lineHeight: 100,
+    fontVariant: ['tabular-nums'],
+  },
+  repActionsGroup: {
+    width: '82%',
+    alignItems: 'center',
+    gap: 14,
+  },
+  addWeightButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    backgroundColor: '#121214',
+  },
+  addWeightButtonText: {
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  weightInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  weightInput: {
+    width: 90,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    backgroundColor: '#121214',
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  weightSaveBtn: {
+    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#1F1F24',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightSaveBtnText: {
+    color: '#CCFF00',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  repDoneButton: {
+    width: '100%',
+    height: 68,
+    borderRadius: 14,
+    backgroundColor: '#CCFF00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  repDoneButtonText: {
+    color: '#09090A',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  toast: {
+    position: 'absolute',
+    top: 100,
+    left: 24,
+    right: 24,
+    zIndex: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(204, 255, 0, 0.95)',
+    alignItems: 'center',
+  },
+  toastText: {
+    color: '#09090A',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   timerRing: {
     width: 240,

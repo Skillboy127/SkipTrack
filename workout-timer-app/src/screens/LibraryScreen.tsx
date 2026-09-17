@@ -4,8 +4,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout } from '../types';
 import { loadWorkouts, deleteWorkout } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
-import { getWorkoutDuration } from '../workoutLogic';
-import { PencilIcon } from '../components/WorkoutIcons';
+import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
+import { PencilIcon, DumbbellIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
@@ -47,18 +47,29 @@ export function LibraryScreen({ navigation }: Props) {
   const renderItem = ({ item }: { item: Workout }) => {
     const exerciseCount = item.exercises.length;
     const totalSeconds = getWorkoutDuration(item);
+    const hasReps = workoutHasReps(item);
 
     return (
-      <TouchableOpacity 
-        style={styles.card} 
+      <TouchableOpacity
+        style={styles.card}
         onPress={() => navigation.navigate('WorkoutPreview', { workout: item })}
         onLongPress={() => handleDelete(item.id)}
         delayLongPress={600}
       >
         <View style={styles.cardInfo}>
-          <Text style={styles.workoutName} numberOfLines={1}>{item.name}</Text>
+          <View style={styles.workoutNameRow}>
+            <Text style={styles.workoutName} numberOfLines={1}>{item.name}</Text>
+            {hasReps && (
+              <View style={styles.repsBadge} accessibilityLabel="Contains rep-based exercises">
+                <DumbbellIcon size={13} color="#CCFF00" />
+              </View>
+            )}
+          </View>
           <View style={styles.metaRow}>
-            <Text style={styles.exerciseCount}>{exerciseCount} exercises</Text>
+            <Text style={styles.exerciseCount}>
+              {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
+              {item.rounds && item.rounds > 1 ? ` • ${item.rounds} rounds` : ''}
+            </Text>
             <View style={styles.metaDot} />
             <View style={styles.durationGroup}>
               <Text style={styles.clockIcon}>◷</Text>
@@ -91,8 +102,14 @@ export function LibraryScreen({ navigation }: Props) {
             <Text style={styles.title}>My Workouts</Text>
           </View>
           {workouts.length > 0 && (
-            <TouchableOpacity style={styles.settingsButton} hitSlop={8}>
-              <Text style={styles.settingsIcon}>⚙</Text>
+            <TouchableOpacity
+              style={styles.importHeaderBtn}
+              onPress={() => navigation.navigate('ImportVideo')}
+              hitSlop={8}
+              accessibilityLabel="Import workout"
+            >
+              <Text style={styles.importHeaderIcon}>↓</Text>
+              <Text style={styles.importHeaderLabel}>Import</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -141,6 +158,14 @@ export function LibraryScreen({ navigation }: Props) {
       />
       <View style={styles.floatingAndFooter}>
         <View style={styles.fabRow}>
+          <TouchableOpacity
+            style={styles.fabImport}
+            onPress={() => navigation.navigate('ImportVideo')}
+            accessibilityLabel="Import workout"
+          >
+            <Text style={styles.fabImportIcon}>↓</Text>
+            <Text style={styles.fabImportLabel}>Import</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.fab}
             onPress={() => navigation.navigate('WorkoutEditor', {})}
@@ -241,12 +266,26 @@ const styles = StyleSheet.create({
     gap: 6,
     minWidth: 0,
   },
+  workoutNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   workoutName: {
+    flexShrink: 1,
     color: '#FFFFFF',
     fontFamily: 'Geist',
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 21,
+  },
+  repsBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(204, 255, 0, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   metaRow: {
     flexDirection: 'row',
@@ -423,10 +462,62 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: 106,
   },
+  importHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+  },
+  importHeaderIcon: {
+    color: '#CCFF00',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  importHeaderLabel: {
+    color: '#CCFF00',
+    fontFamily: 'Geist',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   fabRow: {
     height: 56,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
     paddingRight: 20,
+    gap: 12,
+  },
+  fabImport: {
+    height: 44,
+    paddingHorizontal: 16,
+    borderRadius: 22,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#CCFF00',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  fabImportIcon: {
+    color: '#CCFF00',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  fabImportLabel: {
+    color: '#CCFF00',
+    fontFamily: 'Geist',
+    fontSize: 14,
+    fontWeight: '700',
   },
   fab: {
     width: 56,

@@ -4,6 +4,7 @@ export type Exercise = {
   workSeconds: number;
   restSeconds: number;
   sets: number;
+  reps?: number | null;
 };
 
 export type Workout = {
@@ -18,6 +19,15 @@ export type Phase = {
   type: 'work' | 'rest';
   exerciseName: string;
   duration: number;
+  mode?: 'timed' | 'reps';
+  reps?: number;
+};
+
+export type RepSetLog = {
+  exerciseName: string;
+  setNumber: number;
+  reps: number;
+  weight: number | null;
 };
 
 export type RootStackParamList = {
@@ -26,5 +36,5 @@ export type RootStackParamList = {
   ImportVideo: { initialUrl?: string } | undefined;
   WorkoutPreview: { workout: Workout };
   ActiveSession: { workout: Workout };
-  Completion: { totalElapsed: number; workout: Workout };
+  Completion: { totalElapsed: number; workout: Workout; repLogs?: RepSetLog[] };
 };

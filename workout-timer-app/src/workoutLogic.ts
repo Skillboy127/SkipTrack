@@ -11,9 +11,18 @@ export function expandWorkout(workout: Workout): Phase[] {
 
       for (let set = 0; set < ex.sets; set++) {
         // Work phase
-        if (ex.workSeconds > 0) {
+        if (ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0) {
           phases.push({
             type: 'work',
+            mode: 'reps',
+            exerciseName: ex.name,
+            duration: 0,
+            reps: ex.reps,
+          });
+        } else if (ex.workSeconds > 0) {
+          phases.push({
+            type: 'work',
+            mode: 'timed',
             exerciseName: ex.name,
             duration: ex.workSeconds,
           });
@@ -48,4 +57,8 @@ export function expandWorkout(workout: Workout): Phase[] {
 
 export function getWorkoutDuration(workout: Workout): number {
   return expandWorkout(workout).reduce((total, phase) => total + phase.duration, 0);
+}
+
+export function workoutHasReps(workout: Workout): boolean {
+  return workout.exercises.some(ex => ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0);
 }

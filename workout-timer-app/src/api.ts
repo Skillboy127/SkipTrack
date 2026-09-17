@@ -25,7 +25,12 @@ function mapResponseToWorkout(data: any): Workout {
   const exercises: Exercise[] = (data.exercises ?? []).map((ex: any) => ({
     id: generateId(),
     name: ex.name ?? 'Unknown Exercise',
-    workSeconds: ex.duration_seconds ?? data.work_seconds ?? 30,
+    workSeconds: ex.duration_seconds != null
+      ? ex.duration_seconds
+      : ex.reps != null
+        ? 0
+        : data.work_seconds ?? 30,
+    reps: ex.reps != null ? ex.reps : null,
     restSeconds: ex.rest_after_seconds ?? data.rest_seconds ?? 10,
     sets: ex.sets ?? 1,
   }));
@@ -54,6 +59,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 6
 
 async function postJson(path: string, body: Record<string, string>): Promise<Workout> {
   let response: Response | null = null;
+  let lastError: any = null;
 
   // Try up to 2 attempts to handle Render free-tier cold starts (server wake-up delay)
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -68,21 +74,25 @@ async function postJson(path: string, body: Record<string, string>): Promise<Wor
         60000,
       );
       break;
-    } catch {
+    } catch (err) {
+      lastError = err;
       if (attempt === 1) {
-        // Wait 3 seconds for Render container wake-up before retrying
-        await new Promise(r => setTimeout(r, 3000));
+        // Wait 4 seconds for Render container wake-up before retrying
+        await new Promise(r => setTimeout(r, 4000));
       }
     }
   }
 
   if (!response) {
-    throw new Error('Could not connect to the server. Render free tier is waking up — please wait 15 seconds and try again.');
+    const errorDetail = lastError?.message ? ` (${lastError.message})` : '';
+    throw new Error(
+      `Could not connect to server at ${API_BASE}.${errorDetail} If using Render free tier, server may be waking up — wait 15-20s and try again.`
+    );
   }
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error || 'The workout server could not process that import.');
+    throw new Error(payload?.error || `Server error (${response.status}): The workout server could not process that import.`);
   }
   return mapResponseToWorkout(payload);
 }

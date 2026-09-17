@@ -13,7 +13,7 @@ type ExerciseRowProps = {
   exercise: Exercise;
   index: number;
   total: number;
-  onUpdate: (id: string, field: keyof Exercise, value: string | number) => void;
+  onUpdate: (id: string, field: keyof Exercise, value: string | number | null) => void;
   onDelete: (id: string) => void;
   onMove: (index: number, direction: -1 | 1) => void;
   nameInputRef: (input: TextInput | null) => void;
@@ -49,11 +49,23 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
     },
   })).current;
 
-  const step = (field: 'workSeconds' | 'restSeconds' | 'sets', amount: number) => {
+  const isRepBased = exercise.reps != null && exercise.workSeconds <= 0;
+
+  const step = (field: 'workSeconds' | 'restSeconds' | 'sets' | 'reps', amount: number) => {
     const next = Math.max(0, Number(exercise[field]) + amount);
     onUpdate(exercise.id, field, field === 'sets' ? Math.max(1, next) : next);
   };
-  const warning = exercise.workSeconds <= 0;
+  const warning = isRepBased ? !exercise.reps : exercise.workSeconds <= 0;
+
+  const toggleWorkMode = () => {
+    if (isRepBased) {
+      onUpdate(exercise.id, 'reps', null);
+      onUpdate(exercise.id, 'workSeconds', 30);
+    } else {
+      onUpdate(exercise.id, 'workSeconds', 0);
+      onUpdate(exercise.id, 'reps', 8);
+    }
+  };
 
   return (
     <Animated.View style={[styles.exerciseRow, { transform: [{ translateX: swipeX }] }]} {...rowResponder.panHandlers}>
@@ -75,18 +87,21 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
       </View>
       <View style={styles.metricsInputs}>
         <View style={styles.metricColumn}>
+          <TouchableOpacity style={styles.modeToggle} onPress={toggleWorkMode}>
+            <Text style={styles.modeToggleText}>{isRepBased ? 'REPS' : 'SEC'}</Text>
+          </TouchableOpacity>
           <View style={styles.stepper}>
-            <TouchableOpacity style={styles.stepButton} onPress={() => step('workSeconds', -5)}>
+            <TouchableOpacity style={styles.stepButton} onPress={() => step(isRepBased ? 'reps' : 'workSeconds', isRepBased ? -1 : -5)}>
               <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
             <TextInput
               style={[styles.metricInput, styles.workInput]}
-              value={exercise.workSeconds.toString()}
-              onChangeText={text => onUpdate(exercise.id, 'workSeconds', parseInt(text, 10) || 0)}
+              value={(isRepBased ? exercise.reps : exercise.workSeconds)?.toString() ?? '0'}
+              onChangeText={text => onUpdate(exercise.id, isRepBased ? 'reps' : 'workSeconds', parseInt(text, 10) || 0)}
               keyboardType="number-pad"
               selectionColor="#CCFF00"
             />
-            <TouchableOpacity style={styles.stepButton} onPress={() => step('workSeconds', 5)}>
+            <TouchableOpacity style={styles.stepButton} onPress={() => step(isRepBased ? 'reps' : 'workSeconds', isRepBased ? 1 : 5)}>
               <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
           </View>
@@ -169,19 +184,28 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
     }
   }, [workoutId, draftWorkout]);
 
+  const stepRounds = (amount: number) => {
+    setRounds(current => Math.max(1, current + amount));
+  };
+
+  const stepRestBetweenRounds = (amount: number) => {
+    setRestBetweenRoundsSeconds(current => Math.max(0, (current ?? 0) + amount));
+  };
+
   const handleAddExercise = () => {
     const newExercise = {
       id: generateId(),
       name: 'New Exercise',
       workSeconds: 30,
+      reps: null,
       restSeconds: 15,
-      sets: 3,
+      sets: 1,
     };
     setExercises(current => [...current, newExercise]);
     setTimeout(() => nameInputs.current[newExercise.id]?.focus(), 80);
   };
 
-  const handleUpdateExercise = (id: string, field: keyof Exercise, value: string | number) => {
+  const handleUpdateExercise = (id: string, field: keyof Exercise, value: string | number | null) => {
     setExercises(currentExercises => currentExercises.map(ex => {
       if (ex.id === id) {
         return { ...ex, [field]: value };
@@ -238,7 +262,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       name,
       exercises,
       rounds,
-      restBetweenRoundsSeconds,
+      restBetweenRoundsSeconds: rounds > 1 ? (restBetweenRoundsSeconds ?? 60) : null,
     };
 
     await saveWorkout(workout);
@@ -279,8 +303,65 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
           </View>
         </View>
 
+        {/* Structure / Circuit Rounds Section */}
+        <View style={styles.structureCard}>
+          <View style={styles.structureRow}>
+            <View style={styles.structureLabelGroup}>
+              <Text style={styles.structureTitle}>Circuit Rounds</Text>
+              <Text style={styles.structureSubtitle}>Number of times to cycle through all exercises</Text>
+            </View>
+            <View style={styles.roundsStepper}>
+              <TouchableOpacity style={styles.roundsStepBtn} onPress={() => stepRounds(-1)}>
+                <Text style={styles.roundsStepText}>−</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={styles.roundsValueInput}
+                value={rounds.toString()}
+                onChangeText={text => setRounds(Math.max(1, parseInt(text, 10) || 1))}
+                keyboardType="number-pad"
+                selectionColor="#CCFF00"
+              />
+              <TouchableOpacity style={styles.roundsStepBtn} onPress={() => stepRounds(1)}>
+                <Text style={styles.roundsStepText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {rounds > 1 && (
+            <View style={[styles.structureRow, styles.structureRowBorder]}>
+              <View style={styles.structureLabelGroup}>
+                <Text style={styles.structureTitle}>Rest Between Rounds</Text>
+                <Text style={styles.structureSubtitle}>Break time after finishing all exercises in a round</Text>
+              </View>
+              <View style={styles.roundsStepper}>
+                <TouchableOpacity style={styles.roundsStepBtn} onPress={() => stepRestBetweenRounds(-5)}>
+                  <Text style={styles.roundsStepText}>−</Text>
+                </TouchableOpacity>
+                <View style={styles.restInputWithSuffix}>
+                  <TextInput
+                    style={[styles.roundsValueInput, styles.restValueInput]}
+                    value={(restBetweenRoundsSeconds ?? 60).toString()}
+                    onChangeText={text => setRestBetweenRoundsSeconds(Math.max(0, parseInt(text, 10) || 0))}
+                    keyboardType="number-pad"
+                    selectionColor="#CCFF00"
+                  />
+                  <Text style={styles.restSuffix}>s</Text>
+                </View>
+                <TouchableOpacity style={styles.roundsStepBtn} onPress={() => stepRestBetweenRounds(5)}>
+                  <Text style={styles.roundsStepText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>EXERCISE LIST ({exercises.length} ITEMS)</Text>
+          <View style={styles.columnHeaders}>
+            <Text style={styles.columnHeaderLabel}>WORK</Text>
+            <Text style={styles.columnHeaderLabel}>REST</Text>
+            <Text style={styles.columnHeaderLabel}>SETS</Text>
+          </View>
         </View>
         <View style={styles.exerciseList}>
             {exercises.map((ex, index) => (
@@ -387,11 +468,103 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 31,
   },
+  // ── Structure Card ────────────────────────────────────────────────────────
+  structureCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    borderRadius: 12,
+    backgroundColor: '#121214',
+    overflow: 'hidden',
+  },
+  structureRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  structureRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#1F1F24',
+  },
+  structureLabelGroup: {
+    flex: 1,
+    marginRight: 12,
+  },
+  structureTitle: {
+    color: '#FFFFFF',
+    fontFamily: 'Geist',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  structureSubtitle: {
+    color: '#94A3B8',
+    fontFamily: 'Geist',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  roundsStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  roundsStepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#1F1F24',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roundsStepText: {
+    color: '#CCFF00',
+    fontFamily: 'Geist',
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  roundsValueInput: {
+    width: 42,
+    height: 32,
+    backgroundColor: '#09090A',
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    borderRadius: 8,
+    color: '#CCFF00',
+    fontFamily: 'JetBrains Mono',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingVertical: 0,
+  },
+  restValueInput: {
+    color: '#6B9EFA',
+  },
+  restInputWithSuffix: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  restSuffix: {
+    color: '#6B9EFA',
+    fontFamily: 'JetBrains Mono',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  // ── List Header ────────────────────────────────────────────────────────────
   listHeader: {
-    height: 30,
+    minHeight: 32,
     paddingHorizontal: 20,
     paddingVertical: 8,
     backgroundColor: '#121214',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   listTitle: {
     color: '#94A3B8',
@@ -399,6 +572,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     lineHeight: 14,
+  },
+  columnHeaders: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginRight: 32,
+  },
+  columnHeaderLabel: {
+    width: 52,
+    color: '#64748B',
+    fontFamily: 'Geist',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   exerciseList: {
     backgroundColor: '#09090A',
@@ -454,7 +641,7 @@ const styles = StyleSheet.create({
   },
   metricsInputs: {
     width: 204,
-    height: 26,
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -463,6 +650,21 @@ const styles = StyleSheet.create({
   metricColumn: {
     width: 52,
     alignItems: 'center',
+  },
+  modeToggle: {
+    height: 16,
+    minWidth: 38,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+    backgroundColor: '#1F1F24',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeToggleText: {
+    color: '#94A3B8',
+    fontFamily: 'JetBrains Mono',
+    fontSize: 8,
+    fontWeight: '700',
   },
   stepper: {
     width: 52,
@@ -486,7 +688,7 @@ const styles = StyleSheet.create({
   },
   inlineWarning: {
     position: 'absolute',
-    top: 27,
+    top: 45,
     color: '#F59E0B',
     fontFamily: 'JetBrains Mono',
     fontSize: 10,
