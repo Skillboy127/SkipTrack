@@ -7,10 +7,6 @@ load_dotenv()  # Load .env before any SDK clients are imported
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from extract_workout import (
-    get_video_id, get_transcript, get_description,
-    extract, extract_from_image, extract_from_text
-)
 import traceback
 
 app = Flask(__name__)
@@ -39,6 +35,8 @@ def extract_endpoint():
     end_time = data.get('end')
     
     try:
+        from extract_workout import get_video_id, get_transcript, get_description, extract
+
         video_id = get_video_id(url)
         canonical_url = f"https://www.youtube.com/watch?v={video_id}"
         print(f"Fetching transcript for {video_id}...")
@@ -67,6 +65,8 @@ def extract_image_endpoint():
         return jsonify({"error": "Use a JPEG, PNG, or WebP workout image."}), 400
 
     try:
+        from extract_workout import extract_from_image
+
         image_bytes = base64.b64decode(image_b64, validate=True)
         if len(image_bytes) > MAX_IMAGE_BYTES:
             return jsonify({"error": "Image is too large. Choose an image under 8 MB."}), 413
@@ -92,6 +92,8 @@ def extract_text_endpoint():
         return jsonify({"error": "Workout text is too long. Keep it under 30,000 characters."}), 413
 
     try:
+        from extract_workout import extract_from_text
+
         print("Extracting from text with Gemini...")
         result = extract_from_text(text)
         return jsonify(result)
