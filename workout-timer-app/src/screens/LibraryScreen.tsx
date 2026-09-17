@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout } from '../types';
@@ -15,8 +15,13 @@ function formatDuration(totalSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+type PendingDelete = { workout: Workout; index: number };
+
 export function LibraryScreen({ navigation }: Props) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const pendingDeleteIdRef = useRef<string | null>(null);
+  const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
 
   useEffect(() => {
@@ -27,21 +32,41 @@ export function LibraryScreen({ navigation }: Props) {
 
   const loadData = async () => {
     const data = await loadWorkouts();
-    setWorkouts(data);
+    setWorkouts(pendingDeleteIdRef.current ? data.filter(w => w.id !== pendingDeleteIdRef.current) : data);
   };
 
-  const handleDelete = async (id: string) => {
-    Alert.alert('Delete workout?', 'This cannot be undone.', [
+  const handleDelete = (workout: Workout) => {
+    Alert.alert('Delete workout?', `Remove "${workout.name}"? You can undo this for a few seconds.`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
-          await deleteWorkout(id);
-          loadData();
+        onPress: () => {
+          const index = workouts.findIndex(w => w.id === workout.id);
+          setWorkouts(current => current.filter(w => w.id !== workout.id));
+          setPendingDelete({ workout, index });
+          pendingDeleteIdRef.current = workout.id;
+          if (deleteTimer.current) clearTimeout(deleteTimer.current);
+          deleteTimer.current = setTimeout(() => {
+            deleteWorkout(workout.id);
+            pendingDeleteIdRef.current = null;
+            setPendingDelete(null);
+          }, 4000);
         },
       },
     ]);
+  };
+
+  const handleUndoDelete = () => {
+    if (!pendingDelete) return;
+    if (deleteTimer.current) clearTimeout(deleteTimer.current);
+    setWorkouts(current => {
+      const restored = [...current];
+      restored.splice(Math.min(pendingDelete.index, restored.length), 0, pendingDelete.workout);
+      return restored;
+    });
+    pendingDeleteIdRef.current = null;
+    setPendingDelete(null);
   };
 
   const renderItem = ({ item }: { item: Workout }) => {
@@ -53,7 +78,7 @@ export function LibraryScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.card}
         onPress={() => navigation.navigate('WorkoutPreview', { workout: item })}
-        onLongPress={() => handleDelete(item.id)}
+        onLongPress={() => handleDelete(item)}
         delayLongPress={600}
       >
         <View style={styles.cardInfo}>
@@ -173,6 +198,14 @@ export function LibraryScreen({ navigation }: Props) {
         </View>
         <View style={styles.footerSpace} />
       </View>
+      {pendingDelete && (
+        <View style={styles.snackbar}>
+          <Text style={styles.snackbarText} numberOfLines={1}>"{pendingDelete.workout.name}" removed</Text>
+          <TouchableOpacity onPress={handleUndoDelete}>
+            <Text style={styles.undoText}>UNDO</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -487,5 +520,38 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     backgroundColor: '#09090A',
     alignItems: 'center',
+  },
+  snackbar: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 118,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#1F1F24',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  snackbarText: {
+    flex: 1,
+    marginRight: 12,
+    color: '#FFFFFF',
+    fontFamily: 'Geist',
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  undoText: {
+    color: '#CCFF00',
+    fontFamily: 'Geist',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 17,
   },
 });

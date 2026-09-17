@@ -20,14 +20,31 @@ import {
   extractWorkoutFromImage,
   extractWorkoutFromText,
 } from '../api';
-import { CloseIcon, InfoIcon, CameraIcon, ChevronIcon, YouTubePlayIcon } from '../components/WorkoutIcons';
+import { CloseIcon, InfoIcon, CameraIcon, ChevronIcon, YouTubePlayIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ImportVideo'>;
 type Tab = 'video' | 'image' | 'text';
 
+const LOADING_MESSAGES: Record<Tab, string[]> = {
+  video: ['Watching the video...', 'Identifying exercises...', 'Reading timing and reps...', 'Structuring your workout...'],
+  image: ['Scanning the image...', 'Reading exercise names...', 'Extracting sets and reps...', 'Structuring your workout...'],
+  text: ['Reading your workout...', 'Identifying exercises...', 'Structuring sets and reps...', 'Almost done...'],
+};
+
 export function ImportScreen({ navigation, route }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('video');
   const [loading, setLoading] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+
+  // Cycle through contextual status lines while extraction is underway
+  useEffect(() => {
+    if (!loading) {
+      setLoadingMessageIndex(0);
+      return;
+    }
+    const id = setInterval(() => setLoadingMessageIndex(current => current + 1), 1700);
+    return () => clearInterval(id);
+  }, [loading]);
 
   // Video tab state
   const [url, setUrl] = useState(route.params?.initialUrl ?? '');
@@ -238,6 +255,8 @@ export function ImportScreen({ navigation, route }: Props) {
   const canImportText = workoutText.trim().length > 0;
   const canImportImage = imageBase64 !== null;
   const canImportVideo = url.trim().length > 0;
+  const activeLoadingMessages = LOADING_MESSAGES[activeTab];
+  const loadingMessage = activeLoadingMessages[loadingMessageIndex % activeLoadingMessages.length];
 
   return (
     <View style={styles.container}>
@@ -269,12 +288,9 @@ export function ImportScreen({ navigation, route }: Props) {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <View style={styles.spinnerWrapper}>
-              <View style={styles.spinnerBackground} />
-              <View style={styles.spinnerActive} />
-            </View>
+            <RotatingDumbbellIcon color="#CCFF00" size={56} />
             <View style={styles.statusTextBlock}>
-              <Text style={styles.loadingTitle}>Analyzing...</Text>
+              <Text style={styles.loadingTitle}>{loadingMessage}</Text>
               <Text style={styles.loadingSource} numberOfLines={1}>{processingSource}</Text>
             </View>
             <View style={styles.annotationBox}>
@@ -596,38 +612,17 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     gap: 32,
   },
-  spinnerWrapper: {
-    width: 120,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spinnerBackground: {
-    ...StyleSheet.absoluteFill,
-    margin: 15,
-    borderWidth: 4,
-    borderColor: '#1F1F24',
-    borderRadius: 45,
-  },
-  spinnerActive: {
-    ...StyleSheet.absoluteFill,
-    margin: 15,
-    borderWidth: 4,
-    borderColor: '#CCFF00',
-    borderLeftColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderRadius: 45,
-    transform: [{ rotate: '-30deg' }],
-  },
   statusTextBlock: {
     alignItems: 'center',
     gap: 8,
   },
   loadingTitle: {
+    maxWidth: 260,
     color: '#CCFF00',
     fontSize: 18,
     fontWeight: '700',
     lineHeight: 23,
+    textAlign: 'center',
   },
   loadingSource: {
     maxWidth: 242,

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert,
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout, Exercise } from '../types';
 import { loadWorkouts, saveWorkout } from '../storage';
-import { PencilIcon, TrashIcon, DragHandleIcon, ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
+import { PencilIcon, TrashIcon, DragHandleIcon, ChevronIcon, CheckIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutEditor'>;
 
@@ -68,7 +68,11 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
   };
 
   return (
-    <Animated.View style={[styles.exerciseRow, { transform: [{ translateX: swipeX }] }]} {...rowResponder.panHandlers}>
+    <View style={styles.exerciseRowWrapper}>
+      <View style={styles.deleteBackdrop}>
+        <TrashIcon color="#FFFFFF" size={20} />
+      </View>
+      <Animated.View style={[styles.exerciseRow, { transform: [{ translateX: swipeX }] }]} {...rowResponder.panHandlers}>
       <View style={styles.exerciseLeft}>
         <View style={styles.dragHandle} {...dragResponder.panHandlers}>
           <DragHandleIcon />
@@ -145,7 +149,8 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
           <TrashIcon />
         </TouchableOpacity>
       </View>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -275,7 +280,13 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
     }
   };
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <RotatingDumbbellIcon color="#CCFF00" size={48} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -404,6 +415,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0B0B0B',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     paddingBottom: 24,
@@ -585,11 +600,26 @@ const styles = StyleSheet.create({
   exerciseList: {
     backgroundColor: '#09090A',
   },
+  exerciseRowWrapper: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F1F24',
+    overflow: 'hidden',
+  },
+  deleteBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#DC2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingRight: 24,
+  },
   exerciseRow: {
     minHeight: 56,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1F1F24',
     backgroundColor: '#09090A',
     flexDirection: 'row',
     alignItems: 'center',

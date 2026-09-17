@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 type IconProps = {
   color?: string;
@@ -372,6 +372,32 @@ export function YouTubePlayIcon({ size = 22 }: { size?: number }) {
         }}
       />
     </View>
+  );
+}
+
+/** A continuously spinning dumbbell used as the app's shared loading indicator. */
+export function RotatingDumbbellIcon({ color = '#CCFF00', size = 48 }: IconProps) {
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 1100,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [spin]);
+
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  return (
+    <Animated.View style={{ transform: [{ rotate }] }}>
+      <DumbbellIcon color={color} size={size} />
+    </Animated.View>
   );
 }
 
