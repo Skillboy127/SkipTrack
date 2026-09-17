@@ -4,7 +4,7 @@ This isn't the app yet. It's the test that decides whether the app is worth buil
 
 ## Setup (run locally — this sandbox can't reach youtube.com)
 ```
-pip install youtube-transcript-api yt-dlp google-genai
+pip install youtube-transcript-api yt-dlp "google-genai>=2.0.0,<3.0"
 export GEMINI_API_KEY=your_key
 ```
 Get a free key at https://aistudio.google.com/apikey — sign in with your Google account, no credit card required. Uses `gemini-3.5-flash-lite` (`gemini-2.5-flash` was pulled from new users and is being fully shut down Oct 16, 2026 — `gemini-3.5-flash-lite` is Google's current recommended model for structured JSON extraction and is free-tier eligible).

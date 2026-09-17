@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useShareIntent } from 'expo-share-intent';
+import * as Updates from 'expo-updates';
 import { RootStackParamList } from './src/types';
 
 import { LibraryScreen } from './src/screens/LibraryScreen';
@@ -25,6 +26,32 @@ function extractUrl(text: string | null | undefined): string | null {
 export default function App() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
   const pendingShareRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) return;
+
+    let cancelled = false;
+
+    const checkForUpdates = async () => {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (!update.isAvailable || cancelled) return;
+
+        const fetchedUpdate = await Updates.fetchUpdateAsync();
+        if (fetchedUpdate.isNew && !cancelled) {
+          await Updates.reloadAsync();
+        }
+      } catch (error) {
+        console.warn('OTA update check failed:', error);
+      }
+    };
+
+    void checkForUpdates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openPendingShare = () => {
     const targetUrl = pendingShareRef.current;
