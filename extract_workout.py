@@ -272,21 +272,25 @@ __TEXT_PLACEHOLDER__
 """
 
 
-def _is_unavailable_error(error: Exception) -> bool:
+def _is_retryable_model_error(error: Exception) -> bool:
     status_code = getattr(error, "status_code", None)
-    if status_code == 503 or "unavailable" in str(status_code).lower():
-        return True
-
     error_code = getattr(error, "code", None)
-    if error_code == 503 or "unavailable" in str(error_code).lower():
-        return True
-
+    codes = {str(value).lower() for value in (status_code, error_code) if value is not None}
     error_text = str(error).lower()
-    return "503" in error_text and "unavailable" in error_text
+
+    return bool(
+        codes.intersection({"429", "503", "resource_exhausted", "unavailable"})
+        or "429" in error_text
+        or "503" in error_text
+        or "quota" in error_text
+        or "rate limit" in error_text
+        or "resource exhausted" in error_text
+        or "unavailable" in error_text
+    )
 
 
 def generate_with_fallback(model_names, generate_call):
-    """Run a Gemini request and fall back only when a model returns 503."""
+    """Run a Gemini request and fall back on transient or quota errors."""
     if not model_names:
         raise ValueError("At least one model is required")
 
@@ -296,14 +300,14 @@ def generate_with_fallback(model_names, generate_call):
             print(f"  [Model Router] Using {model_name}")
             return response
         except Exception as error:
-            if not _is_unavailable_error(error):
+            if not _is_retryable_model_error(error):
                 raise
             if index == len(model_names) - 1:
                 raise
 
             next_model = model_names[index + 1]
             print(
-                f"  [Model Router] Falling back to {next_model} after 503 from {model_name}"
+                f"  [Model Router] Falling back to {next_model} after a retryable error from {model_name}"
             )
 
     raise RuntimeError("Model fallback chain unexpectedly ended")
