@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert,
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout, Exercise } from '../types';
 import { loadWorkouts, saveWorkout } from '../storage';
-import { PencilIcon, TrashIcon } from '../components/WorkoutIcons';
+import { PencilIcon, TrashIcon, DragHandleIcon, ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutEditor'>;
 
@@ -71,7 +71,7 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
     <Animated.View style={[styles.exerciseRow, { transform: [{ translateX: swipeX }] }]} {...rowResponder.panHandlers}>
       <View style={styles.exerciseLeft}>
         <View style={styles.dragHandle} {...dragResponder.panHandlers}>
-          <Text style={styles.dragIcon}>≡</Text>
+          <DragHandleIcon />
         </View>
         <Text style={styles.exerciseIndex}>{index + 1}</Text>
         <TextInput
@@ -285,7 +285,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
         <View style={styles.topNavigation}>
           <View style={styles.headerRow}>
             <TouchableOpacity style={styles.backAction} onPress={() => navigation.goBack()}>
-              <Text style={styles.backChevron}>‹</Text>
+              <ChevronIcon color="#94A3B8" size={18} direction="left" />
               <Text style={styles.backLabel}>Back</Text>
             </TouchableOpacity>
             <Text style={styles.modeLabel}>{workoutId ? 'EDITING' : 'ADDING'}</Text>
@@ -384,7 +384,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       <View style={styles.footer}>
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveIcon}>✓</Text>
+          <CheckIcon color="#09090A" size={18} />
           <Text style={styles.saveLabel}>SAVE CHANGES</Text>
         </TouchableOpacity>
       </View>
@@ -431,11 +431,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  backChevron: {
-    color: '#94A3B8',
-    fontSize: 24,
-    lineHeight: 18,
   },
   backLabel: {
     color: '#94A3B8',
@@ -606,11 +601,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  dragIcon: {
-    color: '#475569',
-    fontSize: 18,
-    lineHeight: 16,
   },
   dragHandle: {
     width: 24,
@@ -794,11 +784,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-  },
-  saveIcon: {
-    color: '#09090A',
-    fontSize: 22,
-    lineHeight: 22,
   },
   saveLabel: {
     color: '#09090A',

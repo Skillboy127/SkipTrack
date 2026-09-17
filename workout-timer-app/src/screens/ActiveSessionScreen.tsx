@@ -5,6 +5,7 @@ import { RootStackParamList, RepSetLog } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { expandWorkout } from '../workoutLogic';
+import { SkipIcon, PlayIcon, PauseIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 
@@ -212,7 +213,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
 
         <View style={styles.controls}>
           <TouchableOpacity style={styles.secondaryControl} onPress={engine.skipToPreviousPhase} accessibilityLabel="Previous phase">
-            <Text style={styles.controlIcon}>‹</Text>
+            <SkipIcon color="#FFFFFF" size={18} direction="left" />
           </TouchableOpacity>
           {!isRepPhase && (
             <TouchableOpacity
@@ -220,11 +221,11 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
               onPress={engine.timerState === 'paused' ? engine.resume : engine.pause}
               accessibilityLabel={engine.timerState === 'paused' ? 'Resume workout' : 'Pause workout'}
             >
-              <Text style={styles.pauseIcon}>{engine.timerState === 'paused' ? '▶' : 'Ⅱ'}</Text>
+              {engine.timerState === 'paused' ? <PlayIcon color="#09090A" size={26} /> : <PauseIcon color="#09090A" size={26} />}
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.secondaryControl} onPress={engine.skipToNextPhase} accessibilityLabel="Skip to next phase">
-            <Text style={styles.controlIcon}>▶|</Text>
+            <SkipIcon color="#FFFFFF" size={18} direction="right" />
           </TouchableOpacity>
         </View>
       </View>
@@ -527,17 +528,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#CCFF00',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  controlIcon: {
-    color: '#FFFFFF',
-    fontFamily: 'monospace',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  pauseIcon: {
-    color: '#09090A',
-    fontSize: 22,
-    fontWeight: '800',
   },
   emptySessionTitle: {
     marginTop: 180,

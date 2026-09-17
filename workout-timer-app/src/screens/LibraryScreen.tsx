@@ -5,7 +5,7 @@ import { RootStackParamList, Workout } from '../types';
 import { loadWorkouts, deleteWorkout } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
-import { PencilIcon, DumbbellIcon } from '../components/WorkoutIcons';
+import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
@@ -72,7 +72,7 @@ export function LibraryScreen({ navigation }: Props) {
             </Text>
             <View style={styles.metaDot} />
             <View style={styles.durationGroup}>
-              <Text style={styles.clockIcon}>◷</Text>
+              <ClockIcon color="#94A3B8" size={13} />
               <Text style={styles.durationValue}>{formatDuration(totalSeconds)}</Text>
             </View>
           </View>
@@ -85,7 +85,7 @@ export function LibraryScreen({ navigation }: Props) {
           >
             <PencilIcon />
           </TouchableOpacity>
-          <Text style={styles.chevron}>›</Text>
+          <ChevronIcon color="#475569" size={16} direction="right" />
         </View>
       </TouchableOpacity>
     );
@@ -98,7 +98,7 @@ export function LibraryScreen({ navigation }: Props) {
         <View style={styles.statusBarSpacer} />
         <View style={styles.screenHeader}>
           <View style={styles.titleGroup}>
-            <Text style={styles.trendingIcon}>↗</Text>
+            <DumbbellIcon color="#CCFF00" size={22} />
             <Text style={styles.title}>My Workouts</Text>
           </View>
           {workouts.length > 0 && (
@@ -108,7 +108,7 @@ export function LibraryScreen({ navigation }: Props) {
               hitSlop={8}
               accessibilityLabel="Import workout"
             >
-              <Text style={styles.importHeaderIcon}>↓</Text>
+              <DownloadIcon color="#CCFF00" size={14} />
               <Text style={styles.importHeaderLabel}>Import</Text>
             </TouchableOpacity>
           )}
@@ -140,10 +140,7 @@ export function LibraryScreen({ navigation }: Props) {
                 style={styles.primaryButton}
                 onPress={() => navigation.navigate('ImportVideo')}
               >
-                <View style={styles.downloadIcon}>
-                  <View style={styles.downloadArrow} />
-                  <View style={styles.downloadTray} />
-                </View>
+                <DownloadIcon color="#09090A" size={20} />
                 <Text style={styles.primaryButtonLabel}>Import Workout</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -163,7 +160,7 @@ export function LibraryScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('ImportVideo')}
             accessibilityLabel="Import workout"
           >
-            <Text style={styles.fabImportIcon}>↓</Text>
+            <DownloadIcon color="#CCFF00" size={16} />
             <Text style={styles.fabImportLabel}>Import</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -171,7 +168,7 @@ export function LibraryScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('WorkoutEditor', {})}
             accessibilityLabel="Create new workout"
           >
-            <Text style={styles.plusIcon}>+</Text>
+            <PlusIcon color="#09090A" size={26} />
           </TouchableOpacity>
         </View>
         <View style={styles.footerSpace} />
@@ -205,12 +202,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  trendingIcon: {
-    color: '#CCFF00',
-    fontSize: 22,
-    fontWeight: '700',
-    lineHeight: 24,
   },
   settingsButton: {
     width: 34,
@@ -310,11 +301,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  clockIcon: {
-    color: '#94A3B8',
-    fontSize: 14,
-    lineHeight: 16,
-  },
   durationValue: {
     color: '#CCFF00',
     fontFamily: 'Geist',
@@ -329,11 +315,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginLeft: 12,
-  },
-  chevron: {
-    color: '#475569',
-    fontSize: 24,
-    lineHeight: 18,
   },
   emptyState: {
     alignItems: 'center',
@@ -434,27 +415,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 20,
   },
-  downloadIcon: {
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  downloadArrow: {
-    width: 2,
-    height: 12,
-    backgroundColor: '#09090A',
-  },
-  downloadTray: {
-    position: 'absolute',
-    bottom: 2,
-    width: 16,
-    height: 6,
-    borderWidth: 2,
-    borderTopWidth: 0,
-    borderColor: '#09090A',
-    borderRadius: 2,
-  },
   floatingAndFooter: {
     position: 'absolute',
     left: 0,
@@ -472,11 +432,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#121214',
     borderWidth: 1,
     borderColor: '#1F1F24',
-  },
-  importHeaderIcon: {
-    color: '#CCFF00',
-    fontSize: 14,
-    fontWeight: '700',
   },
   importHeaderLabel: {
     color: '#CCFF00',
@@ -508,11 +463,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 5,
   },
-  fabImportIcon: {
-    color: '#CCFF00',
-    fontSize: 16,
-    fontWeight: '700',
-  },
   fabImportLabel: {
     color: '#CCFF00',
     fontFamily: 'Geist',
@@ -531,12 +481,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 5,
-  },
-  plusIcon: {
-    color: '#09090A',
-    fontSize: 30,
-    fontWeight: '400',
-    lineHeight: 32,
   },
   footerSpace: {
     height: 50,

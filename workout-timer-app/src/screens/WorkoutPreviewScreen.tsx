@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, TextInput, Modal, PanResponder } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { PencilIcon } from '../components/WorkoutIcons';
+import { PencilIcon, ChevronIcon, DragHandleIcon, LockIcon, CheckIcon } from '../components/WorkoutIcons';
 import { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
@@ -122,7 +122,7 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
         <View style={styles.topNavigation}>
           <View style={styles.headerRow}>
             <TouchableOpacity style={styles.backAction} onPress={() => navigation.goBack()}>
-              <Text style={styles.backChevron}>‹</Text>
+              <ChevronIcon color="#94A3B8" size={18} direction="left" />
               <Text style={styles.backLabel}>Back</Text>
             </TouchableOpacity>
             <Text style={styles.modeLabel}>READY</Text>
@@ -143,7 +143,7 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
             <View key={ex.id || index} style={[styles.exerciseRow, draggingIndex === index && styles.draggingRow]}>
               <View style={styles.exerciseLeft}>
                 <View style={styles.dragHandle} {...createDragResponder(index).panHandlers}>
-                  <Text style={styles.dragIcon}>≡</Text>
+                  <DragHandleIcon />
                 </View>
                 <Text style={styles.exerciseIndex}>{index + 1}</Text>
                 <TextInput
@@ -181,7 +181,7 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
                 >
                   <Text style={styles.setsValue}>{ex.sets}×</Text>
                 </TouchableOpacity>
-                <Text style={styles.lockIcon}>▥</Text>
+                <View style={styles.lockIcon}><LockIcon /></View>
               </View>
             </View>
           ))}
@@ -193,7 +193,7 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
       </TouchableOpacity>
       <View style={styles.footer}>
         <TouchableOpacity style={styles.startButton} onPress={onStart}>
-          <Text style={styles.startIcon}>✓</Text>
+          <CheckIcon color="#09090A" size={20} />
           <Text style={styles.startLabel}>START WORKOUT</Text>
         </TouchableOpacity>
       </View>
@@ -272,11 +272,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  backChevron: {
-    color: '#94A3B8',
-    fontSize: 24,
-    lineHeight: 18,
-  },
   backLabel: {
     color: '#94A3B8',
     fontFamily: 'Geist',
@@ -342,11 +337,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  dragIcon: {
-    color: '#94A3B8',
-    fontSize: 20,
-    lineHeight: 18,
   },
   dragHandle: {
     width: 24,
@@ -430,10 +420,9 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   lockIcon: {
-    width: 14,
-    color: '#475569',
-    fontSize: 15,
-    textAlign: 'center',
+    width: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalBackdrop: {
     flex: 1,
@@ -538,11 +527,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-  },
-  startIcon: {
-    color: '#09090A',
-    fontSize: 22,
-    lineHeight: 22,
   },
   startLabel: {
     color: '#09090A',

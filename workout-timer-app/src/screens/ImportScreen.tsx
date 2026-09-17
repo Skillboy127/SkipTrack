@@ -9,6 +9,7 @@ import {
   ScrollView,
   Image,
   Platform,
+  Linking,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
@@ -19,6 +20,7 @@ import {
   extractWorkoutFromImage,
   extractWorkoutFromText,
 } from '../api';
+import { CloseIcon, InfoIcon, CameraIcon, ChevronIcon, YouTubePlayIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ImportVideo'>;
 type Tab = 'video' | 'image' | 'text';
@@ -68,6 +70,17 @@ export function ImportScreen({ navigation, route }: Props) {
     const clipboardText = await Clipboard.getStringAsync();
     if (clipboardText.trim()) {
       setUrl(clipboardText.trim());
+    }
+  };
+
+  const handleOpenYouTube = async () => {
+    const nativeUrl = 'youtube://';
+    const webUrl = 'https://www.youtube.com';
+    try {
+      const canOpenNative = await Linking.canOpenURL(nativeUrl);
+      await Linking.openURL(canOpenNative ? nativeUrl : webUrl);
+    } catch {
+      Linking.openURL(webUrl).catch(() => {});
     }
   };
 
@@ -138,9 +151,15 @@ export function ImportScreen({ navigation, route }: Props) {
 
   const renderVideoTab = () => (
     <View style={styles.videoInputSection}>
+      <TouchableOpacity style={styles.openYoutubeButton} onPress={handleOpenYouTube} accessibilityLabel="Open YouTube to find a video">
+        <YouTubePlayIcon size={24} />
+        <Text style={styles.openYoutubeLabel}>Open YouTube to find a video</Text>
+        <ChevronIcon color="#94A3B8" size={14} direction="right" />
+      </TouchableOpacity>
+
       <View style={styles.videoUrlInput}>
         <View style={styles.videoInputLeft}>
-          <Text style={styles.youtubeGlyph}>▹</Text>
+          <YouTubePlayIcon size={18} />
           <TextInput
             style={styles.videoUrlTextInput}
             placeholder="Paste YouTube URL"
@@ -157,6 +176,15 @@ export function ImportScreen({ navigation, route }: Props) {
         </TouchableOpacity>
       </View>
       <Text style={styles.videoInputHint}>We'll pull exercise names, timing, and rest from the video</Text>
+
+      {Platform.OS === 'android' && (
+        <View style={styles.annotationBox}>
+          <InfoIcon color="#CCFF00" size={16} />
+          <Text style={styles.annotationText}>
+            Tip: you can also share any video straight from the YouTube app — tap Share, then choose Skiptrack.
+          </Text>
+        </View>
+      )}
     </View>
   );
 
@@ -168,7 +196,7 @@ export function ImportScreen({ navigation, route }: Props) {
         ) : (
           <View style={styles.imagePickerPlaceholder}>
             <View style={styles.cameraCircle}>
-              <Text style={styles.cameraGlyph}>▣</Text>
+              <CameraIcon color="#CCFF00" size={20} />
             </View>
             <Text style={styles.imagePickerHint}>Tap to upload photo</Text>
           </View>
@@ -218,7 +246,7 @@ export function ImportScreen({ navigation, route }: Props) {
         <View style={styles.screenHeader}>
           <Text style={styles.screenTitle}>Import Workout</Text>
           <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()} accessibilityLabel="Close import">
-            <Text style={styles.closeLabel}>×</Text>
+            <CloseIcon color="#94A3B8" size={16} />
           </TouchableOpacity>
         </View>
 
@@ -244,14 +272,13 @@ export function ImportScreen({ navigation, route }: Props) {
             <View style={styles.spinnerWrapper}>
               <View style={styles.spinnerBackground} />
               <View style={styles.spinnerActive} />
-              <Text style={styles.spinnerGlyph}>▦</Text>
             </View>
             <View style={styles.statusTextBlock}>
               <Text style={styles.loadingTitle}>Analyzing...</Text>
               <Text style={styles.loadingSource} numberOfLines={1}>{processingSource}</Text>
             </View>
             <View style={styles.annotationBox}>
-              <Text style={styles.infoGlyph}>ⓘ</Text>
+              <InfoIcon color="#CCFF00" size={16} />
               <Text style={styles.annotationText}>Flows into Edit Workout screen for review</Text>
             </View>
           </View>
@@ -271,7 +298,6 @@ export function ImportScreen({ navigation, route }: Props) {
       {loading ? (
         <View style={styles.stickyFooter}>
           <View style={styles.processingButton}>
-            <Text style={styles.processingGlyph}>✣</Text>
             <Text style={styles.processingLabel}>PROCESSING</Text>
           </View>
         </View>
@@ -345,12 +371,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#121214',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closeLabel: {
-    color: '#94A3B8',
-    fontSize: 24,
-    fontWeight: '400',
-    lineHeight: 26,
   },
   contentContainer: {
     padding: 20,
@@ -432,10 +452,22 @@ const styles = StyleSheet.create({
     gap: 12,
     minWidth: 0,
   },
-  youtubeGlyph: {
-    color: '#475569',
-    fontSize: 20,
-    fontWeight: '700',
+  openYoutubeButton: {
+    height: 52,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    borderRadius: 12,
+    backgroundColor: '#121214',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  openYoutubeLabel: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   videoUrlTextInput: {
     flex: 1,
@@ -517,11 +549,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cameraGlyph: {
-    color: '#CCFF00',
-    fontSize: 20,
-    fontWeight: '700',
-  },
   imagePickerHint: {
     color: '#FFFFFF',
     fontSize: 15,
@@ -592,11 +619,6 @@ const styles = StyleSheet.create({
     borderRadius: 45,
     transform: [{ rotate: '-30deg' }],
   },
-  spinnerGlyph: {
-    color: '#CCFF00',
-    fontSize: 24,
-    fontWeight: '700',
-  },
   statusTextBlock: {
     alignItems: 'center',
     gap: 8,
@@ -626,10 +648,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  infoGlyph: {
-    color: '#CCFF00',
-    fontSize: 16,
   },
   annotationText: {
     flex: 1,
@@ -678,10 +696,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
-  },
-  processingGlyph: {
-    color: '#09090A',
-    fontSize: 20,
   },
   processingLabel: {
     color: '#09090A',

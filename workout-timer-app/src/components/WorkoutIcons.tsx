@@ -6,26 +6,55 @@ type IconProps = {
   size?: number;
 };
 
+type DirectionalIconProps = IconProps & {
+  direction?: 'left' | 'right' | 'up' | 'down';
+};
+
 /** Lightweight icons drawn from native views so they render consistently without an icon package. */
 export function PencilIcon({ color = '#94A3B8', size = 20 }: IconProps) {
-  const thickness = Math.max(2, Math.round(size * 0.16));
+  const thickness = Math.max(3, Math.round(size * 0.22));
+  const bodyLength = size * 0.6;
 
   return (
-    <View style={[styles.pencil, { width: size, height: size }]} accessible={false}>
-      <View style={[styles.pencilBody, { backgroundColor: color, height: thickness, borderRadius: thickness, width: size * 0.72 }]} />
-      <View style={[styles.pencilTip, { borderTopWidth: thickness / 1.5, borderBottomWidth: thickness / 1.5, borderRightWidth: size * 0.2, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderRightColor: color }]} />
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View style={styles.pencilRotate}>
+        <View
+          style={{
+            width: thickness * 0.78,
+            height: thickness * 0.78,
+            backgroundColor: color,
+            borderRadius: 1.5,
+            marginBottom: -thickness * 0.18,
+            transform: [{ rotate: '45deg' }],
+          }}
+        />
+        <View style={{ width: thickness, height: bodyLength, backgroundColor: color, borderRadius: thickness * 0.3 }} />
+        <View
+          style={{
+            width: thickness,
+            height: thickness * 0.55,
+            backgroundColor: color,
+            opacity: 0.55,
+            borderBottomLeftRadius: thickness * 0.3,
+            borderBottomRightRadius: thickness * 0.3,
+          }}
+        />
+      </View>
     </View>
   );
 }
 
 export function TrashIcon({ color = '#475569', size = 18 }: IconProps) {
-  const line = Math.max(1, Math.round(size * 0.1));
+  const line = Math.max(1.3, Math.round(size * 0.09));
 
   return (
     <View style={[styles.trash, { width: size, height: size }]} accessible={false}>
-      <View style={[styles.trashLid, { backgroundColor: color, height: line, width: size * 0.9 }]} />
-      <View style={[styles.trashHandle, { backgroundColor: color, height: line, width: size * 0.36, top: size * 0.02 }]} />
-      <View style={[styles.trashBin, { borderColor: color, borderWidth: line, borderTopWidth: 0, width: size * 0.68, height: size * 0.55, top: size * 0.32 }]} />
+      <View style={[styles.trashLid, { backgroundColor: color, height: line, width: size * 0.92, borderRadius: line / 2 }]} />
+      <View style={[styles.trashHandle, { borderColor: color, borderWidth: line, width: size * 0.34, height: size * 0.22, top: -size * 0.03 }]} />
+      <View style={[styles.trashBin, { borderColor: color, borderWidth: line, width: size * 0.66, height: size * 0.56, top: size * 0.34 }]}>
+        <View style={{ width: line, height: '58%', backgroundColor: color, opacity: 0.6, borderRadius: line / 2 }} />
+        <View style={{ width: line, height: '58%', backgroundColor: color, opacity: 0.6, borderRadius: line / 2 }} />
+      </View>
     </View>
   );
 }
@@ -43,15 +72,321 @@ export function DumbbellIcon({ color = '#94A3B8', size = 16 }: IconProps) {
   );
 }
 
+/** A checkmark drawn from a rotated corner box — crisp at any size, no font-glyph misalignment. */
+export function CheckIcon({ color = '#09090A', size = 20 }: IconProps) {
+  const thickness = Math.max(2, Math.round(size * 0.14));
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View
+        style={{
+          width: size * 0.46,
+          height: size * 0.82,
+          marginTop: -size * 0.08,
+          borderBottomWidth: thickness,
+          borderRightWidth: thickness,
+          borderColor: color,
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
+export function CloseIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+  const thickness = Math.max(2, Math.round(size * 0.12));
+  const barLength = size * 0.72;
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View style={{ position: 'absolute', width: barLength, height: thickness, backgroundColor: color, borderRadius: thickness / 2, transform: [{ rotate: '45deg' }] }} />
+      <View style={{ position: 'absolute', width: barLength, height: thickness, backgroundColor: color, borderRadius: thickness / 2, transform: [{ rotate: '-45deg' }] }} />
+    </View>
+  );
+}
+
+const CHEVRON_ROTATION: Record<NonNullable<DirectionalIconProps['direction']>, string> = {
+  right: '45deg',
+  left: '225deg',
+  up: '-45deg',
+  down: '135deg',
+};
+
+/** A corner-box chevron/caret. Also doubles as a disclosure arrow via direction="up"/"down". */
+export function ChevronIcon({ color = '#94A3B8', size = 16, direction = 'right' }: DirectionalIconProps) {
+  const thickness = Math.max(1.4, Math.round(size * 0.16));
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View
+        style={{
+          width: size * 0.46,
+          height: size * 0.46,
+          borderTopWidth: thickness,
+          borderRightWidth: thickness,
+          borderColor: color,
+          transform: [{ rotate: CHEVRON_ROTATION[direction] }],
+        }}
+      />
+    </View>
+  );
+}
+
+export function PlayIcon({ color = '#09090A', size = 20 }: IconProps) {
+  const triangleHeight = size * 0.62;
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View
+        style={{
+          width: 0,
+          height: 0,
+          marginLeft: size * 0.08,
+          borderTopWidth: triangleHeight / 2,
+          borderBottomWidth: triangleHeight / 2,
+          borderLeftWidth: triangleHeight * 0.82,
+          borderTopColor: 'transparent',
+          borderBottomColor: 'transparent',
+          borderLeftColor: color,
+        }}
+      />
+    </View>
+  );
+}
+
+export function PauseIcon({ color = '#09090A', size = 20 }: IconProps) {
+  const barWidth = Math.max(2, size * 0.16);
+  const barHeight = size * 0.58;
+
+  return (
+    <View style={[styles.iconBox, styles.pauseRow, { width: size, height: size, gap: size * 0.16 }]} accessible={false}>
+      <View style={{ width: barWidth, height: barHeight, backgroundColor: color, borderRadius: barWidth / 2 }} />
+      <View style={{ width: barWidth, height: barHeight, backgroundColor: color, borderRadius: barWidth / 2 }} />
+    </View>
+  );
+}
+
+/** A triangle-plus-bar "skip to next/previous" glyph, matching standard media-control iconography. */
+export function SkipIcon({ color = '#FFFFFF', size = 18, direction = 'right' }: DirectionalIconProps) {
+  const triangleHeight = size * 0.56;
+  const barWidth = Math.max(1.6, size * 0.12);
+  const isForward = direction !== 'left';
+
+  const triangle = (
+    <View
+      style={{
+        width: 0,
+        height: 0,
+        borderTopWidth: triangleHeight / 2,
+        borderBottomWidth: triangleHeight / 2,
+        borderTopColor: 'transparent',
+        borderBottomColor: 'transparent',
+        ...(isForward
+          ? { borderLeftWidth: triangleHeight * 0.82, borderLeftColor: color }
+          : { borderRightWidth: triangleHeight * 0.82, borderRightColor: color }),
+      }}
+    />
+  );
+  const bar = <View style={{ width: barWidth, height: triangleHeight, backgroundColor: color, borderRadius: barWidth / 2 }} />;
+
+  return (
+    <View style={[styles.iconBox, styles.pauseRow, { width: size, height: size, gap: size * 0.1 }]} accessible={false}>
+      {isForward ? (
+        <>
+          {triangle}
+          {bar}
+        </>
+      ) : (
+        <>
+          {bar}
+          {triangle}
+        </>
+      )}
+    </View>
+  );
+}
+
+export function ClockIcon({ color = '#94A3B8', size = 16 }: IconProps) {
+  const border = Math.max(1.2, size * 0.1);
+  const handThickness = Math.max(1, size * 0.09);
+
+  return (
+    <View
+      style={[
+        styles.iconBox,
+        { width: size, height: size, borderRadius: size / 2, borderWidth: border, borderColor: color },
+      ]}
+      accessible={false}
+    >
+      <View style={{ position: 'absolute', width: handThickness, height: size * 0.3, backgroundColor: color, borderRadius: handThickness / 2, bottom: '50%' }} />
+      <View style={{ position: 'absolute', height: handThickness, width: size * 0.24, backgroundColor: color, borderRadius: handThickness / 2, left: '50%' }} />
+    </View>
+  );
+}
+
+export function DragHandleIcon({ color = '#475569', size = 18 }: IconProps) {
+  const barHeight = Math.max(1.4, size * 0.1);
+  const barWidth = size * 0.6;
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size, gap: barHeight * 1.4 }]} accessible={false}>
+      <View style={{ width: barWidth, height: barHeight, backgroundColor: color, borderRadius: barHeight / 2 }} />
+      <View style={{ width: barWidth, height: barHeight, backgroundColor: color, borderRadius: barHeight / 2 }} />
+      <View style={{ width: barWidth, height: barHeight, backgroundColor: color, borderRadius: barHeight / 2 }} />
+    </View>
+  );
+}
+
+export function LockIcon({ color = '#475569', size = 14 }: IconProps) {
+  const bodyWidth = size * 0.72;
+  const bodyHeight = size * 0.48;
+  const shackleSize = size * 0.5;
+  const shackleThickness = Math.max(1.2, size * 0.14);
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View
+        style={{
+          width: shackleSize,
+          height: shackleSize,
+          borderRadius: shackleSize / 2,
+          borderWidth: shackleThickness,
+          borderColor: color,
+          borderBottomWidth: 0,
+          marginBottom: -shackleSize * 0.26,
+        }}
+      />
+      <View style={{ width: bodyWidth, height: bodyHeight, borderRadius: 3, backgroundColor: color }} />
+    </View>
+  );
+}
+
+export function InfoIcon({ color = '#CCFF00', size = 16 }: IconProps) {
+  const border = Math.max(1, size * 0.09);
+  const dotSize = Math.max(1.6, size * 0.13);
+
+  return (
+    <View
+      style={[
+        styles.iconBox,
+        { width: size, height: size, borderRadius: size / 2, borderWidth: border, borderColor: color, gap: size * 0.08 },
+      ]}
+      accessible={false}
+    >
+      <View style={{ width: dotSize, height: dotSize, borderRadius: dotSize / 2, backgroundColor: color }} />
+      <View style={{ width: dotSize, height: size * 0.3, borderRadius: dotSize / 2, backgroundColor: color }} />
+    </View>
+  );
+}
+
+/** A shaft + arrowhead + tray, matching the "import/download" affordance used across the library screen. */
+export function DownloadIcon({ color = '#09090A', size = 18 }: IconProps) {
+  const shaftWidth = Math.max(1.6, size * 0.14);
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View style={{ width: shaftWidth, height: size * 0.46, backgroundColor: color, borderRadius: shaftWidth / 2, marginBottom: -size * 0.06 }} />
+      <View
+        style={{
+          width: 0,
+          height: 0,
+          borderLeftWidth: size * 0.17,
+          borderRightWidth: size * 0.17,
+          borderTopWidth: size * 0.17,
+          borderLeftColor: 'transparent',
+          borderRightColor: 'transparent',
+          borderTopColor: color,
+        }}
+      />
+      <View style={{ position: 'absolute', bottom: 0, width: size * 0.72, height: Math.max(1.4, size * 0.12), borderRadius: 2, backgroundColor: color }} />
+    </View>
+  );
+}
+
+export function PlusIcon({ color = '#09090A', size = 24 }: IconProps) {
+  const thickness = Math.max(2, size * 0.12);
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View style={{ position: 'absolute', width: size * 0.68, height: thickness, backgroundColor: color, borderRadius: thickness / 2 }} />
+      <View style={{ position: 'absolute', width: thickness, height: size * 0.68, backgroundColor: color, borderRadius: thickness / 2 }} />
+    </View>
+  );
+}
+
+export function CameraIcon({ color = '#CCFF00', size = 20 }: IconProps) {
+  const border = Math.max(1.4, size * 0.09);
+
+  return (
+    <View
+      style={[
+        styles.iconBox,
+        { width: size, height: size * 0.78, borderRadius: size * 0.16, borderWidth: border, borderColor: color },
+      ]}
+      accessible={false}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          top: -size * 0.14,
+          left: size * 0.2,
+          width: size * 0.3,
+          height: size * 0.16,
+          borderTopLeftRadius: 3,
+          borderTopRightRadius: 3,
+          backgroundColor: color,
+        }}
+      />
+      <View style={{ width: size * 0.34, height: size * 0.34, borderRadius: size * 0.17, borderWidth: border, borderColor: color }} />
+    </View>
+  );
+}
+
+/** A branded YouTube "play" glyph (rounded red rect + white triangle) for the video-import affordances. */
+export function YouTubePlayIcon({ size = 22 }: { size?: number }) {
+  const triangleHeight = size * 0.42;
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size * 0.72,
+        borderRadius: size * 0.2,
+        backgroundColor: '#FF0000',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+      accessible={false}
+    >
+      <View
+        style={{
+          width: 0,
+          height: 0,
+          marginLeft: size * 0.05,
+          borderTopWidth: triangleHeight / 2,
+          borderBottomWidth: triangleHeight / 2,
+          borderLeftWidth: triangleHeight * 0.85,
+          borderTopColor: 'transparent',
+          borderBottomColor: 'transparent',
+          borderLeftColor: '#FFFFFF',
+        }}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  pencil: {
+  iconBox: {
     alignItems: 'center',
-    flexDirection: 'row',
     justifyContent: 'center',
-    transform: [{ rotate: '-45deg' }],
   },
-  pencilBody: {},
-  pencilTip: {},
+  pauseRow: {
+    flexDirection: 'row',
+  },
+  pencilRotate: {
+    alignItems: 'center',
+    transform: [{ rotate: '45deg' }],
+  },
   trash: {
     alignItems: 'center',
     justifyContent: 'flex-start',
@@ -59,7 +394,6 @@ const styles = StyleSheet.create({
   trashLid: {
     position: 'absolute',
     top: '22%',
-    borderRadius: 4,
   },
   trashHandle: {
     position: 'absolute',
@@ -69,6 +403,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderBottomLeftRadius: 2,
     borderBottomRightRadius: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
   },
   dumbbell: {
     alignItems: 'center',
