@@ -93,6 +93,33 @@ export function CheckIcon({ color = '#09090A', size = 20 }: IconProps) {
   );
 }
 
+/** A "sliders" glyph (three tracks with offset knobs) used for the Settings entry point. */
+export function SettingsIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+  const lineHeight = Math.max(1.4, size * 0.1);
+  const knobSize = size * 0.26;
+  const knobPositions = [0.12, 0.5, 0.28];
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size, justifyContent: 'space-between' }]} accessible={false}>
+      {knobPositions.map((position, index) => (
+        <View key={index} style={{ width: size, height: knobSize, justifyContent: 'center' }}>
+          <View style={{ height: lineHeight, backgroundColor: color, opacity: 0.45, borderRadius: lineHeight / 2 }} />
+          <View
+            style={{
+              position: 'absolute',
+              left: size * position,
+              width: knobSize,
+              height: knobSize,
+              borderRadius: knobSize / 2,
+              backgroundColor: color,
+            }}
+          />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function SearchIcon({ color = '#94A3B8', size = 18 }: IconProps) {
   const ringSize = size * 0.66;
   const border = Math.max(1.4, size * 0.12);

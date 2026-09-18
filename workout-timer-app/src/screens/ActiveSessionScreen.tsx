@@ -4,8 +4,9 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, RepSetLog } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
+import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
-import { addHistoryEntry } from '../storage';
+import { addHistoryEntry, loadTtsEnabled } from '../storage';
 import { SkipIcon, PlayIcon, PauseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
@@ -20,7 +21,9 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const phases = useMemo(() => expandWorkout(workout), [workout]);
 
   const { playBeep } = useAudio();
-  const engine = useTimerEngine(phases, playBeep);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const { speakCountdown } = useSpeech(ttsEnabled);
+  const engine = useTimerEngine(phases, playBeep, speakCountdown);
 
   const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
   const [pendingWeight, setPendingWeight] = useState<number | null>(null);
@@ -28,6 +31,11 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const [weightInputValue, setWeightInputValue] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [quitStep, setQuitStep] = useState<QuitStep>('closed');
+
+  // Load the user's TTS preference (defaults to on)
+  useEffect(() => {
+    loadTtsEnabled().then(setTtsEnabled);
+  }, []);
 
   // Auto-start on mount
   useEffect(() => {

@@ -5,7 +5,7 @@ import { RootStackParamList, Workout } from '../types';
 import { loadWorkouts, deleteWorkout } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
-import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
+import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon, SettingsIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
@@ -175,6 +175,14 @@ export function LibraryScreen({ navigation }: Props) {
             >
               <ClockIcon color="#94A3B8" size={14} />
               <Text style={styles.historyHeaderLabel}>History</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.settingsHeaderBtn}
+              onPress={() => navigation.navigate('Settings')}
+              hitSlop={8}
+              accessibilityLabel="Open settings"
+            >
+              <SettingsIcon color="#94A3B8" size={16} />
             </TouchableOpacity>
           </View>
         </View>
@@ -350,19 +358,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  settingsButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 99,
-    backgroundColor: '#121214',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsIcon: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    lineHeight: 20,
   },
   title: {
     color: '#FFFFFF',
@@ -638,6 +633,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Geist',
     fontSize: 13,
     fontWeight: '700',
+  },
+  settingsHeaderBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fabRow: {
     height: 56,

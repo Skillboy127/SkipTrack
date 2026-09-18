@@ -3,7 +3,9 @@ import { Phase } from './types';
 
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 
-export function useTimerEngine(phases: Phase[], onBeep: () => void) {
+type CountdownListener = (secondsRemaining: number, phase: Phase, nextPhase: Phase | undefined) => void;
+
+export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?: CountdownListener) {
   const [timerState, setTimerState] = useState<TimerState>('idle');
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
   
@@ -31,6 +33,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
   const durationRef = useRef(currentPhaseDuration);
   const phasesRef = useRef(phases);
   const onBeepRef = useRef(onBeep);
+  const onCountdownRef = useRef(onCountdown);
 
   useEffect(() => {
     stateRef.current = timerState;
@@ -39,7 +42,8 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
     durationRef.current = currentPhaseDuration;
     phasesRef.current = phases;
     onBeepRef.current = onBeep;
-  }, [timerState, currentPhaseIndex, phaseStartTime, currentPhaseDuration, phases]);
+    onCountdownRef.current = onCountdown;
+  }, [timerState, currentPhaseIndex, phaseStartTime, currentPhaseDuration, phases, onBeep, onCountdown]);
 
   const start = useCallback(() => {
     if (phases.length === 0) return;
@@ -157,11 +161,15 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void) {
       const elapsedSeconds = (now - phaseStartTimeRef.current) / 1000;
       const newRemaining = durationRef.current - elapsedSeconds;
 
-      // Handle Beeps for 3, 2, 1
+      // Countdown cue for 3, 2, 1 — spoken via TTS (see onCountdown in ActiveSessionScreen).
       const ceilRemaining = Math.ceil(newRemaining);
       if (ceilRemaining <= 3 && ceilRemaining > 0 && ceilRemaining !== lastBeepTimeRef.current) {
         lastBeepTimeRef.current = ceilRemaining;
-        onBeepRef.current();
+        // Fallback: uncomment to use the beep sound instead of the spoken countdown.
+        // onBeepRef.current();
+        const currentPhase = phasesRef.current[phaseIndexRef.current];
+        const nextPhase = phasesRef.current[phaseIndexRef.current + 1];
+        if (currentPhase) onCountdownRef.current?.(ceilRemaining, currentPhase, nextPhase);
       }
 
       if (newRemaining <= 0) {

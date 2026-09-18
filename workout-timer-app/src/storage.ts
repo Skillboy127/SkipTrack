@@ -4,6 +4,7 @@ import { RepSetLog, Workout, WorkoutHistoryEntry } from './types';
 const WORKOUTS_KEY = '@workouts_v1';
 const HISTORY_KEY = '@workout_history_v1';
 const MAX_HISTORY_ENTRIES = 200;
+const TTS_ENABLED_KEY = '@tts_enabled_v1';
 
 function normalizeWorkout(value: unknown): Workout | null {
   if (!value || typeof value !== 'object') return null;
@@ -141,5 +142,24 @@ export async function deleteHistoryEntry(id: string): Promise<void> {
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
   } catch (e) {
     console.error('Failed to delete workout history entry', e);
+  }
+}
+
+export async function loadTtsEnabled(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(TTS_ENABLED_KEY);
+    if (value == null) return true; // default ON
+    return value === 'true';
+  } catch (e) {
+    console.error('Failed to load TTS setting', e);
+    return true;
+  }
+}
+
+export async function saveTtsEnabled(enabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(TTS_ENABLED_KEY, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.error('Failed to save TTS setting', e);
   }
 }

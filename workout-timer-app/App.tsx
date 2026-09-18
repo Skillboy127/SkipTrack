@@ -14,6 +14,7 @@ import { WorkoutPreviewScreen } from './src/screens/WorkoutPreviewScreen';
 import { ActiveSessionScreen } from './src/screens/ActiveSessionScreen';
 import { CompletionScreen } from './src/screens/CompletionScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -113,6 +114,11 @@ export default function App() {
           <Stack.Screen
             name="History"
             component={HistoryScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={SettingsScreen}
             options={{ headerShown: false }}
           />
         </Stack.Navigator>

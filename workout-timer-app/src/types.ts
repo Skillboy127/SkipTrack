@@ -47,4 +47,5 @@ export type RootStackParamList = {
   ActiveSession: { workout: Workout };
   Completion: { totalElapsed: number; workout: Workout; repLogs?: RepSetLog[] };
   History: undefined;
+  Settings: undefined;
 };
