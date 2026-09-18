@@ -31,10 +31,25 @@ const LOADING_MESSAGES: Record<Tab, string[]> = {
   text: ['Reading your workout...', 'Identifying exercises...', 'Structuring sets and reps...', 'Almost done...'],
 };
 
+const ERROR_TITLES: Record<Tab, string> = {
+  video: "Couldn't read that video",
+  image: "Couldn't read that image",
+  text: "Couldn't understand that workout",
+};
+
+const ERROR_ALT_ACTION: Record<Tab, string | null> = {
+  video: 'Or paste it in as text instead',
+  image: 'Or type it in as text instead',
+  text: null,
+};
+
+type ImportError = { tab: Tab; message: string };
+
 export function ImportScreen({ navigation, route }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('video');
   const [loading, setLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [importError, setImportError] = useState<ImportError | null>(null);
 
   // Cycle through contextual status lines while extraction is underway
   useEffect(() => {
@@ -73,11 +88,12 @@ export function ImportScreen({ navigation, route }: Props) {
       return;
     }
     setLoading(true);
+    setImportError(null);
     try {
       const workout = await extractWorkoutFromVideo(url.trim());
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
-      Alert.alert('Extraction Failed', e.message);
+      setImportError({ tab: 'video', message: e.message || 'Something went wrong reading that video.' });
     } finally {
       setLoading(false);
     }
@@ -138,11 +154,12 @@ export function ImportScreen({ navigation, route }: Props) {
       return;
     }
     setLoading(true);
+    setImportError(null);
     try {
       const workout = await extractWorkoutFromImage(imageBase64, imageMime);
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
-      Alert.alert('Extraction Failed', e.message);
+      setImportError({ tab: 'image', message: e.message || 'Something went wrong reading that image.' });
     } finally {
       setLoading(false);
     }
@@ -154,14 +171,27 @@ export function ImportScreen({ navigation, route }: Props) {
       return;
     }
     setLoading(true);
+    setImportError(null);
     try {
       const workout = await extractWorkoutFromText(workoutText.trim());
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
-      Alert.alert('Extraction Failed', e.message);
+      setImportError({ tab: 'text', message: e.message || 'Something went wrong reading that workout.' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetryImport = () => {
+    if (!importError) return;
+    if (importError.tab === 'video') handleVideoExtract();
+    else if (importError.tab === 'image') handleImageExtract();
+    else handleTextExtract();
+  };
+
+  const handleSwitchToTextFromError = () => {
+    setImportError(null);
+    setActiveTab('text');
   };
 
   // ─── Tab content ─────────────────────────────────────────────────────────────
@@ -275,7 +305,11 @@ export function ImportScreen({ navigation, route }: Props) {
               <TouchableOpacity
                 key={tab.id}
                 style={[styles.tabBtn, activeTab === tab.id && styles.tabBtnActive]}
-                onPress={() => !loading && setActiveTab(tab.id)}
+                onPress={() => {
+                  if (loading) return;
+                  setImportError(null);
+                  setActiveTab(tab.id);
+                }}
                 disabled={loading}
               >
                 <Text style={[styles.tabLabel, activeTab === tab.id && styles.tabLabelActive]}>
@@ -298,6 +332,22 @@ export function ImportScreen({ navigation, route }: Props) {
               <Text style={styles.annotationText}>Flows into Edit Workout screen for review</Text>
             </View>
           </View>
+        ) : importError ? (
+          <View style={styles.errorContainer}>
+            <View style={styles.errorIconCircle}>
+              <CloseIcon color="#F87171" size={20} />
+            </View>
+            <Text style={styles.errorTitle}>{ERROR_TITLES[importError.tab]}</Text>
+            <Text style={styles.errorMessage}>{importError.message}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={handleRetryImport}>
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+            {ERROR_ALT_ACTION[importError.tab] && (
+              <TouchableOpacity onPress={handleSwitchToTextFromError} hitSlop={8}>
+                <Text style={styles.errorAltAction}>{ERROR_ALT_ACTION[importError.tab]} →</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         ) : (
           <ScrollView
             style={styles.formScroll}
@@ -317,7 +367,7 @@ export function ImportScreen({ navigation, route }: Props) {
             <Text style={styles.processingLabel}>PROCESSING</Text>
           </View>
         </View>
-      ) : activeTab === 'text' ? (
+      ) : importError ? null : activeTab === 'text' ? (
         <View style={styles.stickyFooter}>
           <TouchableOpacity
             style={[styles.importButton, canImportText && styles.importButtonEnabled]}
@@ -649,6 +699,56 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 12,
     lineHeight: 17,
+  },
+  // ── Error ──────────────────────────────────────────────────────────────────
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 40,
+    gap: 16,
+  },
+  errorIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: 'rgba(248, 113, 113, 0.35)',
+    backgroundColor: 'rgba(248, 113, 113, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  errorMessage: {
+    color: '#94A3B8',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 8,
+    height: 48,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    backgroundColor: '#CCFF00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryButtonText: {
+    color: '#09090A',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  errorAltAction: {
+    color: '#CCFF00',
+    fontSize: 13,
+    fontWeight: '600',
   },
   stickyFooter: {
     height: 112,

@@ -13,6 +13,7 @@ export type Workout = {
   exercises: Exercise[];
   rounds: number; // how many times to cycle through all exercises (circuit mode)
   restBetweenRoundsSeconds?: number | null;
+  createdAt?: number; // epoch ms, used for "recently added" sorting in the Library
 };
 
 export type Phase = {

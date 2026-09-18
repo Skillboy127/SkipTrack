@@ -33,6 +33,7 @@ function normalizeWorkout(value: unknown): Workout | null {
     restBetweenRoundsSeconds: candidate.restBetweenRoundsSeconds == null
       ? null
       : Math.max(0, Number(candidate.restBetweenRoundsSeconds) || 0),
+    createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : 0,
   };
 }
 

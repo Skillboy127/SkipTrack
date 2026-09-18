@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Alert } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Alert, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout } from '../types';
 import { loadWorkouts, deleteWorkout } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
-import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon } from '../components/WorkoutIcons';
+import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
@@ -16,10 +16,23 @@ function formatDuration(totalSeconds: number): string {
 }
 
 type PendingDelete = { workout: Workout; index: number };
+type FilterMode = 'all' | 'timed' | 'reps';
+type SortMode = 'recent' | 'name' | 'duration' | 'exercises';
+
+const SORT_ORDER: SortMode[] = ['recent', 'name', 'duration', 'exercises'];
+const SORT_LABELS: Record<SortMode, string> = {
+  recent: 'Recent',
+  name: 'Name A–Z',
+  duration: 'Duration',
+  exercises: 'Most Exercises',
+};
 
 export function LibraryScreen({ navigation }: Props) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('recent');
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
@@ -33,6 +46,45 @@ export function LibraryScreen({ navigation }: Props) {
   const loadData = async () => {
     const data = await loadWorkouts();
     setWorkouts(pendingDeleteIdRef.current ? data.filter(w => w.id !== pendingDeleteIdRef.current) : data);
+  };
+
+  const displayedWorkouts = useMemo(() => {
+    let list = workouts;
+    if (filterMode === 'reps') list = list.filter(workoutHasReps);
+    else if (filterMode === 'timed') list = list.filter(w => !workoutHasReps(w));
+
+    const query = searchQuery.trim().toLowerCase();
+    if (query) list = list.filter(w => w.name.toLowerCase().includes(query));
+
+    const withDuration = list.map(w => ({ workout: w, duration: getWorkoutDuration(w) }));
+    switch (sortMode) {
+      case 'name':
+        withDuration.sort((a, b) => a.workout.name.localeCompare(b.workout.name));
+        break;
+      case 'duration':
+        withDuration.sort((a, b) => a.duration - b.duration);
+        break;
+      case 'exercises':
+        withDuration.sort((a, b) => b.workout.exercises.length - a.workout.exercises.length);
+        break;
+      case 'recent':
+      default:
+        withDuration.sort((a, b) => (b.workout.createdAt ?? 0) - (a.workout.createdAt ?? 0));
+        break;
+    }
+    return withDuration.map(item => item.workout);
+  }, [workouts, filterMode, searchQuery, sortMode]);
+
+  const isFiltering = searchQuery.trim().length > 0 || filterMode !== 'all';
+
+  const cycleSortMode = () => {
+    const currentIndex = SORT_ORDER.indexOf(sortMode);
+    setSortMode(SORT_ORDER[(currentIndex + 1) % SORT_ORDER.length]);
+  };
+
+  const clearSearchAndFilters = () => {
+    setSearchQuery('');
+    setFilterMode('all');
   };
 
   const handleDelete = (workout: Workout) => {
@@ -149,44 +201,107 @@ export function LibraryScreen({ navigation }: Props) {
             )}
           </View>
         </View>
-      </View>
-      <FlatList
-        data={workouts}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={workouts.length === 0 ? styles.emptyListContainer : styles.listContainer}
-        ListHeaderComponent={workouts.length > 0 ? <Text style={styles.sectionTitle}>Saved Routines ({workouts.length})</Text> : null}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <View style={styles.illustration}>
-              <View style={styles.dumbbell}>
-                <View style={styles.dumbbellPlate} />
-                <View style={styles.dumbbellBar} />
-                <View style={[styles.dumbbellPlate, styles.dumbbellPlateRight]} />
+        {workouts.length > 0 && (
+          <View style={styles.searchSection}>
+            <View style={styles.searchBar}>
+              <SearchIcon color="#64748B" size={15} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search workouts"
+                placeholderTextColor="#64748B"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8} accessibilityLabel="Clear search">
+                  <CloseIcon color="#64748B" size={13} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.filterSortRow}>
+              <View style={styles.chipGroup}>
+                {(['all', 'timed', 'reps'] as const).map(mode => (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[styles.chip, filterMode === mode && styles.chipActive]}
+                    onPress={() => setFilterMode(mode)}
+                  >
+                    <Text style={[styles.chipText, filterMode === mode && styles.chipTextActive]}>
+                      {mode === 'all' ? 'All' : mode === 'timed' ? 'Timed' : 'Reps'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            </View>
-            <View style={styles.textGroup}>
-              <Text style={styles.emptyTitle}>No workouts yet</Text>
-              <Text style={styles.emptyDescription}>
-                Import a YouTube video to build sets instantly or craft your exercises manually.
-              </Text>
-            </View>
-            <View style={styles.buttonWrap}>
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={() => navigation.navigate('ImportVideo')}
-              >
-                <DownloadIcon color="#09090A" size={20} />
-                <Text style={styles.primaryButtonLabel}>Import Workout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => navigation.navigate('WorkoutEditor', {})}
-              >
-                <Text style={styles.secondaryButtonLabel}>+ Build Custom Workout</Text>
+              <TouchableOpacity style={styles.sortButton} onPress={cycleSortMode} accessibilityLabel="Change sort order">
+                <Text style={styles.sortButtonText}>{SORT_LABELS[sortMode]}</Text>
+                <ChevronIcon color="#94A3B8" size={10} direction="down" />
               </TouchableOpacity>
             </View>
           </View>
+        )}
+      </View>
+      <FlatList
+        style={styles.list}
+        data={displayedWorkouts}
+        keyExtractor={item => item.id}
+        renderItem={renderItem}
+        contentContainerStyle={displayedWorkouts.length === 0 ? styles.emptyListContainer : styles.listContainer}
+        ListHeaderComponent={
+          workouts.length > 0 ? (
+            <Text style={styles.sectionTitle}>
+              {isFiltering ? `${displayedWorkouts.length} OF ${workouts.length} ROUTINES` : `Saved Routines (${workouts.length})`}
+            </Text>
+          ) : null
+        }
+        ListEmptyComponent={
+          workouts.length === 0 ? (
+            <View style={styles.emptyState}>
+              <View style={styles.illustration}>
+                <View style={styles.dumbbell}>
+                  <View style={styles.dumbbellPlate} />
+                  <View style={styles.dumbbellBar} />
+                  <View style={[styles.dumbbellPlate, styles.dumbbellPlateRight]} />
+                </View>
+              </View>
+              <View style={styles.textGroup}>
+                <Text style={styles.emptyTitle}>No workouts yet</Text>
+                <Text style={styles.emptyDescription}>
+                  Import a YouTube video to build sets instantly or craft your exercises manually.
+                </Text>
+              </View>
+              <View style={styles.buttonWrap}>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => navigation.navigate('ImportVideo')}
+                >
+                  <DownloadIcon color="#09090A" size={20} />
+                  <Text style={styles.primaryButtonLabel}>Import Workout</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => navigation.navigate('WorkoutEditor', {})}
+                >
+                  <Text style={styles.secondaryButtonLabel}>+ Build Custom Workout</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <View style={styles.illustration}>
+                <SearchIcon color="#94A3B8" size={30} />
+              </View>
+              <View style={styles.textGroup}>
+                <Text style={styles.emptyTitle}>No matches</Text>
+                <Text style={styles.emptyDescription}>Try a different search term or clear your filters.</Text>
+              </View>
+              <TouchableOpacity style={styles.secondaryButton} onPress={clearSearchAndFilters}>
+                <Text style={styles.secondaryButtonLabel}>Clear Search & Filters</Text>
+              </TouchableOpacity>
+            </View>
+          )
         }
       />
       <View style={styles.floatingAndFooter}>
@@ -227,8 +342,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B0B0B',
   },
   topSection: {
-    height: 106,
     alignSelf: 'stretch',
+  },
+  list: {
+    flex: 1,
   },
   statusBarSpacer: {
     height: 44,
@@ -470,6 +587,76 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  searchSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    gap: 10,
+  },
+  searchBar: {
+    height: 42,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    backgroundColor: '#121214',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    padding: 0,
+    color: '#FFFFFF',
+    fontFamily: 'Geist',
+    fontSize: 14,
+  },
+  filterSortRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  chipGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  chip: {
+    height: 30,
+    paddingHorizontal: 12,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    backgroundColor: '#121214',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipActive: {
+    borderColor: '#CCFF00',
+    backgroundColor: 'rgba(204, 255, 0, 0.12)',
+  },
+  chipText: {
+    color: '#94A3B8',
+    fontFamily: 'Geist',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  chipTextActive: {
+    color: '#CCFF00',
+  },
+  sortButton: {
+    height: 30,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  sortButtonText: {
+    color: '#94A3B8',
+    fontFamily: 'Geist',
+    fontSize: 12,
+    fontWeight: '600',
   },
   historyHeaderBtn: {
     flexDirection: 'row',

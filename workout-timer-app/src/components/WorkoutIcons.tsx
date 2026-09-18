@@ -93,6 +93,41 @@ export function CheckIcon({ color = '#09090A', size = 20 }: IconProps) {
   );
 }
 
+export function SearchIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+  const ringSize = size * 0.66;
+  const border = Math.max(1.4, size * 0.12);
+  const handleLength = size * 0.36;
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: ringSize,
+          height: ringSize,
+          borderRadius: ringSize / 2,
+          borderWidth: border,
+          borderColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          width: border,
+          height: handleLength,
+          borderRadius: border / 2,
+          backgroundColor: color,
+          transform: [{ rotate: '-45deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
 export function CloseIcon({ color = '#94A3B8', size = 18 }: IconProps) {
   const thickness = Math.max(2, Math.round(size * 0.12));
   const barLength = size * 0.72;

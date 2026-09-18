@@ -165,6 +165,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   const [removedExercise, setRemovedExercise] = useState<{ exercise: Exercise; index: number } | null>(null);
   const nameInputs = useRef<Record<string, TextInput | null>>({});
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createdAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (draftWorkout) {
@@ -172,6 +173,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       setExercises(draftWorkout.exercises);
       setRounds(draftWorkout.rounds ?? 1);
       setRestBetweenRoundsSeconds(draftWorkout.restBetweenRoundsSeconds ?? null);
+      createdAtRef.current = draftWorkout.createdAt ?? null;
       setLoading(false);
     } else if (workoutId) {
       loadWorkouts().then(workouts => {
@@ -181,6 +183,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
           setExercises(found.exercises);
           setRounds(found.rounds ?? 1);
           setRestBetweenRoundsSeconds(found.restBetweenRoundsSeconds ?? null);
+          createdAtRef.current = found.createdAt ?? null;
         }
         setLoading(false);
       });
@@ -268,6 +271,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       exercises,
       rounds,
       restBetweenRoundsSeconds: rounds > 1 ? (restBetweenRoundsSeconds ?? 60) : null,
+      createdAt: createdAtRef.current ?? Date.now(),
     };
 
     await saveWorkout(workout);
