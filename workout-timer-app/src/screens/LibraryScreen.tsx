@@ -9,12 +9,6 @@ import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIco
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
-function formatDuration(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
 type PendingDelete = { workout: Workout; index: number };
 type FilterMode = 'all' | 'timed' | 'reps';
 type SortMode = 'recent' | 'name' | 'duration' | 'exercises';
@@ -123,7 +117,6 @@ export function LibraryScreen({ navigation }: Props) {
 
   const renderItem = ({ item }: { item: Workout }) => {
     const exerciseCount = item.exercises.length;
-    const totalSeconds = getWorkoutDuration(item);
     const hasReps = workoutHasReps(item);
 
     return (
@@ -147,11 +140,6 @@ export function LibraryScreen({ navigation }: Props) {
               {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
               {item.rounds && item.rounds > 1 ? ` • ${item.rounds} rounds` : ''}
             </Text>
-            <View style={styles.metaDot} />
-            <View style={styles.durationGroup}>
-              <ClockIcon color="#94A3B8" size={13} />
-              <Text style={styles.durationValue}>{formatDuration(totalSeconds)}</Text>
-            </View>
           </View>
         </View>
         <View style={styles.cardActions}>
@@ -449,24 +437,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Geist',
     fontSize: 13,
     fontWeight: '400',
-    lineHeight: 17,
-  },
-  metaDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#475569',
-  },
-  durationGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  durationValue: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 13,
-    fontWeight: '600',
     lineHeight: 17,
   },
   cardActions: {

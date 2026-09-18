@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { expandWorkout } from '../workoutLogic';
 import { addHistoryEntry } from '../storage';
 import { CheckIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
@@ -19,9 +18,6 @@ const formatTime = (seconds: number) => {
 
 export function CompletionScreen({ route, navigation }: Props) {
   const { totalElapsed, workout, repLogs = [] } = route.params;
-  const phases = useMemo(() => expandWorkout(workout), [workout]);
-  const activeSeconds = phases.filter(phase => phase.type === 'work').reduce((total, phase) => total + phase.duration, 0);
-  const restSeconds = phases.filter(phase => phase.type === 'rest').reduce((total, phase) => total + phase.duration, 0);
   const groupedLogs = useMemo(() => groupRepLogs(repLogs), [repLogs]);
 
   // Record this session to history exactly once, regardless of re-renders.
@@ -48,13 +44,6 @@ export function CompletionScreen({ route, navigation }: Props) {
       <View style={styles.timeGroup}>
         <Text style={styles.elapsedTime}>{formatTime(totalElapsed)}</Text>
         <Text style={styles.timeLabel}>Total Elapsed Time</Text>
-      </View>
-      <View style={styles.statsRow}>
-        <View style={styles.statColumn}><Text style={styles.statValue}>{workout.exercises.length}</Text><Text style={styles.statLabel}>Exercises</Text></View>
-        <View style={styles.statDivider} />
-        <View style={styles.statColumn}><Text style={styles.statValue}>{formatTime(activeSeconds)}</Text><Text style={styles.statLabel}>Active Time</Text></View>
-        <View style={styles.statDivider} />
-        <View style={styles.statColumn}><Text style={styles.statValue}>{formatTime(restSeconds)}</Text><Text style={styles.statLabel}>Rest Time</Text></View>
       </View>
     </>
   );
@@ -97,11 +86,6 @@ const styles = StyleSheet.create({
   timeGroup: { alignItems: 'center', gap: 4 },
   elapsedTime: { color: '#CCFF00', fontFamily: 'monospace', fontSize: 72, fontWeight: '800', lineHeight: 72, fontVariant: ['tabular-nums'] },
   timeLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '700', lineHeight: 16, textTransform: 'uppercase' },
-  statsRow: { width: '100%', height: 74, paddingVertical: 16, paddingHorizontal: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#1F1F24', flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  statColumn: { flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { color: '#FFFFFF', fontFamily: 'monospace', fontSize: 18, fontWeight: '700', lineHeight: 24 },
-  statLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '600', lineHeight: 14, textTransform: 'uppercase' },
-  statDivider: { width: 1, height: 24, backgroundColor: '#1F1F24' },
   footerWrapper: { height: 112, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 8, borderTopWidth: 1, borderTopColor: '#1F1F24', backgroundColor: '#09090A' },
   doneButton: { height: 54, borderRadius: 12, backgroundColor: '#CCFF00', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   doneLabel: { color: '#09090A', fontSize: 18, fontWeight: '700', lineHeight: 23, textTransform: 'uppercase' },
