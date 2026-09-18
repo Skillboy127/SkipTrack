@@ -1,12 +1,10 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, TextInput, Modal, PanResponder } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { PencilIcon, ChevronIcon, DragHandleIcon, LockIcon, CheckIcon } from '../components/WorkoutIcons';
+import { PencilIcon, ChevronIcon, LockIcon, CheckIcon } from '../components/WorkoutIcons';
 import { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
-type WheelField = 'workSeconds' | 'restSeconds' | 'sets' | 'reps';
-type WheelSelection = { exerciseId: string; field: WheelField } | null;
 
 function isRepBased(ex: { reps?: number | null; workSeconds: number }): boolean {
   return ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0;
@@ -14,106 +12,15 @@ function isRepBased(ex: { reps?: number | null; workSeconds: number }): boolean 
 
 export function WorkoutPreviewScreen({ route, navigation }: Props) {
   const { workout } = route.params;
-  const [exercises, setExercises] = useState(() => workout.exercises.map(exercise => ({ ...exercise })));
-  const [nameHeights, setNameHeights] = useState<Record<string, number>>({});
-  const [wheelSelection, setWheelSelection] = useState<WheelSelection>(null);
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const dragIndex = useRef<number | null>(null);
-  const dragOffset = useRef(0);
-  const nameInputs = useRef<Record<string, TextInput | null>>({});
-
-  const updateExercise = (id: string, field: 'name' | 'workSeconds' | 'restSeconds' | 'sets' | 'reps', value: string) => {
-    setExercises(currentExercises => currentExercises.map(exercise => {
-      if (exercise.id !== id) return exercise;
-      if (field === 'name') return { ...exercise, name: value };
-      return { ...exercise, [field]: Number.parseInt(value, 10) || 0 };
-    }));
-  };
 
   const onStart = () => {
-    navigation.replace('ActiveSession', { workout: { ...workout, exercises } });
+    navigation.replace('ActiveSession', { workout });
   };
 
-  const handleAddExercise = () => {
-    const newExercise = {
-      id: Math.random().toString(36).substring(2, 9),
-      name: '',
-      workSeconds: 30,
-      restSeconds: 15,
-      sets: 1,
-    };
-    setExercises(currentExercises => [...currentExercises, newExercise]);
-    setTimeout(() => nameInputs.current[newExercise.id]?.focus(), 80);
+  const handleEdit = () => {
+    navigation.navigate('WorkoutEditor', { workoutId: workout.id });
   };
 
-  const moveExercise = (index: number, direction: -1 | 1) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= exercises.length) return;
-    setExercises(currentExercises => {
-      const reordered = [...currentExercises];
-      [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
-      return reordered;
-    });
-  };
-
-  const createDragResponder = (index: number) => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
-      dragIndex.current = index;
-      dragOffset.current = 0;
-      setDraggingIndex(index);
-    },
-    onPanResponderMove: (_, gestureState) => {
-      if (dragIndex.current === null) return;
-      const delta = gestureState.dy - dragOffset.current;
-      if (delta <= -56 && dragIndex.current > 0) {
-        moveExercise(dragIndex.current, -1);
-        dragIndex.current -= 1;
-        dragOffset.current -= 56;
-      } else if (delta >= 56 && dragIndex.current < exercises.length - 1) {
-        moveExercise(dragIndex.current, 1);
-        dragIndex.current += 1;
-        dragOffset.current += 56;
-      }
-    },
-    onPanResponderRelease: () => {
-      dragIndex.current = null;
-      dragOffset.current = 0;
-      setDraggingIndex(null);
-    },
-    onPanResponderTerminate: () => {
-      dragIndex.current = null;
-      dragOffset.current = 0;
-      setDraggingIndex(null);
-    },
-  });
-
-  const selectedExercise = wheelSelection
-    ? exercises.find(exercise => exercise.id === wheelSelection.exerciseId)
-    : undefined;
-  const wheelValues = wheelSelection?.field === 'sets'
-    ? Array.from({ length: 20 }, (_, index) => index + 1)
-    : wheelSelection?.field === 'reps'
-      ? Array.from({ length: 100 }, (_, index) => index + 1)
-      : Array.from({ length: 301 }, (_, index) => index);
-  const selectedValue = selectedExercise && wheelSelection
-    ? selectedExercise[wheelSelection.field]
-    : 0;
-  const selectedWheelIndex = Math.max(0, wheelValues.indexOf(selectedValue ?? 0));
-  const wheelLabel = wheelSelection?.field === 'workSeconds'
-    ? 'WORK TIME'
-    : wheelSelection?.field === 'restSeconds'
-      ? 'REST TIME'
-      : wheelSelection?.field === 'reps'
-        ? 'REPS'
-        : 'SETS';
-
-  const commitWheelValue = (offsetY: number) => {
-    if (!wheelSelection) return;
-    const index = Math.max(0, Math.min(wheelValues.length - 1, Math.round(offsetY / 44)));
-    updateExercise(wheelSelection.exerciseId, wheelSelection.field, wheelValues[index].toString());
-  };
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
@@ -125,62 +32,41 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
               <ChevronIcon color="#94A3B8" size={18} direction="left" />
               <Text style={styles.backLabel}>Back</Text>
             </TouchableOpacity>
-            <Text style={styles.modeLabel}>READY</Text>
+            <View style={styles.headerRightGroup}>
+              <Text style={styles.modeLabel}>READY</Text>
+              <TouchableOpacity style={styles.editButton} onPress={handleEdit} accessibilityLabel="Edit workout">
+                <PencilIcon color="#94A3B8" size={14} />
+                <Text style={styles.editButtonLabel}>Edit</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.titleField}>
-            <Text style={styles.title}>{workout.name}</Text>
-            <PencilIcon />
+            <Text style={styles.title} numberOfLines={1}>{workout.name}</Text>
           </View>
         </View>
 
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>
-            EXERCISE LIST ({exercises.length} ITEMS{workout.rounds && workout.rounds > 1 ? ` • ${workout.rounds} ROUNDS` : ''})
+            EXERCISE LIST ({workout.exercises.length} ITEMS{workout.rounds && workout.rounds > 1 ? ` • ${workout.rounds} ROUNDS` : ''})
           </Text>
         </View>
         <View style={styles.exerciseList}>
-          {exercises.map((ex, index) => (
-            <View key={ex.id || index} style={[styles.exerciseRow, draggingIndex === index && styles.draggingRow]}>
+          {workout.exercises.map((ex, index) => (
+            <View key={ex.id || index} style={styles.exerciseRow}>
               <View style={styles.exerciseLeft}>
-                <View style={styles.dragHandle} {...createDragResponder(index).panHandlers}>
-                  <DragHandleIcon />
-                </View>
                 <Text style={styles.exerciseIndex}>{index + 1}</Text>
-                <TextInput
-                  ref={input => { nameInputs.current[ex.id] = input; }}
-                  style={[styles.exerciseName, { height: nameHeights[ex.id] }]}
-                  value={ex.name}
-                  onChangeText={value => updateExercise(ex.id, 'name', value)}
-                  placeholder="Exercise name"
-                  placeholderTextColor="#64748B"
-                  multiline
-                  scrollEnabled={false}
-                  onContentSizeChange={event => {
-                    const height = Math.max(20, event.nativeEvent.contentSize.height);
-                    setNameHeights(current => current[ex.id] === height ? current : { ...current, [ex.id]: height });
-                  }}
-                  selectionColor="#CCFF00"
-                />
+                <Text style={styles.exerciseName} numberOfLines={2}>{ex.name}</Text>
               </View>
               <View style={styles.metricsInputs}>
-                <TouchableOpacity
-                  style={[styles.metricInput, styles.workInput]}
-                  onPress={() => setWheelSelection({ exerciseId: ex.id, field: isRepBased(ex) ? 'reps' : 'workSeconds' })}
-                >
-                  <Text style={styles.workValue}>{isRepBased(ex) ? `${ex.reps}r` : `${ex.workSeconds}s`}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.metricInput, styles.restInput]}
-                  onPress={() => setWheelSelection({ exerciseId: ex.id, field: 'restSeconds' })}
-                >
-                  <Text style={styles.restValue}>{ex.restSeconds}s</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.metricInput, styles.setsInput]}
-                  onPress={() => setWheelSelection({ exerciseId: ex.id, field: 'sets' })}
-                >
-                  <Text style={styles.setsValue}>{ex.sets}×</Text>
-                </TouchableOpacity>
+                <View style={[styles.metricInput, styles.workInput]}>
+                  <Text style={styles.workValue} numberOfLines={1}>{isRepBased(ex) ? `${ex.reps}r` : `${ex.workSeconds}s`}</Text>
+                </View>
+                <View style={[styles.metricInput, styles.restInput]}>
+                  <Text style={styles.restValue} numberOfLines={1}>{ex.restSeconds}s</Text>
+                </View>
+                <View style={[styles.metricInput, styles.setsInput]}>
+                  <Text style={styles.setsValue} numberOfLines={1}>{ex.sets}×</Text>
+                </View>
                 <View style={styles.lockIcon}><LockIcon /></View>
               </View>
             </View>
@@ -188,57 +74,12 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
         </View>
       </ScrollView>
 
-      <TouchableOpacity style={styles.addExerciseButton} onPress={handleAddExercise}>
-        <Text style={styles.addExerciseText}>+ Add Exercise</Text>
-      </TouchableOpacity>
       <View style={styles.footer}>
         <TouchableOpacity style={styles.startButton} onPress={onStart}>
           <CheckIcon color="#09090A" size={20} />
           <Text style={styles.startLabel}>START WORKOUT</Text>
         </TouchableOpacity>
       </View>
-      <Modal
-        visible={wheelSelection !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setWheelSelection(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.wheelSheet}>
-            <View style={styles.wheelHeader}>
-              <Text style={styles.wheelTitle}>{wheelLabel}</Text>
-              <TouchableOpacity onPress={() => setWheelSelection(null)}>
-                <Text style={styles.wheelDone}>DONE</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.wheelViewport}>
-              <ScrollView
-                key={`${wheelSelection?.exerciseId}-${wheelSelection?.field}`}
-                showsVerticalScrollIndicator={false}
-                snapToInterval={44}
-                decelerationRate="fast"
-                contentOffset={{ x: 0, y: selectedWheelIndex * 44 }}
-                onMomentumScrollEnd={event => commitWheelValue(event.nativeEvent.contentOffset.y)}
-                onScrollEndDrag={event => commitWheelValue(event.nativeEvent.contentOffset.y)}
-                contentContainerStyle={styles.wheelContent}
-              >
-                {wheelValues.map(value => (
-                  <View key={value} style={styles.wheelRow}>
-                    <Text style={styles.wheelValue}>
-                      {wheelSelection?.field === 'sets'
-                        ? `${value}×`
-                        : wheelSelection?.field === 'reps'
-                          ? `${value} reps`
-                          : `${value}s`}
-                    </Text>
-                  </View>
-                ))}
-              </ScrollView>
-              <View pointerEvents="none" style={styles.wheelSelectionFrame} />
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -278,12 +119,34 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   modeLabel: {
     color: '#CCFF00',
     fontFamily: 'Geist',
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 18,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 7,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+  },
+  editButtonLabel: {
+    color: '#94A3B8',
+    fontFamily: 'Geist',
+    fontSize: 12,
+    fontWeight: '700',
   },
   titleField: {
     height: 39,
@@ -327,24 +190,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  draggingRow: {
-    backgroundColor: '#121214',
-    borderColor: '#CCFF00',
-  },
   exerciseLeft: {
     flex: 1,
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  dragHandle: {
-    width: 24,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: -4,
-    marginRight: -4,
   },
   exerciseIndex: {
     width: 18,
@@ -356,25 +207,20 @@ const styles = StyleSheet.create({
   },
   exerciseName: {
     flex: 1,
-    width: 0,
     minWidth: 0,
-    padding: 0,
-    margin: 0,
     color: '#FFFFFF',
     fontFamily: 'Geist',
     fontSize: 15,
     fontWeight: '600',
     lineHeight: 20,
-    textAlign: 'left',
-    textAlignVertical: 'center',
-    includeFontPadding: false,
   },
   metricsInputs: {
-    width: 174,
+    minWidth: 174,
     height: 26,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginLeft: 12,
   },
   metricInput: {
     height: 25,
@@ -387,15 +233,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   workInput: {
-    width: 40,
+    minWidth: 40,
     backgroundColor: '#121214',
   },
   restInput: {
-    width: 40,
+    minWidth: 40,
     backgroundColor: '#121214',
   },
   setsInput: {
-    width: 32,
+    minWidth: 40,
     backgroundColor: '#121214',
   },
   workValue: {
@@ -424,74 +270,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.68)',
-    justifyContent: 'flex-end',
-  },
-  wheelSheet: {
-    height: 300,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 24,
-    backgroundColor: '#121214',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderTopWidth: 1,
-    borderColor: '#1F1F24',
-  },
-  wheelHeader: {
-    height: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  wheelTitle: {
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  wheelDone: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  wheelViewport: {
-    height: 220,
-    overflow: 'hidden',
-    borderRadius: 12,
-    backgroundColor: '#09090A',
-  },
-  wheelContent: {
-    paddingVertical: 88,
-  },
-  wheelRow: {
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  wheelValue: {
-    color: '#94A3B8',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 24,
-  },
-  wheelSelectionFrame: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    top: 88,
-    height: 44,
-    borderWidth: 1,
-    borderColor: '#CCFF00',
-    borderRadius: 8,
-  },
   footer: {
     height: 112,
     paddingTop: 16,
@@ -500,24 +278,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#09090A',
     borderTopWidth: 1,
     borderTopColor: '#1F1F24',
-  },
-  addExerciseButton: {
-    height: 58,
-    flexShrink: 0,
-    backgroundColor: '#0B0B0B',
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 5,
-    elevation: 5,
-  },
-  addExerciseText: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
   },
   startButton: {
     height: 54,
