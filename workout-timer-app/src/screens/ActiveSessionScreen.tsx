@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, RepSetLog } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
@@ -7,8 +7,11 @@ import { useAudio } from '../useAudio';
 import { expandWorkout } from '../workoutLogic';
 import { addHistoryEntry } from '../storage';
 import { SkipIcon, PlayIcon, PauseIcon } from '../components/WorkoutIcons';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
+type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
+type NavAction = Readonly<{ type: string; payload?: object; source?: string; target?: string }>;
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -24,6 +27,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const [weightInputVisible, setWeightInputVisible] = useState(false);
   const [weightInputValue, setWeightInputValue] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [quitStep, setQuitStep] = useState<QuitStep>('closed');
 
   // Auto-start on mount
   useEffect(() => {
@@ -34,53 +38,44 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // ourselves (finishing the workout), so the quit-confirmation guard below
   // lets it through instead of intercepting it.
   const allowLeaveRef = useRef(false);
+  const wasRunningRef = useRef(false);
+  const pendingNavActionRef = useRef<NavAction | null>(null);
 
-  const promptQuit = (action: Readonly<{ type: string; payload?: object; source?: string; target?: string }>) => {
-    const wasRunning = engine.timerState === 'running';
-    if (wasRunning) engine.pause();
+  const resumeIfNeeded = () => {
+    if (wasRunningRef.current) engine.resume();
+  };
 
-    const resumeIfNeeded = () => {
-      if (wasRunning) engine.resume();
-    };
-    const proceed = () => {
-      allowLeaveRef.current = true;
-      navigation.dispatch(action);
-    };
+  const cancelQuit = () => {
+    setQuitStep('closed');
+    pendingNavActionRef.current = null;
+    resumeIfNeeded();
+  };
 
-    Alert.alert(
-      'Quit workout?',
-      'Are you sure you want to quit this workout? Your progress in this session will end.',
-      [
-        { text: 'Keep Going', style: 'cancel', onPress: resumeIfNeeded },
-        {
-          text: 'Quit',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Save to history?',
-              'Do you want to save this partial session to your workout history?',
-              [
-                { text: "Don't Save", style: 'destructive', onPress: proceed },
-                {
-                  text: 'Save',
-                  onPress: () => {
-                    addHistoryEntry({
-                      id: generateId(),
-                      workout,
-                      completedAt: Date.now(),
-                      totalElapsedSeconds: engine.totalElapsed,
-                      repLogs,
-                    });
-                    proceed();
-                  },
-                },
-              ],
-            );
-          },
-        },
-      ],
-      { cancelable: true, onDismiss: resumeIfNeeded },
-    );
+  const proceedWithLeave = () => {
+    const action = pendingNavActionRef.current;
+    setQuitStep('closed');
+    pendingNavActionRef.current = null;
+    if (!action) return;
+    allowLeaveRef.current = true;
+    navigation.dispatch(action);
+  };
+
+  const confirmSaveToHistory = () => {
+    addHistoryEntry({
+      id: generateId(),
+      workout,
+      completedAt: Date.now(),
+      totalElapsedSeconds: engine.totalElapsed,
+      repLogs,
+    });
+    proceedWithLeave();
+  };
+
+  const promptQuit = (action: NavAction) => {
+    wasRunningRef.current = engine.timerState === 'running';
+    if (wasRunningRef.current) engine.pause();
+    pendingNavActionRef.current = action;
+    setQuitStep('confirmQuit');
   };
 
   // Keep the listener in sync with the latest closure (engine state, repLogs, etc.)
@@ -309,6 +304,26 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
       </View>
+      <ConfirmDialog
+        visible={quitStep === 'confirmQuit'}
+        title="Quit workout?"
+        message="Are you sure you want to quit this workout? Your progress in this session will end."
+        onRequestClose={cancelQuit}
+        actions={[
+          { label: 'Quit', variant: 'destructive', onPress: () => setQuitStep('confirmSaveHistory') },
+          { label: 'Keep Going', variant: 'neutral', onPress: cancelQuit },
+        ]}
+      />
+      <ConfirmDialog
+        visible={quitStep === 'confirmSaveHistory'}
+        title="Save to history?"
+        message="Do you want to save this partial session to your workout history?"
+        onRequestClose={cancelQuit}
+        actions={[
+          { label: 'Save', variant: 'primary', onPress: confirmSaveToHistory },
+          { label: "Don't Save", variant: 'destructive', onPress: proceedWithLeave },
+        ]}
+      />
     </View>
   );
 }

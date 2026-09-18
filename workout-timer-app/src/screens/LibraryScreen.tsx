@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout } from '../types';
 import { loadWorkouts, deleteWorkout } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
@@ -24,6 +25,7 @@ const SORT_LABELS: Record<SortMode, string> = {
 export function LibraryScreen({ navigation }: Props) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<Workout | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
@@ -82,25 +84,24 @@ export function LibraryScreen({ navigation }: Props) {
   };
 
   const handleDelete = (workout: Workout) => {
-    Alert.alert('Delete workout?', `Remove "${workout.name}"? You can undo this for a few seconds.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          const index = workouts.findIndex(w => w.id === workout.id);
-          setWorkouts(current => current.filter(w => w.id !== workout.id));
-          setPendingDelete({ workout, index });
-          pendingDeleteIdRef.current = workout.id;
-          if (deleteTimer.current) clearTimeout(deleteTimer.current);
-          deleteTimer.current = setTimeout(() => {
-            deleteWorkout(workout.id);
-            pendingDeleteIdRef.current = null;
-            setPendingDelete(null);
-          }, 4000);
-        },
-      },
-    ]);
+    setDeleteConfirmTarget(workout);
+  };
+
+  const confirmDelete = () => {
+    const workout = deleteConfirmTarget;
+    setDeleteConfirmTarget(null);
+    if (!workout) return;
+
+    const index = workouts.findIndex(w => w.id === workout.id);
+    setWorkouts(current => current.filter(w => w.id !== workout.id));
+    setPendingDelete({ workout, index });
+    pendingDeleteIdRef.current = workout.id;
+    if (deleteTimer.current) clearTimeout(deleteTimer.current);
+    deleteTimer.current = setTimeout(() => {
+      deleteWorkout(workout.id);
+      pendingDeleteIdRef.current = null;
+      setPendingDelete(null);
+    }, 4000);
   };
 
   const handleUndoDelete = () => {
@@ -150,7 +151,6 @@ export function LibraryScreen({ navigation }: Props) {
           >
             <PencilIcon />
           </TouchableOpacity>
-          <ChevronIcon color="#475569" size={16} direction="right" />
         </View>
       </TouchableOpacity>
     );
@@ -309,6 +309,16 @@ export function LibraryScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       )}
+      <ConfirmDialog
+        visible={deleteConfirmTarget !== null}
+        title="Delete workout?"
+        message={`Remove "${deleteConfirmTarget?.name ?? ''}"? You can undo this for a few seconds.`}
+        onRequestClose={() => setDeleteConfirmTarget(null)}
+        actions={[
+          { label: 'Delete', variant: 'destructive', onPress: confirmDelete },
+          { label: 'Cancel', variant: 'neutral', onPress: () => setDeleteConfirmTarget(null) },
+        ]}
+      />
     </View>
   );
 }
@@ -429,11 +439,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   cardActions: {
-    width: 44,
-    height: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     marginLeft: 12,
   },
   emptyState: {

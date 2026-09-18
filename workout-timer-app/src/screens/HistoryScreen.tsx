@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList, Workout, WorkoutHistoryEntry } from '../types';
 import { loadHistory, deleteHistoryEntry } from '../storage';
 import { ChevronIcon, DumbbellIcon, PlayIcon, TrashIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
 type Section = { header: string; entries: WorkoutHistoryEntry[] };
@@ -118,6 +119,7 @@ type PendingDelete = { entry: WorkoutHistoryEntry; index: number };
 export function HistoryScreen({ navigation }: Props) {
   const [history, setHistory] = useState<WorkoutHistoryEntry[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<WorkoutHistoryEntry | null>(null);
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
@@ -140,29 +142,24 @@ export function HistoryScreen({ navigation }: Props) {
   };
 
   const handleDeleteEntry = (entry: WorkoutHistoryEntry) => {
-    Alert.alert(
-      'Delete this session?',
-      `Remove "${entry.workout.name || 'Workout'}" from your history? You can undo this for a few seconds.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            const index = history.findIndex(h => h.id === entry.id);
-            setHistory(current => current.filter(h => h.id !== entry.id));
-            setPendingDelete({ entry, index });
-            pendingDeleteIdRef.current = entry.id;
-            if (deleteTimer.current) clearTimeout(deleteTimer.current);
-            deleteTimer.current = setTimeout(() => {
-              deleteHistoryEntry(entry.id);
-              pendingDeleteIdRef.current = null;
-              setPendingDelete(null);
-            }, 4000);
-          },
-        },
-      ],
-    );
+    setDeleteConfirmTarget(entry);
+  };
+
+  const confirmDeleteEntry = () => {
+    const entry = deleteConfirmTarget;
+    setDeleteConfirmTarget(null);
+    if (!entry) return;
+
+    const index = history.findIndex(h => h.id === entry.id);
+    setHistory(current => current.filter(h => h.id !== entry.id));
+    setPendingDelete({ entry, index });
+    pendingDeleteIdRef.current = entry.id;
+    if (deleteTimer.current) clearTimeout(deleteTimer.current);
+    deleteTimer.current = setTimeout(() => {
+      deleteHistoryEntry(entry.id);
+      pendingDeleteIdRef.current = null;
+      setPendingDelete(null);
+    }, 4000);
   };
 
   const handleUndoDeleteEntry = () => {
@@ -226,6 +223,16 @@ export function HistoryScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       )}
+      <ConfirmDialog
+        visible={deleteConfirmTarget !== null}
+        title="Delete this session?"
+        message={`Remove "${deleteConfirmTarget?.workout.name || 'Workout'}" from your history? You can undo this for a few seconds.`}
+        onRequestClose={() => setDeleteConfirmTarget(null)}
+        actions={[
+          { label: 'Delete', variant: 'destructive', onPress: confirmDeleteEntry },
+          { label: 'Cancel', variant: 'neutral', onPress: () => setDeleteConfirmTarget(null) },
+        ]}
+      />
     </View>
   );
 }

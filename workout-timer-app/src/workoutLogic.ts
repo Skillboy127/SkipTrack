@@ -28,12 +28,18 @@ export function expandWorkout(workout: Workout): Phase[] {
           });
         }
 
-        // Suppress rest after the very last set of the very last exercise of the very last round
+        // Suppress the normal per-exercise rest after the very last set of the very
+        // last exercise of a round when a round-rest phase is about to be inserted
+        // instead (or when it's the very end of the whole workout), so the two
+        // rests don't stack.
         const isLastRound = round === totalRounds - 1;
         const isLastExercise = i === workout.exercises.length - 1;
         const isLastSet = set === ex.sets - 1;
+        const isEndOfRound = isLastExercise && isLastSet;
+        const willInsertRoundRest = !isLastRound && restBetweenRoundsSeconds != null && restBetweenRoundsSeconds > 0;
+        const suppressExerciseRest = (isLastRound && isEndOfRound) || (isEndOfRound && willInsertRoundRest);
 
-        if (!(isLastRound && isLastExercise && isLastSet) && ex.restSeconds > 0) {
+        if (!suppressExerciseRest && ex.restSeconds > 0) {
           phases.push({
             type: 'rest',
             exerciseName: ex.name,
