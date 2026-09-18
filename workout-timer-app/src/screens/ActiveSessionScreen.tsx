@@ -1,13 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, BackHandler } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, RepSetLog } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { expandWorkout } from '../workoutLogic';
-import { SkipIcon, PlayIcon, PauseIcon } from '../components/WorkoutIcons';
+import { addHistoryEntry } from '../storage';
+import { SkipIcon, PlayIcon, PauseIcon, CloseIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
+
+const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
@@ -26,6 +29,63 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     engine.start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleQuitPress = () => {
+    const wasRunning = engine.timerState === 'running';
+    if (wasRunning) engine.pause();
+
+    const resumeIfNeeded = () => {
+      if (wasRunning) engine.resume();
+    };
+
+    Alert.alert(
+      'Quit workout?',
+      'Are you sure you want to quit this workout? Your progress in this session will end.',
+      [
+        { text: 'Keep Going', style: 'cancel', onPress: resumeIfNeeded },
+        {
+          text: 'Quit',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Save to history?',
+              'Do you want to save this partial session to your workout history?',
+              [
+                { text: "Don't Save", style: 'destructive', onPress: () => navigation.goBack() },
+                {
+                  text: 'Save',
+                  onPress: () => {
+                    addHistoryEntry({
+                      id: generateId(),
+                      workout,
+                      completedAt: Date.now(),
+                      totalElapsedSeconds: engine.totalElapsed,
+                      repLogs,
+                    });
+                    navigation.goBack();
+                  },
+                },
+              ],
+            );
+          },
+        },
+      ],
+      { cancelable: true, onDismiss: resumeIfNeeded },
+    );
+  };
+
+  // Keep the hardware back button (Android) in sync with the latest quit handler
+  // without tearing down and re-registering the listener on every timer tick.
+  const handleQuitPressRef = useRef(handleQuitPress);
+  handleQuitPressRef.current = handleQuitPress;
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleQuitPressRef.current();
+      return true;
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Reset per-set weight entry whenever the phase advances
   useEffect(() => {
@@ -101,6 +161,11 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         </View>
       )}
       <View style={styles.statusBarSpacer} />
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.quitButton} onPress={handleQuitPress} hitSlop={8} accessibilityLabel="Quit workout">
+          <CloseIcon color="#94A3B8" size={14} />
+        </TouchableOpacity>
+      </View>
       <View style={styles.progressTracker}>
         <View style={styles.progressLabels}>
           <Text style={styles.workoutTag}>{workout.name || 'WORKOUT'}</Text>
@@ -240,6 +305,20 @@ const styles = StyleSheet.create({
   },
   statusBarSpacer: {
     height: 44,
+  },
+  topBar: {
+    height: 36,
+    paddingHorizontal: 20,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  quitButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#121214',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   progressTracker: {
     height: 55,
