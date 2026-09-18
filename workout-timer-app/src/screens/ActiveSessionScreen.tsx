@@ -67,14 +67,18 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     }
   }, [preStartSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Announce the next exercise as soon as a rest phase begins, giving the full
-  // rest duration to hear it — not just the last second of the countdown.
+  // Announce the next exercise (and how long/many it is) as soon as a rest
+  // phase begins, giving the full rest duration to hear it — not just the
+  // last second of the countdown.
   useEffect(() => {
     if (!engine.currentPhase || engine.currentPhase.type !== 'rest') return;
     const upcoming = phases[engine.currentPhaseIndex + 1];
-    if (upcoming?.exerciseName) {
-      speak(`Next up, ${upcoming.exerciseName}`);
-    }
+    if (!upcoming?.exerciseName) return;
+
+    const amount = upcoming.mode === 'reps'
+      ? `${upcoming.reps} rep${upcoming.reps === 1 ? '' : 's'}`
+      : `${Math.round(upcoming.duration)} second${Math.round(upcoming.duration) === 1 ? '' : 's'}`;
+    speak(`Up next, ${upcoming.exerciseName} for ${amount}`);
   }, [engine.currentPhaseIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Set right before any navigation away from this screen that we initiated
