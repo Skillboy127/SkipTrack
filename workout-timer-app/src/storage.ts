@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Workout } from './types';
+import { RepSetLog, Workout, WorkoutHistoryEntry } from './types';
 
 const WORKOUTS_KEY = '@workouts_v1';
+const HISTORY_KEY = '@workout_history_v1';
+const MAX_HISTORY_ENTRIES = 200;
 
 function normalizeWorkout(value: unknown): Workout | null {
   if (!value || typeof value !== 'object') return null;
@@ -75,4 +77,58 @@ export async function deleteWorkout(id: string): Promise<void> {
   const workouts = await loadWorkouts();
   const filtered = workouts.filter(w => w.id !== id);
   await saveWorkouts(filtered);
+}
+
+function normalizeRepSetLog(value: unknown): RepSetLog | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<RepSetLog>;
+  if (typeof candidate.exerciseName !== 'string' || typeof candidate.reps !== 'number') return null;
+  return {
+    exerciseName: candidate.exerciseName,
+    setNumber: Math.max(1, Math.floor(Number(candidate.setNumber) || 1)),
+    reps: Math.max(0, candidate.reps),
+    weight: candidate.weight == null ? null : Math.max(0, Number(candidate.weight) || 0),
+  };
+}
+
+function normalizeHistoryEntry(value: unknown): WorkoutHistoryEntry | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<WorkoutHistoryEntry>;
+  const workout = normalizeWorkout(candidate.workout);
+  if (typeof candidate.id !== 'string' || !workout || typeof candidate.completedAt !== 'number') return null;
+
+  return {
+    id: candidate.id,
+    workout,
+    completedAt: candidate.completedAt,
+    totalElapsedSeconds: Math.max(0, Number(candidate.totalElapsedSeconds) || 0),
+    repLogs: Array.isArray(candidate.repLogs)
+      ? candidate.repLogs.map(normalizeRepSetLog).filter((log): log is RepSetLog => log !== null)
+      : [],
+  };
+}
+
+export async function loadHistory(): Promise<WorkoutHistoryEntry[]> {
+  try {
+    const jsonValue = await AsyncStorage.getItem(HISTORY_KEY);
+    if (jsonValue != null) {
+      const parsed: unknown = JSON.parse(jsonValue);
+      return Array.isArray(parsed)
+        ? parsed.map(normalizeHistoryEntry).filter((entry): entry is WorkoutHistoryEntry => entry !== null)
+        : [];
+    }
+  } catch (e) {
+    console.error('Failed to load workout history', e);
+  }
+  return [];
+}
+
+export async function addHistoryEntry(entry: WorkoutHistoryEntry): Promise<void> {
+  try {
+    const history = await loadHistory();
+    const updated = [entry, ...history].slice(0, MAX_HISTORY_ENTRIES);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.error('Failed to save workout history entry', e);
+  }
 }

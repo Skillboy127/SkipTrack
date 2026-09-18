@@ -13,6 +13,7 @@ import { ImportScreen } from './src/screens/ImportScreen';
 import { WorkoutPreviewScreen } from './src/screens/WorkoutPreviewScreen';
 import { ActiveSessionScreen } from './src/screens/ActiveSessionScreen';
 import { CompletionScreen } from './src/screens/CompletionScreen';
+import { HistoryScreen } from './src/screens/HistoryScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -104,10 +105,15 @@ export default function App() {
             component={ActiveSessionScreen} 
             options={{ headerShown: false, gestureEnabled: false }} 
           />
-          <Stack.Screen 
-            name="Completion" 
-            component={CompletionScreen} 
-            options={{ headerShown: false, gestureEnabled: false }} 
+          <Stack.Screen
+            name="Completion"
+            component={CompletionScreen}
+            options={{ headerShown: false, gestureEnabled: false }}
+          />
+          <Stack.Screen
+            name="History"
+            component={HistoryScreen}
+            options={{ headerShown: false }}
           />
         </Stack.Navigator>
       </NavigationContainer>

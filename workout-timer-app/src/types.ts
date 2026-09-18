@@ -30,6 +30,14 @@ export type RepSetLog = {
   weight: number | null;
 };
 
+export type WorkoutHistoryEntry = {
+  id: string;
+  workout: Workout; // full snapshot as it was at completion time, so "Repeat" still works after edits/deletes
+  completedAt: number; // epoch ms
+  totalElapsedSeconds: number;
+  repLogs: RepSetLog[];
+};
+
 export type RootStackParamList = {
   Library: undefined;
   WorkoutEditor: { workoutId?: string, draftWorkout?: Workout };
@@ -37,4 +45,5 @@ export type RootStackParamList = {
   WorkoutPreview: { workout: Workout };
   ActiveSession: { workout: Workout };
   Completion: { totalElapsed: number; workout: Workout; repLogs?: RepSetLog[] };
+  History: undefined;
 };

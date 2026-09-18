@@ -126,17 +126,28 @@ export function LibraryScreen({ navigation }: Props) {
             <DumbbellIcon color="#CCFF00" size={22} />
             <Text style={styles.title}>My Workouts</Text>
           </View>
-          {workouts.length > 0 && (
+          <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.importHeaderBtn}
-              onPress={() => navigation.navigate('ImportVideo')}
+              style={styles.historyHeaderBtn}
+              onPress={() => navigation.navigate('History')}
               hitSlop={8}
-              accessibilityLabel="Import workout"
+              accessibilityLabel="View workout history"
             >
-              <DownloadIcon color="#CCFF00" size={14} />
-              <Text style={styles.importHeaderLabel}>Import</Text>
+              <ClockIcon color="#94A3B8" size={14} />
+              <Text style={styles.historyHeaderLabel}>History</Text>
             </TouchableOpacity>
-          )}
+            {workouts.length > 0 && (
+              <TouchableOpacity
+                style={styles.importHeaderBtn}
+                onPress={() => navigation.navigate('ImportVideo')}
+                hitSlop={8}
+                accessibilityLabel="Import workout"
+              >
+                <DownloadIcon color="#CCFF00" size={14} />
+                <Text style={styles.importHeaderLabel}>Import</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
       <FlatList
@@ -454,6 +465,28 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 106,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  historyHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+  },
+  historyHeaderLabel: {
+    color: '#94A3B8',
+    fontFamily: 'Geist',
+    fontSize: 13,
+    fontWeight: '700',
   },
   importHeaderBtn: {
     flexDirection: 'row',

@@ -1,11 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Share } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, RepSetLog } from '../types';
+import { RootStackParamList } from '../types';
 import { expandWorkout } from '../workoutLogic';
-import { CheckIcon, ChevronIcon } from '../components/WorkoutIcons';
+import { addHistoryEntry } from '../storage';
+import { CheckIcon } from '../components/WorkoutIcons';
+import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Completion'>;
+
+const generateId = () => Math.random().toString(36).substring(2, 9);
 
 const formatTime = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -13,61 +17,26 @@ const formatTime = (seconds: number) => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-function groupRepLogs(repLogs: RepSetLog[]): { exerciseName: string; sets: RepSetLog[] }[] {
-  const order: string[] = [];
-  const byExercise = new Map<string, RepSetLog[]>();
-
-  repLogs.forEach(log => {
-    if (!byExercise.has(log.exerciseName)) {
-      byExercise.set(log.exerciseName, []);
-      order.push(log.exerciseName);
-    }
-    byExercise.get(log.exerciseName)!.push(log);
-  });
-
-  return order.map(exerciseName => ({ exerciseName, sets: byExercise.get(exerciseName)! }));
-}
-
-function ExerciseLogCard({ exerciseName, sets }: { exerciseName: string; sets: RepSetLog[] }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const handleShare = () => {
-    const lines = sets.map((s, i) => `Set ${i + 1}: ${s.reps} reps${s.weight != null ? ` @ ${s.weight} lb` : ''}`);
-    Share.share({ message: `${exerciseName}\n${lines.join('\n')}` }).catch(() => {});
-  };
-
-  return (
-    <View style={styles.logCard}>
-      <TouchableOpacity style={styles.logCardHeader} onPress={() => setExpanded(e => !e)} accessibilityLabel={`Toggle log for ${exerciseName}`}>
-        <Text style={styles.logExerciseName} numberOfLines={1}>{exerciseName}</Text>
-        <View style={styles.logDisclosureGroup}>
-          <Text style={styles.logDisclosure}>{expanded ? 'Hide Log' : 'View Log'}</Text>
-          <ChevronIcon color="#CCFF00" size={12} direction={expanded ? 'up' : 'down'} />
-        </View>
-      </TouchableOpacity>
-      {expanded && (
-        <View style={styles.logDetail}>
-          {sets.map((s, i) => (
-            <View key={i} style={styles.logRow}>
-              <Text style={styles.logRowLabel}>Set {i + 1}</Text>
-              <Text style={styles.logRowValue}>{s.reps} reps{s.weight != null ? ` @ ${s.weight} lb` : ''}</Text>
-            </View>
-          ))}
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-            <Text style={styles.shareButtonText}>Share as text</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
-  );
-}
-
 export function CompletionScreen({ route, navigation }: Props) {
   const { totalElapsed, workout, repLogs = [] } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
   const activeSeconds = phases.filter(phase => phase.type === 'work').reduce((total, phase) => total + phase.duration, 0);
   const restSeconds = phases.filter(phase => phase.type === 'rest').reduce((total, phase) => total + phase.duration, 0);
   const groupedLogs = useMemo(() => groupRepLogs(repLogs), [repLogs]);
+
+  // Record this session to history exactly once, regardless of re-renders.
+  const savedToHistoryRef = useRef(false);
+  useEffect(() => {
+    if (savedToHistoryRef.current) return;
+    savedToHistoryRef.current = true;
+    addHistoryEntry({
+      id: generateId(),
+      workout,
+      completedAt: Date.now(),
+      totalElapsedSeconds: totalElapsed,
+      repLogs,
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const summary = (
     <>
@@ -138,15 +107,4 @@ const styles = StyleSheet.create({
   doneLabel: { color: '#09090A', fontSize: 18, fontWeight: '700', lineHeight: 23, textTransform: 'uppercase' },
   logsSection: { paddingHorizontal: 24, gap: 12 },
   logsSectionTitle: { color: '#94A3B8', fontSize: 11, fontWeight: '700', lineHeight: 14, textTransform: 'uppercase' },
-  logCard: { borderWidth: 1, borderColor: '#1F1F24', borderRadius: 12, backgroundColor: '#121214', overflow: 'hidden' },
-  logCardHeader: { paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  logExerciseName: { flex: 1, color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  logDisclosureGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  logDisclosure: { color: '#CCFF00', fontSize: 12, fontWeight: '700' },
-  logDetail: { paddingHorizontal: 16, paddingBottom: 14, gap: 8, borderTopWidth: 1, borderTopColor: '#1F1F24' },
-  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10 },
-  logRowLabel: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-  logRowValue: { color: '#FFFFFF', fontFamily: 'monospace', fontSize: 13, fontWeight: '700' },
-  shareButton: { marginTop: 4, height: 40, borderRadius: 10, borderWidth: 1, borderColor: '#1F1F24', alignItems: 'center', justifyContent: 'center' },
-  shareButtonText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
 });
