@@ -32,13 +32,10 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
               <ChevronIcon color="#94A3B8" size={18} direction="left" />
               <Text style={styles.backLabel}>Back</Text>
             </TouchableOpacity>
-            <View style={styles.headerRightGroup}>
-              <Text style={styles.modeLabel}>READY</Text>
-              <TouchableOpacity style={styles.editButton} onPress={handleEdit} accessibilityLabel="Edit workout">
-                <PencilIcon color="#94A3B8" size={14} />
-                <Text style={styles.editButtonLabel}>Edit</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.editButton} onPress={handleEdit} accessibilityLabel="Edit workout">
+              <PencilIcon color="#94A3B8" size={14} />
+              <Text style={styles.editButtonLabel}>Edit</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.titleField}>
             <Text style={styles.title} numberOfLines={1}>{workout.name}</Text>
@@ -96,19 +93,18 @@ const styles = StyleSheet.create({
     height: 44,
   },
   topNavigation: {
-    height: 99,
     paddingHorizontal: 20,
     paddingVertical: 12,
     gap: 16,
   },
   headerRow: {
-    height: 20,
+    minHeight: 28,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   backAction: {
-    height: 20,
+    height: 28,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -119,24 +115,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
-  headerRightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  modeLabel: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
   editButton: {
+    height: 28,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 4,
     borderRadius: 7,
     backgroundColor: '#121214',
     borderWidth: 1,
@@ -147,6 +131,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Geist',
     fontSize: 12,
     fontWeight: '700',
+    lineHeight: 16,
   },
   titleField: {
     height: 39,
