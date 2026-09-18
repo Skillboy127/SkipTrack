@@ -3,7 +3,7 @@ import { Phase } from './types';
 
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 
-type CountdownListener = (secondsRemaining: number, phase: Phase, nextPhase: Phase | undefined) => void;
+type CountdownListener = (secondsRemaining: number) => void;
 
 export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?: CountdownListener) {
   const [timerState, setTimerState] = useState<TimerState>('idle');
@@ -167,9 +167,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
         lastBeepTimeRef.current = ceilRemaining;
         // Fallback: uncomment to use the beep sound instead of the spoken countdown.
         // onBeepRef.current();
-        const currentPhase = phasesRef.current[phaseIndexRef.current];
-        const nextPhase = phasesRef.current[phaseIndexRef.current + 1];
-        if (currentPhase) onCountdownRef.current?.(ceilRemaining, currentPhase, nextPhase);
+        onCountdownRef.current?.(ceilRemaining);
       }
 
       if (newRemaining <= 0) {

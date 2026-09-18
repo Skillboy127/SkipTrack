@@ -22,7 +22,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
 
   const { playBeep } = useAudio();
   const [ttsEnabled, setTtsEnabled] = useState(true);
-  const { speakCountdown } = useSpeech(ttsEnabled);
+  const { speak, speakCountdown } = useSpeech(ttsEnabled);
   const engine = useTimerEngine(phases, playBeep, speakCountdown);
 
   const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
@@ -31,16 +31,49 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const [weightInputValue, setWeightInputValue] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [quitStep, setQuitStep] = useState<QuitStep>('closed');
+  // Seconds left in the "get ready" countdown shown before the workout timer
+  // actually starts; null once it's finished and the real session has begun.
+  const [preStartSeconds, setPreStartSeconds] = useState<number | null>(3);
 
   // Load the user's TTS preference (defaults to on)
   useEffect(() => {
     loadTtsEnabled().then(setTtsEnabled);
   }, []);
 
-  // Auto-start on mount
+  // Give the user a spoken 3-2-1 "get ready" countdown before the first phase's
+  // timer actually starts, so there's time to get into position.
   useEffect(() => {
-    engine.start();
+    speak('three');
+    const interval = setInterval(() => {
+      setPreStartSeconds(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval);
+          return null;
+        }
+        const next = prev - 1;
+        speak(next === 2 ? 'two' : 'one');
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Start the actual workout timer once the "get ready" countdown finishes
+  useEffect(() => {
+    if (preStartSeconds === null) {
+      engine.start();
+    }
+  }, [preStartSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Announce the next exercise as soon as a rest phase begins, giving the full
+  // rest duration to hear it — not just the last second of the countdown.
+  useEffect(() => {
+    if (!engine.currentPhase || engine.currentPhase.type !== 'rest') return;
+    const upcoming = phases[engine.currentPhaseIndex + 1];
+    if (upcoming?.exerciseName) {
+      speak(`Next up, ${upcoming.exerciseName}`);
+    }
+  }, [engine.currentPhaseIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Set right before any navigation away from this screen that we initiated
   // ourselves (finishing the workout), so the quit-confirmation guard below
@@ -132,6 +165,20 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         >
           <Text style={styles.emptySessionButtonText}>GO BACK</Text>
         </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (preStartSeconds !== null) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.getReadyContainer}>
+          <Text style={styles.getReadyLabel}>GET READY</Text>
+          <Text style={styles.getReadyCount}>{preStartSeconds}</Text>
+          <Text style={styles.getReadyHint} numberOfLines={2}>
+            {engine.currentPhase.exerciseName} starts in...
+          </Text>
+        </View>
       </View>
     );
   }
@@ -659,5 +706,33 @@ const styles = StyleSheet.create({
     color: '#09090A',
     fontSize: 14,
     fontWeight: '700',
+  },
+  getReadyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 20,
+  },
+  getReadyLabel: {
+    color: '#94A3B8',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  getReadyCount: {
+    color: '#CCFF00',
+    fontFamily: 'monospace',
+    fontSize: 140,
+    fontWeight: '800',
+    lineHeight: 140,
+    fontVariant: ['tabular-nums'],
+  },
+  getReadyHint: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });
