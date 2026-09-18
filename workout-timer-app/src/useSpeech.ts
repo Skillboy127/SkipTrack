@@ -17,6 +17,16 @@ export function useSpeech(enabled: boolean) {
     if (!enabled) Speech.stop();
   }, [enabled]);
 
+  // Prime the native TTS engine as soon as this screen mounts. Some Android TTS
+  // engines silently drop the very first speak() call while they finish their
+  // async init, which otherwise shows up as the first phase's "three" going
+  // missing while every later phase counts down normally.
+  useEffect(() => {
+    if (enabledRef.current) {
+      Speech.speak(' ', { volume: 0.01, rate: 1.0 });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     return () => {
       Speech.stop();
