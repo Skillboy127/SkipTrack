@@ -223,15 +223,14 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   };
 
   const handleRemoveExercise = (id: string) => {
-    setExercises(currentExercises => {
-      const index = currentExercises.findIndex(exercise => exercise.id === id);
-      const exercise = currentExercises[index];
-      if (!exercise) return currentExercises;
-      setRemovedExercise({ exercise, index });
-      if (undoTimer.current) clearTimeout(undoTimer.current);
-      undoTimer.current = setTimeout(() => setRemovedExercise(null), 4000);
-      return currentExercises.filter(item => item.id !== id);
-    });
+    const index = exercises.findIndex(exercise => exercise.id === id);
+    const exercise = exercises[index];
+    if (!exercise) return;
+
+    setExercises(current => current.filter(item => item.id !== id));
+    setRemovedExercise({ exercise, index });
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setRemovedExercise(null), 4000);
   };
 
   const handleMove = (index: number, direction: -1 | 1) => {
@@ -774,7 +773,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 20,
     right: 20,
-    bottom: 126,
+    bottom: 192,
     minHeight: 48,
     paddingHorizontal: 16,
     borderRadius: 10,

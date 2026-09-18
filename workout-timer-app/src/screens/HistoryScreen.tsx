@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList, Workout, WorkoutHistoryEntry } from '../types';
-import { loadHistory } from '../storage';
-import { ChevronIcon, DumbbellIcon, PlayIcon } from '../components/WorkoutIcons';
+import { loadHistory, deleteHistoryEntry } from '../storage';
+import { ChevronIcon, DumbbellIcon, PlayIcon, TrashIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
@@ -56,7 +56,15 @@ function computeStreak(history: WorkoutHistoryEntry[]): number {
   return streak;
 }
 
-function HistoryEntryCard({ entry, onRepeat }: { entry: WorkoutHistoryEntry; onRepeat: (workout: Workout) => void }) {
+function HistoryEntryCard({
+  entry,
+  onRepeat,
+  onDelete,
+}: {
+  entry: WorkoutHistoryEntry;
+  onRepeat: (workout: Workout) => void;
+  onDelete: (entry: WorkoutHistoryEntry) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const groupedLogs = useMemo(() => groupRepLogs(entry.repLogs), [entry.repLogs]);
   const hasLogs = groupedLogs.length > 0;
@@ -65,20 +73,29 @@ function HistoryEntryCard({ entry, onRepeat }: { entry: WorkoutHistoryEntry; onR
 
   return (
     <View style={styles.entryCard}>
-      <TouchableOpacity
-        style={styles.entryHeader}
-        onPress={() => setExpanded(e => !e)}
-        disabled={!hasLogs}
-        accessibilityLabel={hasLogs ? `Toggle log for ${entry.workout.name}` : undefined}
-      >
-        <View style={styles.entryInfo}>
-          <Text style={styles.entryName} numberOfLines={1}>{entry.workout.name || 'Workout'}</Text>
-          <Text style={styles.entryMeta}>
-            {time} · {formatTime(entry.totalElapsedSeconds)} · {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
-          </Text>
-        </View>
-        {hasLogs && <ChevronIcon color="#94A3B8" size={14} direction={expanded ? 'up' : 'down'} />}
-      </TouchableOpacity>
+      <View style={styles.entryHeader}>
+        <TouchableOpacity
+          style={styles.entryHeaderMain}
+          onPress={() => { if (hasLogs) setExpanded(e => !e); }}
+          accessibilityLabel={hasLogs ? `Toggle log for ${entry.workout.name}` : undefined}
+        >
+          <View style={styles.entryInfo}>
+            <Text style={styles.entryName} numberOfLines={1}>{entry.workout.name || 'Workout'}</Text>
+            <Text style={styles.entryMeta}>
+              {time} · {formatTime(entry.totalElapsedSeconds)} · {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
+            </Text>
+          </View>
+          {hasLogs && <ChevronIcon color="#94A3B8" size={14} direction={expanded ? 'up' : 'down'} />}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.entryDeleteBtn}
+          onPress={() => onDelete(entry)}
+          hitSlop={8}
+          accessibilityLabel={`Delete ${entry.workout.name} from history`}
+        >
+          <TrashIcon color="#475569" size={16} />
+        </TouchableOpacity>
+      </View>
 
       {expanded && hasLogs && (
         <View style={styles.entryLogs}>
@@ -96,13 +113,20 @@ function HistoryEntryCard({ entry, onRepeat }: { entry: WorkoutHistoryEntry; onR
   );
 }
 
+type PendingDelete = { entry: WorkoutHistoryEntry; index: number };
+
 export function HistoryScreen({ navigation }: Props) {
   const [history, setHistory] = useState<WorkoutHistoryEntry[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const pendingDeleteIdRef = useRef<string | null>(null);
+  const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
 
   useEffect(() => {
     if (isFocused) {
-      loadHistory().then(setHistory);
+      loadHistory().then(data => {
+        setHistory(pendingDeleteIdRef.current ? data.filter(entry => entry.id !== pendingDeleteIdRef.current) : data);
+      });
     }
   }, [isFocused]);
 
@@ -113,6 +137,44 @@ export function HistoryScreen({ navigation }: Props) {
 
   const handleRepeat = (workout: Workout) => {
     navigation.navigate('WorkoutPreview', { workout });
+  };
+
+  const handleDeleteEntry = (entry: WorkoutHistoryEntry) => {
+    Alert.alert(
+      'Delete this session?',
+      `Remove "${entry.workout.name || 'Workout'}" from your history? You can undo this for a few seconds.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            const index = history.findIndex(h => h.id === entry.id);
+            setHistory(current => current.filter(h => h.id !== entry.id));
+            setPendingDelete({ entry, index });
+            pendingDeleteIdRef.current = entry.id;
+            if (deleteTimer.current) clearTimeout(deleteTimer.current);
+            deleteTimer.current = setTimeout(() => {
+              deleteHistoryEntry(entry.id);
+              pendingDeleteIdRef.current = null;
+              setPendingDelete(null);
+            }, 4000);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleUndoDeleteEntry = () => {
+    if (!pendingDelete) return;
+    if (deleteTimer.current) clearTimeout(deleteTimer.current);
+    setHistory(current => {
+      const restored = [...current];
+      restored.splice(Math.min(pendingDelete.index, restored.length), 0, pendingDelete.entry);
+      return restored;
+    });
+    pendingDeleteIdRef.current = null;
+    setPendingDelete(null);
   };
 
   return (
@@ -150,11 +212,19 @@ export function HistoryScreen({ navigation }: Props) {
             <View key={section.header} style={styles.section}>
               <Text style={styles.sectionHeader}>{section.header}</Text>
               {section.entries.map(entry => (
-                <HistoryEntryCard key={entry.id} entry={entry} onRepeat={handleRepeat} />
+                <HistoryEntryCard key={entry.id} entry={entry} onRepeat={handleRepeat} onDelete={handleDeleteEntry} />
               ))}
             </View>
           ))}
         </ScrollView>
+      )}
+      {pendingDelete && (
+        <View style={styles.snackbar}>
+          <Text style={styles.snackbarText} numberOfLines={1}>"{pendingDelete.entry.workout.name || 'Workout'}" removed</Text>
+          <TouchableOpacity onPress={handleUndoDeleteEntry}>
+            <Text style={styles.undoText}>UNDO</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
@@ -205,8 +275,21 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  entryHeaderMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+    minWidth: 0,
+  },
+  entryDeleteBtn: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   entryInfo: { flex: 1, gap: 4, minWidth: 0 },
   entryName: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
@@ -241,4 +324,35 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', textAlign: 'center' },
   emptyDescription: { color: '#94A3B8', fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  snackbar: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 24,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#1F1F24',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  snackbarText: {
+    flex: 1,
+    marginRight: 12,
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  undoText: {
+    color: '#CCFF00',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
 });

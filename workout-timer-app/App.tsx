@@ -100,10 +100,10 @@ export default function App() {
             component={WorkoutPreviewScreen} 
             options={{ headerShown: false }} 
           />
-          <Stack.Screen 
-            name="ActiveSession" 
-            component={ActiveSessionScreen} 
-            options={{ headerShown: false, gestureEnabled: false }} 
+          <Stack.Screen
+            name="ActiveSession"
+            component={ActiveSessionScreen}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="Completion"

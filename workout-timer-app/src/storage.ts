@@ -133,3 +133,13 @@ export async function addHistoryEntry(entry: WorkoutHistoryEntry): Promise<void>
     console.error('Failed to save workout history entry', e);
   }
 }
+
+export async function deleteHistoryEntry(id: string): Promise<void> {
+  try {
+    const history = await loadHistory();
+    const filtered = history.filter(entry => entry.id !== id);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
+  } catch (e) {
+    console.error('Failed to delete workout history entry', e);
+  }
+}

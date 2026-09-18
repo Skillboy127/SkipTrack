@@ -176,17 +176,6 @@ export function LibraryScreen({ navigation }: Props) {
               <ClockIcon color="#94A3B8" size={14} />
               <Text style={styles.historyHeaderLabel}>History</Text>
             </TouchableOpacity>
-            {workouts.length > 0 && (
-              <TouchableOpacity
-                style={styles.importHeaderBtn}
-                onPress={() => navigation.navigate('ImportVideo')}
-                hitSlop={8}
-                accessibilityLabel="Import workout"
-              >
-                <DownloadIcon color="#CCFF00" size={14} />
-                <Text style={styles.importHeaderLabel}>Import</Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
         {workouts.length > 0 && (
@@ -641,23 +630,6 @@ const styles = StyleSheet.create({
   },
   historyHeaderLabel: {
     color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  importHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-  },
-  importHeaderLabel: {
-    color: '#CCFF00',
     fontFamily: 'Geist',
     fontSize: 13,
     fontWeight: '700',

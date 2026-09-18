@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, RepSetLog } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { expandWorkout } from '../workoutLogic';
 import { addHistoryEntry } from '../storage';
-import { SkipIcon, PlayIcon, PauseIcon, CloseIcon } from '../components/WorkoutIcons';
+import { SkipIcon, PlayIcon, PauseIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 
@@ -30,12 +30,21 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     engine.start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleQuitPress = () => {
+  // Set right before any navigation away from this screen that we initiated
+  // ourselves (finishing the workout), so the quit-confirmation guard below
+  // lets it through instead of intercepting it.
+  const allowLeaveRef = useRef(false);
+
+  const promptQuit = (action: Readonly<{ type: string; payload?: object; source?: string; target?: string }>) => {
     const wasRunning = engine.timerState === 'running';
     if (wasRunning) engine.pause();
 
     const resumeIfNeeded = () => {
       if (wasRunning) engine.resume();
+    };
+    const proceed = () => {
+      allowLeaveRef.current = true;
+      navigation.dispatch(action);
     };
 
     Alert.alert(
@@ -51,7 +60,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
               'Save to history?',
               'Do you want to save this partial session to your workout history?',
               [
-                { text: "Don't Save", style: 'destructive', onPress: () => navigation.goBack() },
+                { text: "Don't Save", style: 'destructive', onPress: proceed },
                 {
                   text: 'Save',
                   onPress: () => {
@@ -62,7 +71,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
                       totalElapsedSeconds: engine.totalElapsed,
                       repLogs,
                     });
-                    navigation.goBack();
+                    proceed();
                   },
                 },
               ],
@@ -74,18 +83,22 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     );
   };
 
-  // Keep the hardware back button (Android) in sync with the latest quit handler
-  // without tearing down and re-registering the listener on every timer tick.
-  const handleQuitPressRef = useRef(handleQuitPress);
-  handleQuitPressRef.current = handleQuitPress;
+  // Keep the listener in sync with the latest closure (engine state, repLogs, etc.)
+  // without tearing down and re-registering it on every render.
+  const promptQuitRef = useRef(promptQuit);
+  promptQuitRef.current = promptQuit;
 
+  // Intercept any attempt to leave this screen — the Android hardware back
+  // button, an edge-swipe back gesture, or a header back action — and show
+  // the quit confirmation instead, unless we ourselves triggered the leave.
   useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleQuitPressRef.current();
-      return true;
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (allowLeaveRef.current) return;
+      e.preventDefault();
+      promptQuitRef.current(e.data.action);
     });
-    return () => subscription.remove();
-  }, []);
+    return unsubscribe;
+  }, [navigation]);
 
   // Reset per-set weight entry whenever the phase advances
   useEffect(() => {
@@ -97,6 +110,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // Handle completion
   useEffect(() => {
     if (engine.timerState === 'completed') {
+      allowLeaveRef.current = true;
       navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout, repLogs });
     }
   }, [engine.timerState, engine.totalElapsed, navigation, workout, repLogs]);
@@ -106,7 +120,13 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
       <View style={styles.container}>
         <Text style={styles.emptySessionTitle}>No exercises</Text>
         <Text style={styles.emptySessionText}>Add a timed or rep-based exercise and at least one set before starting.</Text>
-        <TouchableOpacity style={styles.emptySessionButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.emptySessionButton}
+          onPress={() => {
+            allowLeaveRef.current = true;
+            navigation.goBack();
+          }}
+        >
           <Text style={styles.emptySessionButtonText}>GO BACK</Text>
         </TouchableOpacity>
       </View>
@@ -161,11 +181,6 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         </View>
       )}
       <View style={styles.statusBarSpacer} />
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.quitButton} onPress={handleQuitPress} hitSlop={8} accessibilityLabel="Quit workout">
-          <CloseIcon color="#94A3B8" size={14} />
-        </TouchableOpacity>
-      </View>
       <View style={styles.progressTracker}>
         <View style={styles.progressLabels}>
           <Text style={styles.workoutTag}>{workout.name || 'WORKOUT'}</Text>
@@ -305,20 +320,6 @@ const styles = StyleSheet.create({
   },
   statusBarSpacer: {
     height: 44,
-  },
-  topBar: {
-    height: 36,
-    paddingHorizontal: 20,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  quitButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#121214',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   progressTracker: {
     height: 55,
