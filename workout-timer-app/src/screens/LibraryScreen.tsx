@@ -5,7 +5,7 @@ import { RootStackParamList, Workout } from '../types';
 import { loadWorkouts, deleteWorkout, saveWorkout } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
-import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon, SettingsIcon, CopyIcon } from '../components/WorkoutIcons';
+import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon, SettingsIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -28,6 +28,7 @@ export function LibraryScreen({ navigation }: Props) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<Workout | null>(null);
+  const [actionMenuTarget, setActionMenuTarget] = useState<Workout | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
@@ -117,6 +118,18 @@ export function LibraryScreen({ navigation }: Props) {
     loadData();
   };
 
+  const handleDuplicateFromMenu = () => {
+    const workout = actionMenuTarget;
+    setActionMenuTarget(null);
+    if (workout) handleDuplicate(workout);
+  };
+
+  const handleDeleteFromMenu = () => {
+    const workout = actionMenuTarget;
+    setActionMenuTarget(null);
+    if (workout) handleDelete(workout);
+  };
+
   const handleUndoDelete = () => {
     if (!pendingDelete) return;
     if (deleteTimer.current) clearTimeout(deleteTimer.current);
@@ -137,8 +150,8 @@ export function LibraryScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.card}
         onPress={() => navigation.navigate('WorkoutPreview', { workout: item })}
-        onLongPress={() => handleDelete(item)}
-        delayLongPress={600}
+        onLongPress={() => setActionMenuTarget(item)}
+        delayLongPress={500}
       >
         <View style={styles.cardInfo}>
           <View style={styles.workoutNameRow}>
@@ -157,13 +170,6 @@ export function LibraryScreen({ navigation }: Props) {
           </View>
         </View>
         <View style={styles.cardActions}>
-          <TouchableOpacity
-            onPress={() => handleDuplicate(item)}
-            hitSlop={8}
-            accessibilityLabel={`Duplicate ${item.name}`}
-          >
-            <CopyIcon />
-          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('WorkoutEditor', { workoutId: item.id })}
             hitSlop={8}
@@ -338,6 +344,16 @@ export function LibraryScreen({ navigation }: Props) {
         </View>
       )}
       <ConfirmDialog
+        visible={actionMenuTarget !== null}
+        title={actionMenuTarget?.name ?? 'Workout'}
+        onRequestClose={() => setActionMenuTarget(null)}
+        actions={[
+          { label: 'Duplicate', variant: 'neutral', onPress: handleDuplicateFromMenu },
+          { label: 'Delete', variant: 'destructive', onPress: handleDeleteFromMenu },
+          { label: 'Cancel', variant: 'neutral', onPress: () => setActionMenuTarget(null) },
+        ]}
+      />
+      <ConfirmDialog
         visible={deleteConfirmTarget !== null}
         title="Delete workout?"
         message={`Remove "${deleteConfirmTarget?.name ?? ''}"? You can undo this for a few seconds.`}
@@ -454,9 +470,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   cardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
     marginLeft: 12,
   },
   emptyState: {

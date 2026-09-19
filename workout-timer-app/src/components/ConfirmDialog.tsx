@@ -10,19 +10,19 @@ export type ConfirmDialogAction = {
 type ConfirmDialogProps = {
   visible: boolean;
   title: string;
-  message: string;
+  message?: string;
   actions: ConfirmDialogAction[];
   onRequestClose?: () => void;
 };
 
-/** A centered, app-themed confirmation dialog — replaces the default OS Alert.alert look. */
+/** A centered, app-themed confirmation dialog — replaces the default OS Alert.alert look. Also doubles as a plain action menu (e.g. for long-press) when `message` is omitted. */
 export function ConfirmDialog({ visible, title, message, actions, onRequestClose }: ConfirmDialogProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
       <Pressable style={styles.backdrop} onPress={onRequestClose}>
         <Pressable style={styles.card} onPress={() => {}}>
           <Text style={styles.title}>{title}</Text>
-          <Text style={styles.message}>{message}</Text>
+          {message ? <Text style={styles.message}>{message}</Text> : null}
           <View style={styles.actions}>
             {actions.map((action, index) => (
               <Pressable
