@@ -1,26 +1,44 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
-import { loadTtsEnabled, saveTtsEnabled } from '../storage';
-import { ChevronIcon } from '../components/WorkoutIcons';
+import { RootStackParamList, CountdownSoundMode } from '../types';
+import { loadCountdownSoundMode, saveCountdownSoundMode } from '../storage';
+import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
+const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string }[] = [
+  {
+    id: 'speech',
+    title: 'Spoken',
+    description: '"Three, two, one" is announced out loud, and the next exercise (and how long/many) is called out during rest.',
+  },
+  {
+    id: 'beep',
+    title: 'Beep',
+    description: 'A short beep plays for the countdown and phase transitions instead of speech.',
+  },
+  {
+    id: 'silent',
+    title: 'Silent',
+    description: 'No countdown sound at all — just the visual timer.',
+  },
+];
+
 export function SettingsScreen({ navigation }: Props) {
-  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    loadTtsEnabled().then(value => {
-      setTtsEnabled(value);
+    loadCountdownSoundMode().then(value => {
+      setSoundMode(value);
       setLoaded(true);
     });
   }, []);
 
-  const handleToggleTts = (value: boolean) => {
-    setTtsEnabled(value);
-    saveTtsEnabled(value);
+  const handleSelect = (mode: CountdownSoundMode) => {
+    setSoundMode(mode);
+    saveCountdownSoundMode(mode);
   };
 
   return (
@@ -38,24 +56,31 @@ export function SettingsScreen({ navigation }: Props) {
 
       {loaded && (
         <View style={styles.content}>
-          <Text style={styles.sectionHeader}>SESSION AUDIO</Text>
+          <Text style={styles.sectionHeader}>SESSION COUNTDOWN</Text>
           <View style={styles.card}>
-            <View style={styles.row}>
-              <View style={styles.rowInfo}>
-                <Text style={styles.rowTitle}>Spoken Countdown</Text>
-                <Text style={styles.rowDescription}>
-                  Announce "3, 2, 1" out loud during work and rest phases, and say the next exercise's
-                  name before rest ends. Turn off for a silent countdown instead.
-                </Text>
-              </View>
-              <Switch
-                value={ttsEnabled}
-                onValueChange={handleToggleTts}
-                trackColor={{ false: '#1F1F24', true: 'rgba(204, 255, 0, 0.5)' }}
-                thumbColor={ttsEnabled ? '#CCFF00' : '#94A3B8'}
-              />
-            </View>
+            {SOUND_MODES.map((option, index) => {
+              const selected = soundMode === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.optionRow, index > 0 && styles.optionRowBorder]}
+                  onPress={() => handleSelect(option.id)}
+                  accessibilityLabel={`Use ${option.title.toLowerCase()} countdown`}
+                >
+                  <View style={[styles.radio, selected && styles.radioSelected]}>
+                    {selected && <CheckIcon color="#09090A" size={12} />}
+                  </View>
+                  <View style={styles.optionInfo}>
+                    <Text style={styles.optionTitle}>{option.title}</Text>
+                    <Text style={styles.optionDescription}>{option.description}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
+          <Text style={styles.hint}>
+            You can also tap the speaker icon during a workout to quickly switch between these.
+          </Text>
         </View>
       )}
     </View>
@@ -83,14 +108,39 @@ const styles = StyleSheet.create({
     borderColor: '#1F1F24',
     borderRadius: 12,
     backgroundColor: '#121214',
+    overflow: 'hidden',
   },
-  row: {
+  optionRow: {
     padding: 16,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
+    alignItems: 'flex-start',
+    gap: 14,
   },
-  rowInfo: { flex: 1, gap: 4 },
-  rowTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  rowDescription: { color: '#94A3B8', fontSize: 12, lineHeight: 17 },
+  optionRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#1F1F24',
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#1F1F24',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  radioSelected: {
+    borderColor: '#CCFF00',
+    backgroundColor: '#CCFF00',
+  },
+  optionInfo: { flex: 1, gap: 4 },
+  optionTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  optionDescription: { color: '#94A3B8', fontSize: 12, lineHeight: 17 },
+  hint: {
+    color: '#64748B',
+    fontSize: 12,
+    lineHeight: 17,
+    paddingHorizontal: 4,
+  },
 });

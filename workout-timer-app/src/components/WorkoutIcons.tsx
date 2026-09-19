@@ -216,6 +216,82 @@ export function PlayIcon({ color = '#09090A', size = 20 }: IconProps) {
   );
 }
 
+/** A speaker glyph (body + cone), with an optional diagonal slash for the muted/silent state. */
+export function SpeakerIcon({ color = '#94A3B8', size = 18, muted = false }: IconProps & { muted?: boolean }) {
+  const bodyWidth = size * 0.24;
+  const bodyHeight = size * 0.34;
+  const coneHeight = size * 0.6;
+  const coneWidth = size * 0.26;
+  const slashThickness = Math.max(1.4, size * 0.1);
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ width: bodyWidth, height: bodyHeight, backgroundColor: color, borderRadius: 1 }} />
+        <View
+          style={{
+            width: 0,
+            height: 0,
+            borderTopWidth: coneHeight / 2,
+            borderBottomWidth: coneHeight / 2,
+            borderLeftWidth: coneWidth,
+            borderTopColor: 'transparent',
+            borderBottomColor: 'transparent',
+            borderLeftColor: color,
+          }}
+        />
+      </View>
+      {muted && (
+        <View
+          style={{
+            position: 'absolute',
+            width: size * 0.95,
+            height: slashThickness,
+            backgroundColor: color,
+            borderRadius: slashThickness / 2,
+            transform: [{ rotate: '45deg' }],
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+/** Two overlapping outlined squares — a "duplicate/copy" glyph. */
+export function CopyIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+  const rectSize = size * 0.64;
+  const border = Math.max(1.2, size * 0.09);
+
+  return (
+    <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          width: rectSize,
+          height: rectSize,
+          borderWidth: border,
+          borderColor: color,
+          borderRadius: 3,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          width: rectSize,
+          height: rectSize,
+          borderWidth: border,
+          borderColor: color,
+          borderRadius: 3,
+        }}
+      />
+    </View>
+  );
+}
+
 export function PauseIcon({ color = '#09090A', size = 20 }: IconProps) {
   const barWidth = Math.max(2, size * 0.16);
   const barHeight = size * 0.58;

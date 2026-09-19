@@ -31,6 +31,8 @@ export type RepSetLog = {
   weight: number | null;
 };
 
+export type CountdownSoundMode = 'speech' | 'beep' | 'silent';
+
 export type WorkoutHistoryEntry = {
   id: string;
   workout: Workout; // full snapshot as it was at completion time, so "Repeat" still works after edits/deletes

@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { RepSetLog, Workout, WorkoutHistoryEntry } from './types';
+import { CountdownSoundMode, RepSetLog, Workout, WorkoutHistoryEntry } from './types';
 
 const WORKOUTS_KEY = '@workouts_v1';
 const HISTORY_KEY = '@workout_history_v1';
 const MAX_HISTORY_ENTRIES = 200;
-const TTS_ENABLED_KEY = '@tts_enabled_v1';
+const COUNTDOWN_SOUND_KEY = '@countdown_sound_mode_v1';
 
 function normalizeWorkout(value: unknown): Workout | null {
   if (!value || typeof value !== 'object') return null;
@@ -145,21 +145,21 @@ export async function deleteHistoryEntry(id: string): Promise<void> {
   }
 }
 
-export async function loadTtsEnabled(): Promise<boolean> {
+export async function loadCountdownSoundMode(): Promise<CountdownSoundMode> {
   try {
-    const value = await AsyncStorage.getItem(TTS_ENABLED_KEY);
-    if (value == null) return true; // default ON
-    return value === 'true';
+    const value = await AsyncStorage.getItem(COUNTDOWN_SOUND_KEY);
+    if (value === 'speech' || value === 'beep' || value === 'silent') return value;
+    return 'speech'; // default ON (spoken)
   } catch (e) {
-    console.error('Failed to load TTS setting', e);
-    return true;
+    console.error('Failed to load countdown sound setting', e);
+    return 'speech';
   }
 }
 
-export async function saveTtsEnabled(enabled: boolean): Promise<void> {
+export async function saveCountdownSoundMode(mode: CountdownSoundMode): Promise<void> {
   try {
-    await AsyncStorage.setItem(TTS_ENABLED_KEY, enabled ? 'true' : 'false');
+    await AsyncStorage.setItem(COUNTDOWN_SOUND_KEY, mode);
   } catch (e) {
-    console.error('Failed to save TTS setting', e);
+    console.error('Failed to save countdown sound setting', e);
   }
 }

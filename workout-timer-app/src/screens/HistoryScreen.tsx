@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList, Workout, WorkoutHistoryEntry } from '../types';
 import { loadHistory, deleteHistoryEntry } from '../storage';
-import { ChevronIcon, DumbbellIcon, PlayIcon, TrashIcon } from '../components/WorkoutIcons';
+import { ChevronIcon, DumbbellIcon, PlayIcon, TrashIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
@@ -120,6 +120,7 @@ export function HistoryScreen({ navigation }: Props) {
   const [history, setHistory] = useState<WorkoutHistoryEntry[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<WorkoutHistoryEntry | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
@@ -135,7 +136,12 @@ export function HistoryScreen({ navigation }: Props) {
   const totalWorkouts = history.length;
   const totalActiveSeconds = useMemo(() => history.reduce((sum, entry) => sum + entry.totalElapsedSeconds, 0), [history]);
   const streak = useMemo(() => computeStreak(history), [history]);
-  const sections = useMemo(() => groupByDate(history), [history]);
+  const filteredHistory = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return history;
+    return history.filter(entry => (entry.workout.name || '').toLowerCase().includes(query));
+  }, [history, searchQuery]);
+  const sections = useMemo(() => groupByDate(filteredHistory), [filteredHistory]);
 
   const handleRepeat = (workout: Workout) => {
     navigation.navigate('WorkoutPreview', { workout });
@@ -205,14 +211,40 @@ export function HistoryScreen({ navigation }: Props) {
             <View style={styles.statColumn}><Text style={styles.statValue}>{formatTime(totalActiveSeconds)}</Text><Text style={styles.statLabel}>Total Time</Text></View>
           </View>
 
-          {sections.map(section => (
-            <View key={section.header} style={styles.section}>
-              <Text style={styles.sectionHeader}>{section.header}</Text>
-              {section.entries.map(entry => (
-                <HistoryEntryCard key={entry.id} entry={entry} onRepeat={handleRepeat} onDelete={handleDeleteEntry} />
-              ))}
+          <View style={styles.searchBar}>
+            <SearchIcon color="#64748B" size={15} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search history"
+              placeholderTextColor="#64748B"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8} accessibilityLabel="Clear search">
+                <CloseIcon color="#64748B" size={13} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {filteredHistory.length === 0 ? (
+            <View style={styles.noMatches}>
+              <Text style={styles.emptyTitle}>No matches</Text>
+              <Text style={styles.emptyDescription}>Try a different search term.</Text>
             </View>
-          ))}
+          ) : (
+            sections.map(section => (
+              <View key={section.header} style={styles.section}>
+                <Text style={styles.sectionHeader}>{section.header}</Text>
+                {section.entries.map(entry => (
+                  <HistoryEntryCard key={entry.id} entry={entry} onRepeat={handleRepeat} onDelete={handleDeleteEntry} />
+                ))}
+              </View>
+            ))
+          )}
         </ScrollView>
       )}
       {pendingDelete && (
@@ -268,6 +300,28 @@ const styles = StyleSheet.create({
   statValue: { color: '#FFFFFF', fontFamily: 'monospace', fontSize: 18, fontWeight: '700', lineHeight: 24 },
   statLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '600', lineHeight: 14, textTransform: 'uppercase' },
   statDivider: { width: 1, height: 24, backgroundColor: '#1F1F24', marginTop: 2 },
+  searchBar: {
+    height: 42,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    backgroundColor: '#121214',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    padding: 0,
+    color: '#FFFFFF',
+    fontSize: 14,
+  },
+  noMatches: {
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 32,
+  },
   section: { gap: 10 },
   sectionHeader: { color: '#94A3B8', fontSize: 11, fontWeight: '700', lineHeight: 14, textTransform: 'uppercase' },
   entryCard: {

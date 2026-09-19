@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { PencilIcon, ChevronIcon, LockIcon, CheckIcon } from '../components/WorkoutIcons';
 import { RootStackParamList } from '../types';
-import { loadTtsEnabled } from '../storage';
+import { loadCountdownSoundMode } from '../storage';
 import { primeSpeechEngine } from '../useSpeech';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
@@ -19,8 +19,8 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
   // workout, so the "get ready" countdown's first word doesn't lag once they
   // actually tap Start.
   useEffect(() => {
-    loadTtsEnabled().then(enabled => {
-      if (enabled) primeSpeechEngine();
+    loadCountdownSoundMode().then(mode => {
+      if (mode === 'speech') primeSpeechEngine();
     });
   }, []);
 

@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout } from '../types';
-import { loadWorkouts, deleteWorkout } from '../storage';
+import { loadWorkouts, deleteWorkout, saveWorkout } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
-import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon, SettingsIcon } from '../components/WorkoutIcons';
+import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon, SettingsIcon, CopyIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+
+const generateId = () => Math.random().toString(36).substring(2, 9);
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
@@ -104,6 +106,17 @@ export function LibraryScreen({ navigation }: Props) {
     }, 4000);
   };
 
+  const handleDuplicate = async (workout: Workout) => {
+    const duplicate: Workout = {
+      ...workout,
+      id: generateId(),
+      name: `${workout.name} (Copy)`,
+      createdAt: Date.now(),
+    };
+    await saveWorkout(duplicate);
+    loadData();
+  };
+
   const handleUndoDelete = () => {
     if (!pendingDelete) return;
     if (deleteTimer.current) clearTimeout(deleteTimer.current);
@@ -144,6 +157,13 @@ export function LibraryScreen({ navigation }: Props) {
           </View>
         </View>
         <View style={styles.cardActions}>
+          <TouchableOpacity
+            onPress={() => handleDuplicate(item)}
+            hitSlop={8}
+            accessibilityLabel={`Duplicate ${item.name}`}
+          >
+            <CopyIcon />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('WorkoutEditor', { workoutId: item.id })}
             hitSlop={8}
@@ -434,6 +454,9 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
     marginLeft: 12,
   },
   emptyState: {

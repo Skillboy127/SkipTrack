@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, RepSetLog } from '../types';
+import * as Haptics from 'expo-haptics';
+import { RootStackParamList, RepSetLog, CountdownSoundMode } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
-import { addHistoryEntry, loadTtsEnabled } from '../storage';
-import { SkipIcon, PlayIcon, PauseIcon } from '../components/WorkoutIcons';
+import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode } from '../storage';
+import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
@@ -16,14 +17,34 @@ type NavAction = Readonly<{ type: string; payload?: object; source?: string; tar
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+// The get-ready countdown runs for this many seconds, but only cues (spoken or
+// beeped) the last 3 — the first couple of seconds count down silently.
+const PRE_START_SECONDS = 5;
+const PRE_START_CUE_WORDS: Record<number, string> = { 3: 'three', 2: 'two', 1: 'one' };
+
+const SOUND_MODE_ORDER: CountdownSoundMode[] = ['speech', 'beep', 'silent'];
+const SOUND_MODE_LABELS: Record<CountdownSoundMode, string> = {
+  speech: 'Spoken countdown',
+  beep: 'Beep countdown',
+  silent: 'Silent countdown',
+};
+
 export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
 
   const { playBeep } = useAudio();
-  const [ttsEnabled, setTtsEnabled] = useState(true);
-  const { speak, speakCountdown } = useSpeech(ttsEnabled);
-  const engine = useTimerEngine(phases, playBeep, speakCountdown);
+  const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
+  const { speak, speakCountdown } = useSpeech(soundMode === 'speech');
+
+  const handleCountdownTick = (secondsRemaining: number) => {
+    if (soundMode === 'speech') speakCountdown(secondsRemaining);
+    else if (soundMode === 'beep') playBeep();
+  };
+  const playTransitionBeep = () => {
+    if (soundMode !== 'silent') playBeep();
+  };
+  const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick);
 
   const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
   const [pendingWeight, setPendingWeight] = useState<number | null>(null);
@@ -33,19 +54,33 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const [quitStep, setQuitStep] = useState<QuitStep>('closed');
   // Seconds left in the "get ready" countdown shown before the workout timer
   // actually starts; null once it's finished and the real session has begun.
-  const PRE_START_SECONDS = 3;
-  const PRE_START_WORDS: Record<number, string> = { 3: 'three', 2: 'two', 1: 'one' };
   const [preStartSeconds, setPreStartSeconds] = useState<number | null>(PRE_START_SECONDS);
 
-  // Load the user's TTS preference (defaults to on)
+  // Load the user's countdown sound preference (defaults to spoken)
   useEffect(() => {
-    loadTtsEnabled().then(setTtsEnabled);
+    loadCountdownSoundMode().then(setSoundMode);
   }, []);
 
-  // Give the user a spoken "get ready" countdown before the first phase's
-  // timer actually starts, so there's time to get into position.
+  const cycleSoundMode = () => {
+    const next = SOUND_MODE_ORDER[(SOUND_MODE_ORDER.indexOf(soundMode) + 1) % SOUND_MODE_ORDER.length];
+    setSoundMode(next);
+    saveCountdownSoundMode(next);
+    setToastMessage(SOUND_MODE_LABELS[next]);
+    setTimeout(() => setToastMessage(null), 1500);
+  };
+
+  const cuePreStartTick = (secondsRemaining: number) => {
+    const word = PRE_START_CUE_WORDS[secondsRemaining];
+    if (!word) return; // stay silent for the leading seconds before the last 3
+    if (soundMode === 'speech') speak(word);
+    else if (soundMode === 'beep') playBeep();
+  };
+
+  // Give the user a "get ready" countdown before the first phase's timer
+  // actually starts, so there's time to get into position. Only the last 3
+  // seconds get a spoken/beeped cue; the rest count down silently.
   useEffect(() => {
-    speak(PRE_START_WORDS[PRE_START_SECONDS]);
+    cuePreStartTick(PRE_START_SECONDS);
     const interval = setInterval(() => {
       setPreStartSeconds(prev => {
         if (prev === null || prev <= 1) {
@@ -53,7 +88,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           return null;
         }
         const next = prev - 1;
-        speak(PRE_START_WORDS[next] ?? String(next));
+        cuePreStartTick(next);
         return next;
       });
     }, 1000);
@@ -64,13 +99,15 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (preStartSeconds === null) {
       engine.start();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
   }, [preStartSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Announce the next exercise (and how long/many it is) as soon as a rest
   // phase begins, giving the full rest duration to hear it — not just the
-  // last second of the countdown.
+  // last second of the countdown. Only meaningful in spoken mode.
   useEffect(() => {
+    if (soundMode !== 'speech') return;
     if (!engine.currentPhase || engine.currentPhase.type !== 'rest') return;
     const upcoming = phases[engine.currentPhaseIndex + 1];
     if (!upcoming?.exerciseName) return;
@@ -80,6 +117,17 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
       : `${Math.round(upcoming.duration)} second${Math.round(upcoming.duration) === 1 ? '' : 's'}`;
     speak(`Up next, ${upcoming.exerciseName} for ${amount}`);
   }, [engine.currentPhaseIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A light haptic tap on every real phase transition (skipping the initial
+  // mount, which isn't a transition).
+  const isFirstPhaseEffectRun = useRef(true);
+  useEffect(() => {
+    if (isFirstPhaseEffectRun.current) {
+      isFirstPhaseEffectRun.current = false;
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
+  }, [engine.currentPhaseIndex]);
 
   // Set right before any navigation away from this screen that we initiated
   // ourselves (finishing the workout), so the quit-confirmation guard below
@@ -152,6 +200,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // Handle completion
   useEffect(() => {
     if (engine.timerState === 'completed') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       allowLeaveRef.current = true;
       navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout, repLogs });
     }
@@ -239,12 +288,17 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
       <View style={styles.statusBarSpacer} />
       <View style={styles.progressTracker}>
         <View style={styles.progressLabels}>
-          <Text style={styles.workoutTag}>{workout.name || 'WORKOUT'}</Text>
-          {!isRest && (
-            <Text style={styles.progressPercentage}>
-              EXERCISE {Math.min(activeExerciseNumber, totalExerciseCount)} OF {totalExerciseCount}
-            </Text>
-          )}
+          <Text style={styles.workoutTag} numberOfLines={1}>{workout.name || 'WORKOUT'}</Text>
+          <View style={styles.progressRightGroup}>
+            {!isRest && (
+              <Text style={styles.progressPercentage}>
+                EXERCISE {Math.min(activeExerciseNumber, totalExerciseCount)} OF {totalExerciseCount}
+              </Text>
+            )}
+            <TouchableOpacity onPress={cycleSoundMode} hitSlop={8} accessibilityLabel="Change countdown sound">
+              <SpeakerIcon color="#94A3B8" size={16} muted={soundMode === 'silent'} />
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${Math.min(100, progressPercent)}%` }]} />
@@ -408,7 +462,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  progressRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   workoutTag: {
+    flexShrink: 1,
     color: '#94A3B8',
     fontSize: 11,
     fontWeight: '700',
