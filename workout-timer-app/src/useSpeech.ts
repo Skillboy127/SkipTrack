@@ -7,6 +7,18 @@ const COUNTDOWN_WORDS: Record<number, string> = {
   1: 'one',
 };
 
+/**
+ * Forces the native TTS engine to initialize without queuing an audible
+ * utterance. Some Android TTS engines silently drop (or noticeably delay) the
+ * very first speak() call while they finish their async init; querying voices
+ * requires the engine to already be bound, so it nudges that init to happen
+ * early — unlike speaking a placeholder utterance, this doesn't sit in the
+ * playback queue ahead of the real first word.
+ */
+export function primeSpeechEngine() {
+  Speech.getAvailableVoicesAsync().catch(() => {});
+}
+
 /** Speaks short session cues (the "3, 2, 1" countdown, exercise call-outs, etc.) via TTS. */
 export function useSpeech(enabled: boolean) {
   const enabledRef = useRef(enabled);
@@ -16,14 +28,8 @@ export function useSpeech(enabled: boolean) {
     if (!enabled) Speech.stop();
   }, [enabled]);
 
-  // Prime the native TTS engine as soon as this screen mounts. Some Android TTS
-  // engines silently drop the very first speak() call while they finish their
-  // async init, which otherwise shows up as the first phase's "three" going
-  // missing while every later phase counts down normally.
   useEffect(() => {
-    if (enabledRef.current) {
-      Speech.speak(' ', { volume: 0.01, rate: 1.0 });
-    }
+    if (enabledRef.current) primeSpeechEngine();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { PencilIcon, ChevronIcon, LockIcon, CheckIcon } from '../components/WorkoutIcons';
 import { RootStackParamList } from '../types';
+import { loadTtsEnabled } from '../storage';
+import { primeSpeechEngine } from '../useSpeech';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
 
@@ -12,6 +14,15 @@ function isRepBased(ex: { reps?: number | null; workSeconds: number }): boolean 
 
 export function WorkoutPreviewScreen({ route, navigation }: Props) {
   const { workout } = route.params;
+
+  // Give the TTS engine a head start while the user is still reviewing the
+  // workout, so the "get ready" countdown's first word doesn't lag once they
+  // actually tap Start.
+  useEffect(() => {
+    loadTtsEnabled().then(enabled => {
+      if (enabled) primeSpeechEngine();
+    });
+  }, []);
 
   const onStart = () => {
     navigation.replace('ActiveSession', { workout });

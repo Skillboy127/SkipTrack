@@ -33,8 +33,8 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const [quitStep, setQuitStep] = useState<QuitStep>('closed');
   // Seconds left in the "get ready" countdown shown before the workout timer
   // actually starts; null once it's finished and the real session has begun.
-  const PRE_START_SECONDS = 5;
-  const PRE_START_WORDS: Record<number, string> = { 5: 'five', 4: 'four', 3: 'three', 2: 'two', 1: 'one' };
+  const PRE_START_SECONDS = 3;
+  const PRE_START_WORDS: Record<number, string> = { 3: 'three', 2: 'two', 1: 'one' };
   const [preStartSeconds, setPreStartSeconds] = useState<number | null>(PRE_START_SECONDS);
 
   // Load the user's TTS preference (defaults to on)
