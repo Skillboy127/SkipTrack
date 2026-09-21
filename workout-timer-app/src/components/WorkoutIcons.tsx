@@ -216,36 +216,75 @@ export function PlayIcon({ color = '#09090A', size = 20 }: IconProps) {
   );
 }
 
-/** A speaker glyph (body + cone), with an optional diagonal slash for the muted/silent state. */
-export function SpeakerIcon({ color = '#94A3B8', size = 18, muted = false }: IconProps & { muted?: boolean }) {
-  const bodyWidth = size * 0.24;
-  const bodyHeight = size * 0.34;
-  const coneHeight = size * 0.6;
-  const coneWidth = size * 0.26;
+/**
+ * A speaker glyph: a driver box that flares out into a cone (built from two mirrored
+ * wedges around a straight strip, since a plain triangle reads as an arrow rather than
+ * a speaker), plus outward sound-wave arcs. An optional diagonal slash covers the box
+ * and cone for the muted/silent state.
+ */
+export function SpeakerIcon({ color = '#94A3B8', size = 22, muted = false }: IconProps & { muted?: boolean }) {
+  const boxWidth = size * 0.2;
+  const boxHeight = size * 0.32;
+  const coneWidth = size * 0.22;
+  const coneOpenHeight = size * 0.66;
+  const wedgeHeight = (coneOpenHeight - boxHeight) / 2;
+  const waveGap = size * 0.07;
+  const waveThickness = Math.max(1.3, size * 0.09);
+  const waveRadii = [size * 0.14, size * 0.24];
   const slashThickness = Math.max(1.4, size * 0.1);
+
+  const wedge = (
+    <View
+      style={{
+        width: 0,
+        height: 0,
+        borderTopWidth: wedgeHeight,
+        borderBottomWidth: wedgeHeight,
+        borderRightWidth: coneWidth,
+        borderTopColor: 'transparent',
+        borderBottomColor: 'transparent',
+        borderRightColor: color,
+      }}
+    />
+  );
 
   return (
     <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ width: bodyWidth, height: bodyHeight, backgroundColor: color, borderRadius: 1 }} />
-        <View
-          style={{
-            width: 0,
-            height: 0,
-            borderTopWidth: coneHeight / 2,
-            borderBottomWidth: coneHeight / 2,
-            borderLeftWidth: coneWidth,
-            borderTopColor: 'transparent',
-            borderBottomColor: 'transparent',
-            borderLeftColor: color,
-          }}
-        />
+        <View style={{ width: boxWidth, height: boxHeight, backgroundColor: color, borderRadius: 1 }} />
+        <View style={{ width: coneWidth }}>
+          <View style={{ width: coneWidth, height: wedgeHeight, overflow: 'hidden' }}>{wedge}</View>
+          <View style={{ width: coneWidth, height: boxHeight, backgroundColor: color }} />
+          <View style={{ width: coneWidth, height: wedgeHeight, overflow: 'hidden', transform: [{ scaleY: -1 }] }}>{wedge}</View>
+        </View>
+        {!muted && (
+          <View style={{ flexDirection: 'row', marginLeft: waveGap }}>
+            {waveRadii.map((r, i) => (
+              <View
+                key={i}
+                style={{ width: r, height: r * 2, overflow: 'hidden', marginLeft: i > 0 ? waveGap : 0 }}
+              >
+                <View
+                  style={{
+                    width: r * 2,
+                    height: r * 2,
+                    marginLeft: -r,
+                    borderRadius: r,
+                    borderWidth: waveThickness,
+                    borderColor: color,
+                    backgroundColor: 'transparent',
+                  }}
+                />
+              </View>
+            ))}
+          </View>
+        )}
       </View>
       {muted && (
         <View
           style={{
             position: 'absolute',
-            width: size * 0.95,
+            width: (boxWidth + coneWidth) * 0.95,
             height: slashThickness,
             backgroundColor: color,
             borderRadius: slashThickness / 2,

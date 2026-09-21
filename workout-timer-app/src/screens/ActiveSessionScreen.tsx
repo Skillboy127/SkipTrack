@@ -286,7 +286,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
               </Text>
             )}
             <TouchableOpacity onPress={cycleSoundMode} hitSlop={8} accessibilityLabel="Change countdown sound">
-              <SpeakerIcon color="#94A3B8" size={16} muted={soundMode === 'silent'} />
+              <SpeakerIcon color="#94A3B8" size={22} muted={soundMode === 'silent'} />
             </TouchableOpacity>
           </View>
         </View>
