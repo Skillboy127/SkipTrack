@@ -18,6 +18,21 @@ const getHostUrl = () => {
 const API_BASE = getHostUrl().replace(/\/+$/, '');
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+/** Default rest between exercises/sets when the source didn't specify one. */
+const DEFAULT_REST_SECONDS = 45;
+/** Default rest between full circuit rounds when the source didn't specify one. */
+const DEFAULT_REST_BETWEEN_ROUNDS_SECONDS = 90;
+
+/** Builds a readable default title from the extracted exercise names, e.g. "Push Press, Squats & 6 More". */
+function suggestWorkoutName(exercises: Exercise[]): string {
+  const names = exercises.map(ex => ex.name).filter(Boolean);
+  if (names.length === 0) return 'My Workout';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} & ${names[1]}`;
+  if (names.length === 3) return `${names[0]}, ${names[1]} & ${names[2]}`;
+  return `${names[0]}, ${names[1]} & ${names.length - 2} More`;
+}
+
 /** Shared mapper: converts the Python JSON schema → our Workout type */
 function mapResponseToWorkout(data: any): Workout {
   if (data.error) throw new Error(data.error);
@@ -31,16 +46,16 @@ function mapResponseToWorkout(data: any): Workout {
         ? 0
         : data.work_seconds ?? 30,
     reps: ex.reps != null ? ex.reps : null,
-    restSeconds: ex.rest_after_seconds ?? data.rest_seconds ?? 10,
+    restSeconds: ex.rest_after_seconds ?? data.rest_seconds ?? DEFAULT_REST_SECONDS,
     sets: ex.sets ?? 1,
   }));
 
   return {
     id: generateId(),
-    name: 'Imported Workout',
+    name: suggestWorkoutName(exercises),
     exercises,
     rounds: data.total_rounds ?? 1,
-    restBetweenRoundsSeconds: data.rest_between_rounds_seconds ?? null,
+    restBetweenRoundsSeconds: data.rest_between_rounds_seconds ?? DEFAULT_REST_BETWEEN_ROUNDS_SECONDS,
   };
 }
 

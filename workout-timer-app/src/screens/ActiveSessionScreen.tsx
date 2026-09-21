@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
-import { RootStackParamList, RepSetLog, CountdownSoundMode } from '../types';
+import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
-import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode } from '../storage';
+import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit } from '../storage';
 import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
@@ -34,6 +34,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
 
   const { playBeep } = useAudio();
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const { speak, speakCountdown } = useSpeech(soundMode === 'speech');
 
   const handleCountdownTick = (secondsRemaining: number) => {
@@ -58,6 +59,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // Load the user's countdown sound preference (defaults to spoken)
   useEffect(() => {
     loadCountdownSoundMode().then(setSoundMode);
+    loadWeightUnit().then(setWeightUnit);
   }, []);
 
   const cycleSoundMode = () => {
@@ -258,7 +260,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     const weight = pendingWeight;
 
     setRepLogs(prev => [...prev, { exerciseName: engine.currentPhase.exerciseName, setNumber: currentSetNumber, reps, weight }]);
-    setToastMessage(`Nice work – ${reps} reps${weight != null ? ` at ${weight} lb` : ''} logged!`);
+    setToastMessage(`Nice work – ${reps} reps${weight != null ? ` at ${weight} ${weightUnit}` : ''} logged!`);
     setTimeout(() => setToastMessage(null), 2500);
     engine.completeRepPhase();
   };
@@ -343,7 +345,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
                   value={weightInputValue}
                   onChangeText={setWeightInputValue}
                   keyboardType="number-pad"
-                  placeholder="lb"
+                  placeholder={weightUnit}
                   placeholderTextColor="#475569"
                   autoFocus
                   selectionColor="#CCFF00"
@@ -361,7 +363,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
                 }}
               >
                 <Text style={styles.addWeightButtonText}>
-                  {pendingWeight != null ? `Weight: ${pendingWeight} lb` : '+ Add Weight'}
+                  {pendingWeight != null ? `Weight: ${pendingWeight} ${weightUnit}` : '+ Add Weight'}
                 </Text>
               </TouchableOpacity>
             )}

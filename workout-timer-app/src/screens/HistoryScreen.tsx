@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
-import { RootStackParamList, Workout, WorkoutHistoryEntry } from '../types';
-import { loadHistory, deleteHistoryEntry } from '../storage';
+import { RootStackParamList, Workout, WorkoutHistoryEntry, WeightUnit } from '../types';
+import { loadHistory, deleteHistoryEntry, loadWeightUnit } from '../storage';
 import { ChevronIcon, DumbbellIcon, PlayIcon, TrashIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -61,10 +61,12 @@ function HistoryEntryCard({
   entry,
   onRepeat,
   onDelete,
+  weightUnit,
 }: {
   entry: WorkoutHistoryEntry;
   onRepeat: (workout: Workout) => void;
   onDelete: (entry: WorkoutHistoryEntry) => void;
+  weightUnit: WeightUnit;
 }) {
   const [expanded, setExpanded] = useState(false);
   const groupedLogs = useMemo(() => groupRepLogs(entry.repLogs), [entry.repLogs]);
@@ -101,7 +103,7 @@ function HistoryEntryCard({
       {expanded && hasLogs && (
         <View style={styles.entryLogs}>
           {groupedLogs.map(group => (
-            <ExerciseLogCard key={group.exerciseName} exerciseName={group.exerciseName} sets={group.sets} />
+            <ExerciseLogCard key={group.exerciseName} exerciseName={group.exerciseName} sets={group.sets} weightUnit={weightUnit} />
           ))}
         </View>
       )}
@@ -121,6 +123,7 @@ export function HistoryScreen({ navigation }: Props) {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<WorkoutHistoryEntry | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
@@ -130,6 +133,7 @@ export function HistoryScreen({ navigation }: Props) {
       loadHistory().then(data => {
         setHistory(pendingDeleteIdRef.current ? data.filter(entry => entry.id !== pendingDeleteIdRef.current) : data);
       });
+      loadWeightUnit().then(setWeightUnit);
     }
   }, [isFocused]);
 
@@ -240,7 +244,7 @@ export function HistoryScreen({ navigation }: Props) {
               <View key={section.header} style={styles.section}>
                 <Text style={styles.sectionHeader}>{section.header}</Text>
                 {section.entries.map(entry => (
-                  <HistoryEntryCard key={entry.id} entry={entry} onRepeat={handleRepeat} onDelete={handleDeleteEntry} />
+                  <HistoryEntryCard key={entry.id} entry={entry} onRepeat={handleRepeat} onDelete={handleDeleteEntry} weightUnit={weightUnit} />
                 ))}
               </View>
             ))

@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert, StatusBar, PanResponder, Animated } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert, StatusBar, PanResponder, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Workout, Exercise } from '../types';
 import { loadWorkouts, saveWorkout } from '../storage';
 import { PencilIcon, TrashIcon, DragHandleIcon, ChevronIcon, CheckIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutEditor'>;
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
+
+function isRepBased(ex: { reps?: number | null; workSeconds: number }): boolean {
+  return ex.reps != null && ex.workSeconds <= 0;
+}
 
 type ExerciseRowProps = {
   exercise: Exercise;
@@ -49,16 +54,16 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
     },
   })).current;
 
-  const isRepBased = exercise.reps != null && exercise.workSeconds <= 0;
+  const repBased = isRepBased(exercise);
 
   const step = (field: 'workSeconds' | 'restSeconds' | 'sets' | 'reps', amount: number) => {
     const next = Math.max(0, Number(exercise[field]) + amount);
     onUpdate(exercise.id, field, field === 'sets' ? Math.max(1, next) : next);
   };
-  const warning = isRepBased ? !exercise.reps : exercise.workSeconds <= 0;
+  const warning = repBased ? !exercise.reps : exercise.workSeconds <= 0;
 
   const toggleWorkMode = () => {
-    if (isRepBased) {
+    if (repBased) {
       onUpdate(exercise.id, 'reps', null);
       onUpdate(exercise.id, 'workSeconds', 30);
     } else {
@@ -92,20 +97,20 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
       <View style={styles.metricsInputs}>
         <View style={styles.metricColumn}>
           <TouchableOpacity style={styles.modeToggle} onPress={toggleWorkMode}>
-            <Text style={styles.modeToggleText}>{isRepBased ? 'REPS' : 'SEC'}</Text>
+            <Text style={styles.modeToggleText}>{repBased ? 'REPS' : 'SEC'}</Text>
           </TouchableOpacity>
           <View style={styles.stepper}>
-            <TouchableOpacity style={styles.stepButton} onPress={() => step(isRepBased ? 'reps' : 'workSeconds', isRepBased ? -1 : -5)}>
+            <TouchableOpacity style={styles.stepButton} onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? -1 : -5)}>
               <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
             <TextInput
               style={[styles.metricInput, styles.workInput]}
-              value={(isRepBased ? exercise.reps : exercise.workSeconds)?.toString() ?? '0'}
-              onChangeText={text => onUpdate(exercise.id, isRepBased ? 'reps' : 'workSeconds', parseInt(text, 10) || 0)}
+              value={(repBased ? exercise.reps : exercise.workSeconds)?.toString() ?? '0'}
+              onChangeText={text => onUpdate(exercise.id, repBased ? 'reps' : 'workSeconds', parseInt(text, 10) || 0)}
               keyboardType="number-pad"
               selectionColor="#CCFF00"
             />
-            <TouchableOpacity style={styles.stepButton} onPress={() => step(isRepBased ? 'reps' : 'workSeconds', isRepBased ? 1 : 5)}>
+            <TouchableOpacity style={styles.stepButton} onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? 1 : 5)}>
               <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
           </View>
@@ -163,6 +168,9 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   const [restBetweenRoundsSeconds, setRestBetweenRoundsSeconds] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [removedExercise, setRemovedExercise] = useState<{ exercise: Exercise; index: number } | null>(null);
+  const [bulkWorkSeconds, setBulkWorkSeconds] = useState(30);
+  const [bulkRestSeconds, setBulkRestSeconds] = useState(45);
+  const [bulkConfirmVisible, setBulkConfirmVisible] = useState(false);
   const nameInputs = useRef<Record<string, TextInput | null>>({});
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createdAtRef = useRef<number | null>(null);
@@ -200,13 +208,23 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
     setRestBetweenRoundsSeconds(current => Math.max(0, (current ?? 0) + amount));
   };
 
+  const handleApplyBulkTimes = () => {
+    setExercises(current => current.map(ex => ({
+      ...ex,
+      // Rep-based exercises keep their rep count — only their rest time changes.
+      workSeconds: isRepBased(ex) ? ex.workSeconds : bulkWorkSeconds,
+      restSeconds: bulkRestSeconds,
+    })));
+    setBulkConfirmVisible(false);
+  };
+
   const handleAddExercise = () => {
     const newExercise = {
       id: generateId(),
       name: 'New Exercise',
       workSeconds: 30,
       reps: null,
-      restSeconds: 15,
+      restSeconds: 45,
       sets: 1,
     };
     setExercises(current => [...current, newExercise]);
@@ -269,7 +287,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       name,
       exercises,
       rounds,
-      restBetweenRoundsSeconds: rounds > 1 ? (restBetweenRoundsSeconds ?? 60) : null,
+      restBetweenRoundsSeconds: rounds > 1 ? (restBetweenRoundsSeconds ?? 90) : null,
       createdAt: createdAtRef.current ?? Date.now(),
     };
 
@@ -292,7 +310,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.statusBarSpacer} />
@@ -354,7 +372,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
                 <View style={styles.restInputWithSuffix}>
                   <TextInput
                     style={[styles.roundsValueInput, styles.restValueInput]}
-                    value={(restBetweenRoundsSeconds ?? 60).toString()}
+                    value={(restBetweenRoundsSeconds ?? 90).toString()}
                     onChangeText={text => setRestBetweenRoundsSeconds(Math.max(0, parseInt(text, 10) || 0))}
                     keyboardType="number-pad"
                     selectionColor="#CCFF00"
@@ -367,6 +385,62 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
               </View>
             </View>
           )}
+        </View>
+
+        {/* Bulk Edit Section */}
+        <View style={styles.structureCard}>
+          <View style={styles.structureRow}>
+            <View style={styles.structureLabelGroup}>
+              <Text style={styles.structureTitle}>Work Time (All)</Text>
+              <Text style={styles.structureSubtitle}>Applied to every timed exercise below</Text>
+            </View>
+            <View style={styles.roundsStepper}>
+              <TouchableOpacity style={styles.roundsStepBtn} onPress={() => setBulkWorkSeconds(v => Math.max(0, v - 5))}>
+                <Text style={styles.roundsStepText}>−</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={styles.roundsValueInput}
+                value={bulkWorkSeconds.toString()}
+                onChangeText={text => setBulkWorkSeconds(Math.max(0, parseInt(text, 10) || 0))}
+                keyboardType="number-pad"
+                selectionColor="#CCFF00"
+              />
+              <TouchableOpacity style={styles.roundsStepBtn} onPress={() => setBulkWorkSeconds(v => v + 5)}>
+                <Text style={styles.roundsStepText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={[styles.structureRow, styles.structureRowBorder]}>
+            <View style={styles.structureLabelGroup}>
+              <Text style={styles.structureTitle}>Rest Time (All)</Text>
+              <Text style={styles.structureSubtitle}>Applied to every exercise below</Text>
+            </View>
+            <View style={styles.roundsStepper}>
+              <TouchableOpacity style={styles.roundsStepBtn} onPress={() => setBulkRestSeconds(v => Math.max(0, v - 5))}>
+                <Text style={styles.roundsStepText}>−</Text>
+              </TouchableOpacity>
+              <View style={styles.restInputWithSuffix}>
+                <TextInput
+                  style={[styles.roundsValueInput, styles.restValueInput]}
+                  value={bulkRestSeconds.toString()}
+                  onChangeText={text => setBulkRestSeconds(Math.max(0, parseInt(text, 10) || 0))}
+                  keyboardType="number-pad"
+                  selectionColor="#CCFF00"
+                />
+                <Text style={styles.restSuffix}>s</Text>
+              </View>
+              <TouchableOpacity style={styles.roundsStepBtn} onPress={() => setBulkRestSeconds(v => v + 5)}>
+                <Text style={styles.roundsStepText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[styles.structureRow, styles.structureRowBorder, styles.applyAllRow]}
+            onPress={() => setBulkConfirmVisible(true)}
+            disabled={exercises.length === 0}
+          >
+            <Text style={styles.applyAllText}>Apply to All Exercises</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.listHeader}>
@@ -410,7 +484,17 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
       )}
-    </View>
+      <ConfirmDialog
+        visible={bulkConfirmVisible}
+        title="Apply to all exercises?"
+        message={`Set every exercise's work time to ${bulkWorkSeconds}s and rest time to ${bulkRestSeconds}s. Rep-based exercises keep their rep count but still get the new rest time.`}
+        onRequestClose={() => setBulkConfirmVisible(false)}
+        actions={[
+          { label: 'Apply', variant: 'primary', onPress: handleApplyBulkTimes },
+          { label: 'Cancel', variant: 'neutral', onPress: () => setBulkConfirmVisible(false) },
+        ]}
+      />
+    </KeyboardAvoidingView>
   );
 }
 
@@ -567,6 +651,16 @@ const styles = StyleSheet.create({
     color: '#6B9EFA',
     fontFamily: 'JetBrains Mono',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  applyAllRow: {
+    justifyContent: 'center',
+    backgroundColor: 'rgba(204, 255, 0, 0.08)',
+  },
+  applyAllText: {
+    color: '#CCFF00',
+    fontFamily: 'Geist',
+    fontSize: 14,
     fontWeight: '700',
   },
   // ── List Header ────────────────────────────────────────────────────────────

@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CountdownSoundMode, RepSetLog, Workout, WorkoutHistoryEntry } from './types';
+import { CountdownSoundMode, RepSetLog, WeightUnit, Workout, WorkoutHistoryEntry } from './types';
 
 const WORKOUTS_KEY = '@workouts_v1';
 const HISTORY_KEY = '@workout_history_v1';
 const MAX_HISTORY_ENTRIES = 200;
 const COUNTDOWN_SOUND_KEY = '@countdown_sound_mode_v1';
+const WEIGHT_UNIT_KEY = '@weight_unit_v1';
 
 function normalizeWorkout(value: unknown): Workout | null {
   if (!value || typeof value !== 'object') return null;
@@ -161,5 +162,24 @@ export async function saveCountdownSoundMode(mode: CountdownSoundMode): Promise<
     await AsyncStorage.setItem(COUNTDOWN_SOUND_KEY, mode);
   } catch (e) {
     console.error('Failed to save countdown sound setting', e);
+  }
+}
+
+export async function loadWeightUnit(): Promise<WeightUnit> {
+  try {
+    const value = await AsyncStorage.getItem(WEIGHT_UNIT_KEY);
+    if (value === 'lb' || value === 'kg') return value;
+    return 'lb'; // default
+  } catch (e) {
+    console.error('Failed to load weight unit setting', e);
+    return 'lb';
+  }
+}
+
+export async function saveWeightUnit(unit: WeightUnit): Promise<void> {
+  try {
+    await AsyncStorage.setItem(WEIGHT_UNIT_KEY, unit);
+  } catch (e) {
+    console.error('Failed to save weight unit setting', e);
   }
 }

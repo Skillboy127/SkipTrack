@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
-import { addHistoryEntry } from '../storage';
+import { RootStackParamList, WeightUnit } from '../types';
+import { addHistoryEntry, loadWeightUnit } from '../storage';
 import { CheckIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 
@@ -19,6 +19,11 @@ const formatTime = (seconds: number) => {
 export function CompletionScreen({ route, navigation }: Props) {
   const { totalElapsed, workout, repLogs = [] } = route.params;
   const groupedLogs = useMemo(() => groupRepLogs(repLogs), [repLogs]);
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
+
+  useEffect(() => {
+    loadWeightUnit().then(setWeightUnit);
+  }, []);
 
   // Record this session to history exactly once, regardless of re-renders.
   const savedToHistoryRef = useRef(false);
@@ -57,7 +62,7 @@ export function CompletionScreen({ route, navigation }: Props) {
           <View style={styles.logsSection}>
             <Text style={styles.logsSectionTitle}>SETS LOGGED</Text>
             {groupedLogs.map(group => (
-              <ExerciseLogCard key={group.exerciseName} exerciseName={group.exerciseName} sets={group.sets} />
+              <ExerciseLogCard key={group.exerciseName} exerciseName={group.exerciseName} sets={group.sets} weightUnit={weightUnit} />
             ))}
           </View>
         </ScrollView>

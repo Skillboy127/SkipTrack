@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, CountdownSoundMode } from '../types';
-import { loadCountdownSoundMode, saveCountdownSoundMode } from '../storage';
+import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
+import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit } from '../storage';
 import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -25,13 +25,28 @@ const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string 
   },
 ];
 
+const WEIGHT_UNITS: { id: WeightUnit; title: string; description: string }[] = [
+  {
+    id: 'lb',
+    title: 'Pounds (lb)',
+    description: 'Logged weights are shown and entered in pounds.',
+  },
+  {
+    id: 'kg',
+    title: 'Kilograms (kg)',
+    description: 'Logged weights are shown and entered in kilograms.',
+  },
+];
+
 export function SettingsScreen({ navigation }: Props) {
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    loadCountdownSoundMode().then(value => {
-      setSoundMode(value);
+    Promise.all([loadCountdownSoundMode(), loadWeightUnit()]).then(([sound, unit]) => {
+      setSoundMode(sound);
+      setWeightUnit(unit);
       setLoaded(true);
     });
   }, []);
@@ -39,6 +54,11 @@ export function SettingsScreen({ navigation }: Props) {
   const handleSelect = (mode: CountdownSoundMode) => {
     setSoundMode(mode);
     saveCountdownSoundMode(mode);
+  };
+
+  const handleSelectWeightUnit = (unit: WeightUnit) => {
+    setWeightUnit(unit);
+    saveWeightUnit(unit);
   };
 
   return (
@@ -81,6 +101,29 @@ export function SettingsScreen({ navigation }: Props) {
           <Text style={styles.hint}>
             You can also tap the speaker icon during a workout to quickly switch between these.
           </Text>
+
+          <Text style={styles.sectionHeader}>WEIGHT UNIT</Text>
+          <View style={styles.card}>
+            {WEIGHT_UNITS.map((option, index) => {
+              const selected = weightUnit === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.optionRow, index > 0 && styles.optionRowBorder]}
+                  onPress={() => handleSelectWeightUnit(option.id)}
+                  accessibilityLabel={`Use ${option.title}`}
+                >
+                  <View style={[styles.radio, selected && styles.radioSelected]}>
+                    {selected && <CheckIcon color="#09090A" size={12} />}
+                  </View>
+                  <View style={styles.optionInfo}>
+                    <Text style={styles.optionTitle}>{option.title}</Text>
+                    <Text style={styles.optionDescription}>{option.description}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       )}
     </View>

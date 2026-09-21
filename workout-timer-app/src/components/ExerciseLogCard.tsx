@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
-import { RepSetLog } from '../types';
+import { RepSetLog, WeightUnit } from '../types';
 import { ChevronIcon } from './WorkoutIcons';
 
 export function groupRepLogs(repLogs: RepSetLog[]): { exerciseName: string; sets: RepSetLog[] }[] {
@@ -18,11 +18,11 @@ export function groupRepLogs(repLogs: RepSetLog[]): { exerciseName: string; sets
   return order.map(exerciseName => ({ exerciseName, sets: byExercise.get(exerciseName)! }));
 }
 
-export function ExerciseLogCard({ exerciseName, sets }: { exerciseName: string; sets: RepSetLog[] }) {
+export function ExerciseLogCard({ exerciseName, sets, weightUnit = 'lb' }: { exerciseName: string; sets: RepSetLog[]; weightUnit?: WeightUnit }) {
   const [expanded, setExpanded] = useState(false);
 
   const handleShare = () => {
-    const lines = sets.map((s, i) => `Set ${i + 1}: ${s.reps} reps${s.weight != null ? ` @ ${s.weight} lb` : ''}`);
+    const lines = sets.map((s, i) => `Set ${i + 1}: ${s.reps} reps${s.weight != null ? ` @ ${s.weight} ${weightUnit}` : ''}`);
     Share.share({ message: `${exerciseName}\n${lines.join('\n')}` }).catch(() => {});
   };
 
@@ -40,7 +40,7 @@ export function ExerciseLogCard({ exerciseName, sets }: { exerciseName: string; 
           {sets.map((s, i) => (
             <View key={i} style={styles.logRow}>
               <Text style={styles.logRowLabel}>Set {i + 1}</Text>
-              <Text style={styles.logRowValue}>{s.reps} reps{s.weight != null ? ` @ ${s.weight} lb` : ''}</Text>
+              <Text style={styles.logRowValue}>{s.reps} reps{s.weight != null ? ` @ ${s.weight} ${weightUnit}` : ''}</Text>
             </View>
           ))}
           <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
