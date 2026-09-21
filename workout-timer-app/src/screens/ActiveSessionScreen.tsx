@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
 import { RootStackParamList, RepSetLog, CountdownSoundMode } from '../types';
@@ -8,12 +8,11 @@ import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
 import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode } from '../storage';
-import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon } from '../components/WorkoutIcons';
+import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
-type NavAction = Readonly<{ type: string; payload?: object; source?: string; target?: string }>;
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -129,12 +128,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     }
   }, [engine.currentPhaseIndex]);
 
-  // Set right before any navigation away from this screen that we initiated
-  // ourselves (finishing the workout), so the quit-confirmation guard below
-  // lets it through instead of intercepting it.
-  const allowLeaveRef = useRef(false);
   const wasRunningRef = useRef(false);
-  const pendingNavActionRef = useRef<NavAction | null>(null);
 
   const resumeIfNeeded = () => {
     if (wasRunningRef.current) engine.resume();
@@ -142,17 +136,12 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
 
   const cancelQuit = () => {
     setQuitStep('closed');
-    pendingNavActionRef.current = null;
     resumeIfNeeded();
   };
 
   const proceedWithLeave = () => {
-    const action = pendingNavActionRef.current;
     setQuitStep('closed');
-    pendingNavActionRef.current = null;
-    if (!action) return;
-    allowLeaveRef.current = true;
-    navigation.dispatch(action);
+    navigation.goBack();
   };
 
   const confirmSaveToHistory = () => {
@@ -166,29 +155,29 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     proceedWithLeave();
   };
 
-  const promptQuit = (action: NavAction) => {
+  const promptQuit = () => {
     wasRunningRef.current = engine.timerState === 'running';
     if (wasRunningRef.current) engine.pause();
-    pendingNavActionRef.current = action;
     setQuitStep('confirmQuit');
   };
 
-  // Keep the listener in sync with the latest closure (engine state, repLogs, etc.)
-  // without tearing down and re-registering it on every render.
+  // Keep the handler in sync with the latest closure (engine state, repLogs,
+  // etc.) without tearing down and re-registering the BackHandler listener.
   const promptQuitRef = useRef(promptQuit);
   promptQuitRef.current = promptQuit;
 
-  // Intercept any attempt to leave this screen — the Android hardware back
-  // button, an edge-swipe back gesture, or a header back action — and show
-  // the quit confirmation instead, unless we ourselves triggered the leave.
+  // Android hardware back button: show the quit confirmation instead of
+  // leaving immediately. (iOS has no equivalent hardware button; the swipe
+  // gesture is disabled for this screen and the on-screen X button is used
+  // instead — intercepting a native swipe-to-dismiss via beforeRemove proved
+  // unreliable on iOS, so we deliberately don't rely on it.)
   useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (allowLeaveRef.current) return;
-      e.preventDefault();
-      promptQuitRef.current(e.data.action);
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      promptQuitRef.current();
+      return true;
     });
-    return unsubscribe;
-  }, [navigation]);
+    return () => subscription.remove();
+  }, []);
 
   // Reset per-set weight entry whenever the phase advances
   useEffect(() => {
@@ -201,7 +190,6 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (engine.timerState === 'completed') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      allowLeaveRef.current = true;
       navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout, repLogs });
     }
   }, [engine.timerState, engine.totalElapsed, navigation, workout, repLogs]);
@@ -213,10 +201,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         <Text style={styles.emptySessionText}>Add a timed or rep-based exercise and at least one set before starting.</Text>
         <TouchableOpacity
           style={styles.emptySessionButton}
-          onPress={() => {
-            allowLeaveRef.current = true;
-            navigation.goBack();
-          }}
+          onPress={() => navigation.goBack()}
         >
           <Text style={styles.emptySessionButtonText}>GO BACK</Text>
         </TouchableOpacity>
@@ -285,6 +270,9 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           <Text style={styles.toastText}>{toastMessage}</Text>
         </View>
       )}
+      <TouchableOpacity style={styles.quitButton} onPress={promptQuit} hitSlop={8} accessibilityLabel="Quit workout">
+        <CloseIcon color="#94A3B8" size={13} />
+      </TouchableOpacity>
       <View style={styles.statusBarSpacer} />
       <View style={styles.progressTracker}>
         <View style={styles.progressLabels}>
@@ -450,6 +438,18 @@ const styles = StyleSheet.create({
   },
   statusBarSpacer: {
     height: 44,
+  },
+  quitButton: {
+    position: 'absolute',
+    top: 8,
+    right: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#121214',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
   progressTracker: {
     height: 55,
