@@ -4,8 +4,9 @@ import { Phase } from './types';
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 
 type CountdownListener = (secondsRemaining: number) => void;
+type PhaseStartListener = (phase: Phase) => void;
 
-export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?: CountdownListener) {
+export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?: CountdownListener, onPhaseStart?: PhaseStartListener) {
   const [timerState, setTimerState] = useState<TimerState>('idle');
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
   
@@ -34,6 +35,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
   const phasesRef = useRef(phases);
   const onBeepRef = useRef(onBeep);
   const onCountdownRef = useRef(onCountdown);
+  const onPhaseStartRef = useRef(onPhaseStart);
 
   useEffect(() => {
     stateRef.current = timerState;
@@ -43,7 +45,8 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
     phasesRef.current = phases;
     onBeepRef.current = onBeep;
     onCountdownRef.current = onCountdown;
-  }, [timerState, currentPhaseIndex, phaseStartTime, currentPhaseDuration, phases, onBeep, onCountdown]);
+    onPhaseStartRef.current = onPhaseStart;
+  }, [timerState, currentPhaseIndex, phaseStartTime, currentPhaseDuration, phases, onBeep, onCountdown, onPhaseStart]);
 
   const start = useCallback(() => {
     if (phases.length === 0) return;
@@ -109,14 +112,15 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
     }
 
     const nextIndex = currentPhaseIndex + 1;
-    const nextDuration = phases[nextIndex].duration;
+    const nextPhase = phases[nextIndex];
     setCurrentPhaseIndex(nextIndex);
-    setCurrentPhaseDuration(nextDuration);
-    setRemainingSeconds(nextDuration);
+    setCurrentPhaseDuration(nextPhase.duration);
+    setRemainingSeconds(nextPhase.duration);
     setPhaseStartTime(Date.now());
     lastBeepTimeRef.current = -1;
     onBeep();
-  }, [currentPhaseIndex, phases, onBeep]);
+    onPhaseStart?.(nextPhase);
+  }, [currentPhaseIndex, phases, onBeep, onPhaseStart]);
 
   const skipToPreviousPhase = useCallback(() => {
     const previousIndex = Math.max(0, currentPhaseIndex - 1);
@@ -176,12 +180,13 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
           setTimerState('completed');
           setRemainingSeconds(0);
         } else {
-          const nextDuration = phasesRef.current[nextIndex].duration;
+          const nextPhase = phasesRef.current[nextIndex];
           setCurrentPhaseIndex(nextIndex);
-          setCurrentPhaseDuration(nextDuration);
-          setRemainingSeconds(nextDuration);
+          setCurrentPhaseDuration(nextPhase.duration);
+          setRemainingSeconds(nextPhase.duration);
           setPhaseStartTime(Date.now());
           lastBeepTimeRef.current = -1;
+          onPhaseStartRef.current?.(nextPhase);
         }
       } else {
         setRemainingSeconds(newRemaining);

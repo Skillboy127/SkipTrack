@@ -310,7 +310,11 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -100}
+    >
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.statusBarSpacer} />
@@ -508,7 +512,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scrollContent: {
-    paddingBottom: 24,
+    // Extra bottom padding guarantees there's room to scroll the last
+    // exercise row's inputs above the keyboard even once it's showing.
+    paddingBottom: 280,
   },
   scrollView: {
     flex: 1,

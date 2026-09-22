@@ -32,10 +32,18 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
 
-  const { playBeep } = useAudio();
+  const { playBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive } = useAudio();
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const { speak, speakCountdown } = useSpeech(soundMode === 'speech');
+
+  // Keep a near-silent audio loop running for the whole session so iOS/Android
+  // don't suspend the app once the screen locks — without it, the timer and
+  // countdown cues would stop firing as soon as the phone goes to sleep.
+  useEffect(() => {
+    startBackgroundKeepAlive();
+    return () => stopBackgroundKeepAlive();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCountdownTick = (secondsRemaining: number) => {
     if (soundMode === 'speech') speakCountdown(secondsRemaining);
@@ -44,7 +52,13 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const playTransitionBeep = () => {
     if (soundMode !== 'silent') playBeep();
   };
-  const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick);
+  // A distinct higher-pitched cue right as a new exercise's work phase
+  // begins, following the "3, 2, 1" countdown — a clear "go" signal separate
+  // from the countdown beeps/speech themselves.
+  const handlePhaseStart = (phase: { type: 'work' | 'rest' }) => {
+    if (phase.type === 'work' && soundMode !== 'silent') playBeep({ highPitch: true });
+  };
+  const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick, handlePhaseStart);
 
   const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
   const [pendingWeight, setPendingWeight] = useState<number | null>(null);
@@ -80,26 +94,40 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // Give the user a "get ready" countdown before the first phase's timer
   // actually starts, so there's time to get into position. Only the last 3
   // seconds get a spoken/beeped cue; the rest count down silently.
+  //
+  // Driven off wall-clock elapsed time (like useTimerEngine's main loop)
+  // rather than counting naive setInterval ticks — a plain 1s-interval
+  // countdown starts however late the effect happened to get scheduled and
+  // never catches up, which is what made the "3, 2, 1" cues feel late.
+  // Recomputing from Date.now() every 100ms self-corrects for that.
   useEffect(() => {
-    cuePreStartTick(PRE_START_SECONDS);
-    const interval = setInterval(() => {
-      setPreStartSeconds(prev => {
-        if (prev === null || prev <= 1) {
-          clearInterval(interval);
-          return null;
-        }
-        const next = prev - 1;
-        cuePreStartTick(next);
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
+    const startTime = Date.now();
+    let lastCued = -1;
+    let intervalId: ReturnType<typeof setInterval>;
+
+    const tick = () => {
+      const remaining = PRE_START_SECONDS - (Date.now() - startTime) / 1000;
+      const ceilRemaining = Math.max(0, Math.ceil(remaining));
+
+      if (ceilRemaining !== lastCued) {
+        lastCued = ceilRemaining;
+        if (ceilRemaining > 0) cuePreStartTick(ceilRemaining);
+        setPreStartSeconds(ceilRemaining > 0 ? ceilRemaining : null);
+      }
+
+      if (remaining <= 0) clearInterval(intervalId);
+    };
+
+    tick();
+    intervalId = setInterval(tick, 100);
+    return () => clearInterval(intervalId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start the actual workout timer once the "get ready" countdown finishes
   useEffect(() => {
     if (preStartSeconds === null) {
       engine.start();
+      if (soundMode !== 'silent') playBeep({ highPitch: true });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
   }, [preStartSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
