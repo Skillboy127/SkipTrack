@@ -37,6 +37,17 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const { speak, speakCountdown } = useSpeech(soundMode === 'speech');
+  // Some cue callbacks below live inside effects that only run once (`[]`
+  // deps — the get-ready ticker in particular) and so capture whatever
+  // `soundMode` was at mount time forever. Reading through a ref instead of
+  // the state variable directly means those callbacks always see the current
+  // setting even though the closure they live in was created long ago —
+  // this is what caused "beep" mode to silently do nothing during get-ready
+  // (the stale closure still thought the mode was the default "speech").
+  const soundModeRef = useRef(soundMode);
+  useEffect(() => {
+    soundModeRef.current = soundMode;
+  }, [soundMode]);
 
   // Keep a near-silent audio loop running for the whole session so iOS/Android
   // don't suspend the app once the screen locks — without it, the timer and
@@ -47,17 +58,17 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCountdownTick = (secondsRemaining: number) => {
-    if (soundMode === 'speech') speakCountdown(secondsRemaining);
-    else if (soundMode === 'beep') playBeep();
+    if (soundModeRef.current === 'speech') speakCountdown(secondsRemaining);
+    else if (soundModeRef.current === 'beep') playBeep();
   };
   const playTransitionBeep = () => {
-    if (soundMode !== 'silent') playBeep();
+    if (soundModeRef.current !== 'silent') playBeep();
   };
   // A distinct higher-pitched cue right as a new exercise's work phase
   // begins, following the "3, 2, 1" countdown — a clear "go" signal separate
   // from the countdown beeps/speech themselves.
   const handlePhaseStart = (phase: { type: 'work' | 'rest' }) => {
-    if (phase.type === 'work' && soundMode !== 'silent') playGoBeep();
+    if (phase.type === 'work' && soundModeRef.current !== 'silent') playGoBeep();
   };
   const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick, handlePhaseStart);
 
@@ -89,8 +100,8 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const cuePreStartTick = (secondsRemaining: number) => {
     const word = PRE_START_CUE_WORDS[secondsRemaining];
     if (!word) return; // stay silent for the leading seconds before the last 3
-    if (soundMode === 'speech') speak(word);
-    else if (soundMode === 'beep') playBeep();
+    if (soundModeRef.current === 'speech') speak(word);
+    else if (soundModeRef.current === 'beep') playBeep();
   };
 
   // Give the user a "get ready" countdown before the first phase's timer
@@ -129,7 +140,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (preStartSeconds === null) {
       engine.start();
-      if (soundMode !== 'silent') playGoBeep();
+      if (soundModeRef.current !== 'silent') playGoBeep();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
   }, [preStartSeconds]); // eslint-disable-line react-hooks/exhaustive-deps

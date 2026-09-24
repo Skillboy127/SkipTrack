@@ -1,5 +1,5 @@
-import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Phase } from '../types';
 import { CloseIcon } from './WorkoutIcons';
 
@@ -15,47 +15,100 @@ type UpNextDrawerProps = {
   totalExerciseCount: number;
 };
 
-/** A bottom-sheet-style drawer listing every exercise still to come, scrollable for long workouts. */
+const DRAG_DISMISS_THRESHOLD = 110;
+const DRAG_VELOCITY_THRESHOLD = 1.2;
+
+/** A draggable bottom-sheet-style drawer listing every exercise still to come, scrollable for long workouts. */
 export function UpNextDrawer({ visible, onRequestClose, entries, totalExerciseCount }: UpNextDrawerProps) {
+  // Tracks the sheet's vertical offset while dragging so it follows the
+  // finger in real time, rather than only playing a fixed open/close
+  // animation. Only the handle/header area is draggable — the list below
+  // keeps its own independent scroll gesture.
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) translateY.setValue(0);
+  }, [visible, translateY]);
+
+  const dragResponder = useRef(
+    PanResponder.create({
+      // Only claim the gesture once there's real vertical movement — never on
+      // a bare touch-start, otherwise the nested Close button's own tap would
+      // never get a chance to fire.
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
+      onPanResponderMove: (_, gesture) => {
+        // Only follow downward drags — the sheet is already fully open, so
+        // there's nowhere for it to go upward.
+        translateY.setValue(Math.max(0, gesture.dy));
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > DRAG_DISMISS_THRESHOLD || gesture.vy > DRAG_VELOCITY_THRESHOLD) {
+          onRequestClose();
+        } else {
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+      },
+    })
+  ).current;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onRequestClose}>
       <Pressable style={styles.backdrop} onPress={onRequestClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <Text style={styles.title}>Up Next</Text>
-            <Pressable onPress={onRequestClose} hitSlop={8} accessibilityLabel="Close">
-              <CloseIcon color="#94A3B8" size={16} />
-            </Pressable>
-          </View>
-          {entries.length === 0 ? (
-            <Text style={styles.emptyText}>That's the last exercise — almost done!</Text>
-          ) : (
-            <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-              {entries.map((entry, index) => (
-                <View key={index} style={[styles.row, index === 0 && styles.rowNext]}>
-                  <View style={[styles.numberBadge, index === 0 && styles.numberBadgeNext]}>
-                    <Text style={[styles.numberText, index === 0 && styles.numberTextNext]}>
-                      {entry.exerciseNumber}
+        <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
+          {/* Swallows taps anywhere on the sheet so they don't bubble up and
+              trigger the backdrop's close — the same pattern ConfirmDialog
+              uses for its card, just wrapping the whole sheet instead of one
+              row of it. The drag handlers live one level deeper, on a plain
+              View rather than another Pressable, since stacking two
+              gesture-responder components on the same node is unreliable. */}
+          <Pressable style={styles.sheetInner} onPress={() => {}}>
+            <View {...dragResponder.panHandlers}>
+              <View style={styles.handle} />
+              <View style={styles.header}>
+                <Text style={styles.title}>Up Next</Text>
+                <Pressable onPress={onRequestClose} hitSlop={8} accessibilityLabel="Close">
+                  <CloseIcon color="#94A3B8" size={16} />
+                </Pressable>
+              </View>
+            </View>
+            {entries.length === 0 ? (
+              <Text style={styles.emptyText}>That's the last exercise — almost done!</Text>
+            ) : (
+              <ScrollView
+                style={styles.list}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+              >
+                {entries.map((entry, index) => (
+                  <View key={index} style={[styles.row, index === 0 && styles.rowNext]}>
+                    <View style={[styles.numberBadge, index === 0 && styles.numberBadgeNext]}>
+                      <Text style={[styles.numberText, index === 0 && styles.numberTextNext]}>
+                        {entry.exerciseNumber}
+                      </Text>
+                    </View>
+                    <View style={styles.rowInfo}>
+                      <Text style={styles.rowName} numberOfLines={1}>{entry.phase.exerciseName}</Text>
+                      {index === 0 && <Text style={styles.rowNextLabel}>UP NEXT</Text>}
+                    </View>
+                    <Text style={styles.rowDetail}>
+                      {entry.phase.mode === 'reps'
+                        ? `${entry.phase.reps} reps`
+                        : `${Math.ceil(entry.phase.duration)}s`}
                     </Text>
                   </View>
-                  <View style={styles.rowInfo}>
-                    <Text style={styles.rowName} numberOfLines={1}>{entry.phase.exerciseName}</Text>
-                    {index === 0 && <Text style={styles.rowNextLabel}>UP NEXT</Text>}
-                  </View>
-                  <Text style={styles.rowDetail}>
-                    {entry.phase.mode === 'reps'
-                      ? `${entry.phase.reps} reps`
-                      : `${Math.ceil(entry.phase.duration)}s`}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-          <Text style={styles.footerHint}>
-            {totalExerciseCount} exercise{totalExerciseCount === 1 ? '' : 's'} total in this workout
-          </Text>
-        </Pressable>
+                ))}
+              </ScrollView>
+            )}
+            <Text style={styles.footerHint}>
+              {totalExerciseCount} exercise{totalExerciseCount === 1 ? '' : 's'} total in this workout
+            </Text>
+          </Pressable>
+        </Animated.View>
       </Pressable>
     </Modal>
   );
@@ -68,12 +121,15 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    maxHeight: '70%',
+    height: '70%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
     borderColor: '#1F1F24',
     backgroundColor: '#121214',
+  },
+  sheetInner: {
+    flex: 1,
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 24,
@@ -104,8 +160,14 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     textAlign: 'center',
   },
+  // flex: 1 (rather than a fixed maxHeight) means the list always fills
+  // exactly the space left over after the header and footer hint, so it can
+  // always scroll all the way to the last row regardless of screen size.
   list: {
-    maxHeight: 380,
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: 8,
   },
   row: {
     flexDirection: 'row',
