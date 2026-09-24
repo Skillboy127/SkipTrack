@@ -194,7 +194,10 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   const [removedExercise, setRemovedExercise] = useState<{ exercise: Exercise; index: number } | null>(null);
   const [bulkWorkSeconds, setBulkWorkSeconds] = useState(30);
   const [bulkRestSeconds, setBulkRestSeconds] = useState(45);
-  const [bulkConfirmVisible, setBulkConfirmVisible] = useState(false);
+  // Which bulk-apply confirmation is open, if any — work and rest are applied
+  // independently, so this tracks just the one field the user is about to
+  // change rather than a single combined confirmation for both.
+  const [bulkConfirmField, setBulkConfirmField] = useState<'work' | 'rest' | null>(null);
   const nameInputs = useRef<Record<string, TextInput | null>>({});
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createdAtRef = useRef<number | null>(null);
@@ -232,14 +235,17 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
     setRestBetweenRoundsSeconds(current => Math.max(0, (current ?? 0) + amount));
   };
 
-  const handleApplyBulkTimes = () => {
-    setExercises(current => current.map(ex => ({
-      ...ex,
-      // Rep-based exercises keep their rep count — only their rest time changes.
-      workSeconds: isRepBased(ex) ? ex.workSeconds : bulkWorkSeconds,
-      restSeconds: bulkRestSeconds,
-    })));
-    setBulkConfirmVisible(false);
+  const handleApplyBulkWork = () => {
+    setExercises(current => current.map(ex => (
+      // Rep-based exercises have no work-seconds field to overwrite — leave them alone.
+      isRepBased(ex) ? ex : { ...ex, workSeconds: bulkWorkSeconds }
+    )));
+    setBulkConfirmField(null);
+  };
+
+  const handleApplyBulkRest = () => {
+    setExercises(current => current.map(ex => ({ ...ex, restSeconds: bulkRestSeconds })));
+    setBulkConfirmField(null);
   };
 
   const handleAddExercise = () => {
@@ -438,6 +444,13 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             </View>
           </View>
+          <TouchableOpacity
+            style={[styles.structureRow, styles.structureRowBorder, styles.applyAllRow]}
+            onPress={() => setBulkConfirmField('work')}
+            disabled={exercises.length === 0}
+          >
+            <Text style={styles.applyAllText}>Apply Work Time to All</Text>
+          </TouchableOpacity>
           <View style={[styles.structureRow, styles.structureRowBorder]}>
             <View style={styles.structureLabelGroup}>
               <Text style={styles.structureTitle}>Rest Time (All)</Text>
@@ -464,10 +477,10 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
           </View>
           <TouchableOpacity
             style={[styles.structureRow, styles.structureRowBorder, styles.applyAllRow]}
-            onPress={() => setBulkConfirmVisible(true)}
+            onPress={() => setBulkConfirmField('rest')}
             disabled={exercises.length === 0}
           >
-            <Text style={styles.applyAllText}>Apply to All Exercises</Text>
+            <Text style={styles.applyAllText}>Apply Rest Time to All</Text>
           </TouchableOpacity>
         </View>
 
@@ -513,13 +526,17 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
         </View>
       )}
       <ConfirmDialog
-        visible={bulkConfirmVisible}
-        title="Apply to all exercises?"
-        message={`Set every exercise's work time to ${bulkWorkSeconds}s and rest time to ${bulkRestSeconds}s. Rep-based exercises keep their rep count but still get the new rest time.`}
-        onRequestClose={() => setBulkConfirmVisible(false)}
+        visible={bulkConfirmField !== null}
+        title={bulkConfirmField === 'work' ? 'Apply work time to all exercises?' : 'Apply rest time to all exercises?'}
+        message={
+          bulkConfirmField === 'work'
+            ? `Set every timed exercise's work time to ${bulkWorkSeconds}s. Rep-based exercises are left as-is, and rest times aren't touched.`
+            : `Set every exercise's rest time to ${bulkRestSeconds}s. Work times and rep counts aren't touched.`
+        }
+        onRequestClose={() => setBulkConfirmField(null)}
         actions={[
-          { label: 'Apply', variant: 'primary', onPress: handleApplyBulkTimes },
-          { label: 'Cancel', variant: 'neutral', onPress: () => setBulkConfirmVisible(false) },
+          { label: 'Apply', variant: 'primary', onPress: bulkConfirmField === 'work' ? handleApplyBulkWork : handleApplyBulkRest },
+          { label: 'Cancel', variant: 'neutral', onPress: () => setBulkConfirmField(null) },
         ]}
       />
     </KeyboardAvoidingView>
