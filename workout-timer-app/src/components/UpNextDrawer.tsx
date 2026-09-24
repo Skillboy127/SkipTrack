@@ -57,65 +57,65 @@ export function UpNextDrawer({ visible, onRequestClose, entries, totalExerciseCo
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onRequestClose}>
-      <Pressable style={styles.backdrop} onPress={onRequestClose}>
+      {/* The dimmed backdrop and the sheet are siblings, not parent/child —
+          nesting the ScrollView inside a Pressable (the previous approach,
+          used to stop taps on the sheet from bubbling up and closing it)
+          made the two compete for the touch responder, which is exactly why
+          scrolling worked "sometimes" and not others. As siblings, whichever
+          one is actually under the finger just handles the touch directly:
+          the sheet (rendered on top) for touches on it, the backdrop
+          underneath for everything else. No responder-swallowing needed. */}
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onRequestClose} accessibilityLabel="Close drawer" />
         <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
-          {/* Swallows taps anywhere on the sheet so they don't bubble up and
-              trigger the backdrop's close — the same pattern ConfirmDialog
-              uses for its card, just wrapping the whole sheet instead of one
-              row of it. The drag handlers live one level deeper, on a plain
-              View rather than another Pressable, since stacking two
-              gesture-responder components on the same node is unreliable. */}
-          <Pressable style={styles.sheetInner} onPress={() => {}}>
-            <View {...dragResponder.panHandlers}>
-              <View style={styles.handle} />
-              <View style={styles.header}>
-                <Text style={styles.title}>Up Next</Text>
-                <Pressable onPress={onRequestClose} hitSlop={8} accessibilityLabel="Close">
-                  <CloseIcon color="#94A3B8" size={16} />
-                </Pressable>
-              </View>
+          <View {...dragResponder.panHandlers}>
+            <View style={styles.handle} />
+            <View style={styles.header}>
+              <Text style={styles.title}>Up Next</Text>
+              <Pressable onPress={onRequestClose} hitSlop={8} accessibilityLabel="Close">
+                <CloseIcon color="#94A3B8" size={16} />
+              </Pressable>
             </View>
-            {entries.length === 0 ? (
-              <Text style={styles.emptyText}>That's the last exercise — almost done!</Text>
-            ) : (
-              <ScrollView
-                style={styles.list}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled
-              >
-                {entries.map((entry, index) => (
-                  <View key={index} style={[styles.row, index === 0 && styles.rowNext]}>
-                    <View style={[styles.numberBadge, index === 0 && styles.numberBadgeNext]}>
-                      <Text style={[styles.numberText, index === 0 && styles.numberTextNext]}>
-                        {entry.exerciseNumber}
-                      </Text>
-                    </View>
-                    <View style={styles.rowInfo}>
-                      <Text style={styles.rowName} numberOfLines={1}>{entry.phase.exerciseName}</Text>
-                      {index === 0 && <Text style={styles.rowNextLabel}>UP NEXT</Text>}
-                    </View>
-                    <Text style={styles.rowDetail}>
-                      {entry.phase.mode === 'reps'
-                        ? `${entry.phase.reps} reps`
-                        : `${Math.ceil(entry.phase.duration)}s`}
+          </View>
+          {entries.length === 0 ? (
+            <Text style={styles.emptyText}>That's the last exercise — almost done!</Text>
+          ) : (
+            <ScrollView
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {entries.map((entry, index) => (
+                <View key={index} style={[styles.row, index === 0 && styles.rowNext]}>
+                  <View style={[styles.numberBadge, index === 0 && styles.numberBadgeNext]}>
+                    <Text style={[styles.numberText, index === 0 && styles.numberTextNext]}>
+                      {entry.exerciseNumber}
                     </Text>
                   </View>
-                ))}
-              </ScrollView>
-            )}
-            <Text style={styles.footerHint}>
-              {totalExerciseCount} exercise{totalExerciseCount === 1 ? '' : 's'} total in this workout
-            </Text>
-          </Pressable>
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowName} numberOfLines={1}>{entry.phase.exerciseName}</Text>
+                    {index === 0 && <Text style={styles.rowNextLabel}>UP NEXT</Text>}
+                  </View>
+                  <Text style={styles.rowDetail}>
+                    {entry.phase.mode === 'reps'
+                      ? `${entry.phase.reps} reps`
+                      : `${Math.ceil(entry.phase.duration)}s`}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          <Text style={styles.footerHint}>
+            {totalExerciseCount} exercise{totalExerciseCount === 1 ? '' : 's'} total in this workout
+          </Text>
         </Animated.View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-end',
@@ -127,9 +127,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1F1F24',
     backgroundColor: '#121214',
-  },
-  sheetInner: {
-    flex: 1,
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 24,
