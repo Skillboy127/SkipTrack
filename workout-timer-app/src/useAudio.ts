@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { Platform } from 'react-native';
+import { useAudioPlayer, setAudioModeAsync, requestNotificationPermissionsAsync } from 'expo-audio';
 
 // A full-amplitude 1kHz tone, generated at full scale so it's as loud as the
 // device volume allows — not dependent on ducking other apps, which only
@@ -37,6 +38,12 @@ export function useAudio() {
           // background music instead of getting buried under it.
           interruptionMode: 'duckOthers',
         });
+        // Android 13+ requires this before a media-session notification (the
+        // lock-screen/notification-shade "now playing" card below) is allowed
+        // to show at all.
+        if (Platform.OS === 'android') {
+          await requestNotificationPermissionsAsync();
+        }
       } catch (e) {
         console.warn('Failed to configure audio mode', e);
       }
@@ -139,5 +146,49 @@ export function useAudio() {
   const playBeep = useCallback(() => playFrom(player), [player]);
   const playGoBeep = useCallback(() => playFrom(goBeepPlayer), [goBeepPlayer]);
 
-  return { playBeep, playGoBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive };
+  // Lock-screen / notification-shade "now playing" info for the current
+  // workout — this is what lets someone see (and the app keep running)
+  // while the phone is locked, the same mechanism music apps use. It's tied
+  // to the keep-alive player since that's the one actually producing
+  // continuous audio; the beep players only play brief one-shot cues and
+  // wouldn't make sense as the "active" media session.
+  const lockScreenActiveRef = useRef(false);
+  const setWorkoutNowPlaying = useCallback((title: string, subtitle: string, album?: string) => {
+    if (!keepAlivePlayer) return;
+    try {
+      const metadata = { title, artist: subtitle, albumTitle: album };
+      if (!lockScreenActiveRef.current) {
+        lockScreenActiveRef.current = true;
+        keepAlivePlayer.setActiveForLockScreen(true, metadata, {
+          showSeekForward: false,
+          showSeekBackward: false,
+          isLiveStream: true,
+        });
+      } else {
+        keepAlivePlayer.updateLockScreenMetadata(metadata);
+      }
+    } catch (e) {
+      console.warn('Failed to update lock screen now-playing info:', e);
+    }
+  }, [keepAlivePlayer]);
+
+  const clearWorkoutNowPlaying = useCallback(() => {
+    if (!keepAlivePlayer) return;
+    try {
+      keepAlivePlayer.clearLockScreenControls();
+    } catch (e) {
+      console.warn('Failed to clear lock screen now-playing info:', e);
+    } finally {
+      lockScreenActiveRef.current = false;
+    }
+  }, [keepAlivePlayer]);
+
+  return {
+    playBeep,
+    playGoBeep,
+    startBackgroundKeepAlive,
+    stopBackgroundKeepAlive,
+    setWorkoutNowPlaying,
+    clearWorkoutNowPlaying,
+  };
 }

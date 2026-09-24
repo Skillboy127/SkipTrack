@@ -33,7 +33,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
 
-  const { playBeep, playGoBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive } = useAudio();
+  const { playBeep, playGoBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive, setWorkoutNowPlaying, clearWorkoutNowPlaying } = useAudio();
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const { speak, speakCountdown } = useSpeech(soundMode === 'speech');
@@ -55,6 +55,16 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     startBackgroundKeepAlive();
     return () => stopBackgroundKeepAlive();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Surface a lock-screen / notification-shade "now playing" card with the
+  // current exercise and time remaining — the same media-session mechanism
+  // music apps use, so there's a visible, live-updating summary of the
+  // workout even while the phone is locked. Tied to the keep-alive loop
+  // above, so it's active for the whole session and cleared when it ends.
+  useEffect(() => {
+    setWorkoutNowPlaying(workout.name || 'Workout', 'Get ready...');
+    return () => clearWorkoutNowPlaying();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCountdownTick = (secondsRemaining: number) => {
@@ -88,6 +98,24 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     loadCountdownSoundMode().then(setSoundMode);
     loadWeightUnit().then(setWeightUnit);
   }, []);
+
+  // Keep the lock-screen "now playing" card in sync with the actual session:
+  // current exercise (or rest + what's next) and time remaining.
+  useEffect(() => {
+    const phase = engine.currentPhase;
+    if (!phase || preStartSeconds !== null) return;
+
+    const isRestPhase = phase.type === 'rest';
+    const upcoming = phases[engine.currentPhaseIndex + 1];
+    const title = isRestPhase ? 'Rest' : phase.exerciseName;
+    const subtitle = isRestPhase
+      ? `Next: ${upcoming?.exerciseName ?? 'Done'}`
+      : phase.mode === 'reps'
+        ? `${phase.reps} reps`
+        : `${Math.ceil(engine.remainingSeconds)}s left`;
+    setWorkoutNowPlaying(title, subtitle, workout.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.currentPhase, engine.currentPhaseIndex, Math.ceil(engine.remainingSeconds), preStartSeconds]);
 
   const cycleSoundMode = () => {
     const next = SOUND_MODE_ORDER[(SOUND_MODE_ORDER.indexOf(soundMode) + 1) % SOUND_MODE_ORDER.length];
