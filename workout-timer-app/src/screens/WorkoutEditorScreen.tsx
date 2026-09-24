@@ -96,11 +96,15 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
       </View>
       <View style={styles.metricsInputs}>
         <View style={styles.metricColumn}>
-          <TouchableOpacity style={styles.modeToggle} onPress={toggleWorkMode}>
+          <TouchableOpacity style={styles.modeToggle} onPress={toggleWorkMode} hitSlop={6}>
             <Text style={styles.modeToggleText}>{repBased ? 'REPS' : 'SEC'}</Text>
           </TouchableOpacity>
           <View style={styles.stepper}>
-            <TouchableOpacity style={styles.stepButton} onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? -1 : -5)}>
+            <TouchableOpacity
+              style={styles.stepButton}
+              onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? -1 : -5)}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 2 }}
+            >
               <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
             <TextInput
@@ -110,7 +114,11 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
               keyboardType="number-pad"
               selectionColor="#CCFF00"
             />
-            <TouchableOpacity style={styles.stepButton} onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? 1 : 5)}>
+            <TouchableOpacity
+              style={styles.stepButton}
+              onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? 1 : 5)}
+              hitSlop={{ top: 10, bottom: 10, left: 2, right: 8 }}
+            >
               <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
           </View>
@@ -118,7 +126,11 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
         </View>
         <View style={styles.metricColumn}>
           <View style={styles.stepper}>
-            <TouchableOpacity style={styles.stepButton} onPress={() => step('restSeconds', -5)}>
+            <TouchableOpacity
+              style={styles.stepButton}
+              onPress={() => step('restSeconds', -5)}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 2 }}
+            >
               <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
             <TextInput
@@ -128,14 +140,22 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
               keyboardType="number-pad"
               selectionColor="#CCFF00"
             />
-            <TouchableOpacity style={styles.stepButton} onPress={() => step('restSeconds', 5)}>
+            <TouchableOpacity
+              style={styles.stepButton}
+              onPress={() => step('restSeconds', 5)}
+              hitSlop={{ top: 10, bottom: 10, left: 2, right: 8 }}
+            >
               <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
           </View>
         </View>
         <View style={styles.metricColumn}>
           <View style={styles.stepper}>
-            <TouchableOpacity style={styles.stepButton} onPress={() => step('sets', -1)}>
+            <TouchableOpacity
+              style={styles.stepButton}
+              onPress={() => step('sets', -1)}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 2 }}
+            >
               <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
             <TextInput
@@ -145,7 +165,11 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
               keyboardType="number-pad"
               selectionColor="#CCFF00"
             />
-            <TouchableOpacity style={styles.stepButton} onPress={() => step('sets', 1)}>
+            <TouchableOpacity
+              style={styles.stepButton}
+              onPress={() => step('sets', 1)}
+              hitSlop={{ top: 10, bottom: 10, left: 2, right: 8 }}
+            >
               <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
           </View>
@@ -762,22 +786,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 20,
   },
+  // Width = 3 metricColumns (72 each) + 3 gaps (4 each) between all 4 row
+  // children (the columns plus the trailing delete button) + the delete
+  // button itself (26) — recompute this if any of those sizes change.
   metricsInputs: {
-    width: 204,
-    height: 48,
+    width: 254,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     flexShrink: 0,
   },
+  // Fixed height + bottom alignment means the rest/sets steppers always line
+  // up with the work-time one, whether or not that column also has the
+  // SEC/REPS toggle above it — previously only the work column had that
+  // extra element, and without an explicit shared height + baseline, the
+  // row's default center-alignment pushed it down relative to the other two.
   metricColumn: {
-    width: 52,
+    width: 72,
+    height: 52,
     alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   modeToggle: {
     height: 16,
     minWidth: 38,
     paddingHorizontal: 4,
+    marginBottom: 4,
     borderRadius: 4,
     backgroundColor: '#1F1F24',
     alignItems: 'center',
@@ -790,36 +825,39 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   stepper: {
-    width: 52,
-    height: 26,
+    width: 72,
+    height: 32,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Large enough to comfortably tap on their own — the generous hitSlop on
+  // the TouchableOpacity itself (see JSX) extends the real touch target
+  // further still without needing to make the visible button any bigger.
   stepButton: {
-    width: 9,
-    height: 22,
+    width: 22,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepText: {
     color: '#94A3B8',
     fontFamily: 'Geist',
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '700',
-    lineHeight: 16,
+    lineHeight: 18,
   },
   inlineWarning: {
     position: 'absolute',
-    top: 45,
+    top: 50,
     color: '#F59E0B',
     fontFamily: 'JetBrains Mono',
     fontSize: 10,
     fontWeight: '700',
   },
   metricInput: {
-    width: 34,
-    height: 25,
+    width: 28,
+    height: 30,
     paddingVertical: 3,
     paddingHorizontal: 1,
     backgroundColor: '#121214',
@@ -847,6 +885,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
+    // Bottom-align with the steppers (which sit at the bottom of their own
+    // taller, fixed-height columns) instead of the row's default center.
+    alignSelf: 'flex-end',
   },
   addExerciseButton: {
     height: 68,
