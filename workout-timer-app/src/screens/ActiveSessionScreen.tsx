@@ -32,7 +32,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
 
-  const { playBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive } = useAudio();
+  const { playBeep, playGoBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive } = useAudio();
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const { speak, speakCountdown } = useSpeech(soundMode === 'speech');
@@ -56,7 +56,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // begins, following the "3, 2, 1" countdown — a clear "go" signal separate
   // from the countdown beeps/speech themselves.
   const handlePhaseStart = (phase: { type: 'work' | 'rest' }) => {
-    if (phase.type === 'work' && soundMode !== 'silent') playBeep({ highPitch: true });
+    if (phase.type === 'work' && soundMode !== 'silent') playGoBeep();
   };
   const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick, handlePhaseStart);
 
@@ -127,7 +127,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (preStartSeconds === null) {
       engine.start();
-      if (soundMode !== 'silent') playBeep({ highPitch: true });
+      if (soundMode !== 'silent') playGoBeep();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
   }, [preStartSeconds]); // eslint-disable-line react-hooks/exhaustive-deps

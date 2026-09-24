@@ -1,16 +1,23 @@
 import { useCallback, useEffect } from 'react';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
-// Require the asset directly.
-// We will create/download a beep.mp3 later.
-const BEEP_ASSET = require('../assets/audio/beep.mp3');
+// A full-amplitude 1kHz tone, generated at full scale so it's as loud as the
+// device volume allows — not dependent on ducking other apps, which only
+// helps when something else happens to be playing.
+const BEEP_ASSET = require('../assets/audio/beep-loud.wav');
+// A distinct, higher-pitched (1.6kHz) full-amplitude tone for the "start of a
+// new exercise" cue — a dedicated asset rather than pitch-shifting the beep
+// at runtime, since that relies on native playbackRate/pitch-correction
+// support that isn't guaranteed to do anything audible on every device.
+const GO_BEEP_ASSET = require('../assets/audio/go-beep.wav');
 // A 1-second track of true digital silence (all-zero PCM samples), used only
 // to keep the audio route active in the background — see keepAlivePlayer below.
 const SILENCE_ASSET = require('../assets/audio/silence.wav');
 
 export function useAudio() {
   const player = useAudioPlayer(BEEP_ASSET);
-  // A second, silent looping player. iOS (and Android's foreground playback
+  const goBeepPlayer = useAudioPlayer(GO_BEEP_ASSET);
+  // A third, silent looping player. iOS (and Android's foreground playback
   // service) only keep the app alive in the background for as long as audio
   // is actively playing — brief, spaced-out beeps don't count as "active"
   // and the OS suspends the app between them once the screen locks. Looping
@@ -60,27 +67,25 @@ export function useAudio() {
     }
   }, [keepAlivePlayer]);
 
-  const playBeep = useCallback((options?: { highPitch?: boolean }) => {
-    if (!player) return;
+  const playFrom = (source: ReturnType<typeof useAudioPlayer>) => {
+    if (!source) return;
     (async () => {
       try {
         // Stop and rewind before replaying so rapid, back-to-back beeps
         // (e.g. the 3-2-1 countdown) don't race a still-playing instance
         // and get truncated or silently dropped.
-        player.pause();
-        await player.seekTo(0);
-        player.volume = 1.0;
-        // The "start of a new exercise" cue reuses the same beep sample but
-        // played back faster without pitch correction, which raises its
-        // pitch — giving a distinct higher "go" note without a new asset.
-        player.shouldCorrectPitch = !options?.highPitch;
-        player.playbackRate = options?.highPitch ? 1.6 : 1.0;
-        player.play();
+        source.pause();
+        await source.seekTo(0);
+        source.volume = 1.0;
+        source.play();
       } catch (e) {
         console.warn('Audio playback error silenced to prevent crash:', e);
       }
     })();
-  }, [player]);
+  };
 
-  return { playBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive };
+  const playBeep = useCallback(() => playFrom(player), [player]);
+  const playGoBeep = useCallback(() => playFrom(goBeepPlayer), [goBeepPlayer]);
+
+  return { playBeep, playGoBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive };
 }
