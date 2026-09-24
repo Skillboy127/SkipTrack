@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
 import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '../types';
@@ -8,7 +8,7 @@ import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
 import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit } from '../storage';
-import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, CloseIcon, ChevronIcon } from '../components/WorkoutIcons';
+import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { UpNextDrawer } from '../components/UpNextDrawer';
 
@@ -199,10 +199,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   promptQuitRef.current = promptQuit;
 
   // Android hardware back button: show the quit confirmation instead of
-  // leaving immediately. (iOS has no equivalent hardware button; the swipe
-  // gesture is disabled for this screen and the on-screen X button is used
-  // instead — intercepting a native swipe-to-dismiss via beforeRemove proved
-  // unreliable on iOS, so we deliberately don't rely on it.)
+  // leaving immediately.
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       promptQuitRef.current();
@@ -210,6 +207,27 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     });
     return () => subscription.remove();
   }, []);
+
+  // Slide-to-go-back is the only way to leave this screen — there's no X
+  // button. This is a hand-rolled left-edge swipe (PanResponder) rather than
+  // the native stack's own interactive pop gesture (`gestureEnabled: true` +
+  // `beforeRemove`): that combination proved unreliable on iOS, because the
+  // native gesture can finish its visual transition before JS ever gets a
+  // chance to intercept it and show the confirmation, leaving the screen in
+  // a desynced state. Detecting the swipe ourselves means we only ever
+  // navigate away after the confirmation is accepted, on both platforms.
+  const EDGE_SWIPE_WIDTH = 24;
+  const EDGE_SWIPE_THRESHOLD = 80;
+  const swipeBackResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.pageX <= EDGE_SWIPE_WIDTH,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.x0 <= EDGE_SWIPE_WIDTH && gesture.dx > 12 && Math.abs(gesture.dy) < 40,
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx > EDGE_SWIPE_THRESHOLD) promptQuitRef.current();
+      },
+    })
+  ).current;
 
   // Reset per-set weight entry whenever the phase advances
   useEffect(() => {
@@ -305,15 +323,12 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipeBackResponder.panHandlers}>
       {toastMessage && (
         <View style={styles.toast} pointerEvents="none">
           <Text style={styles.toastText}>{toastMessage}</Text>
         </View>
       )}
-      <TouchableOpacity style={styles.quitButton} onPress={promptQuit} hitSlop={8} accessibilityLabel="Quit workout">
-        <CloseIcon color="#94A3B8" size={13} />
-      </TouchableOpacity>
       <View style={styles.statusBarSpacer} />
       <View style={styles.progressTracker}>
         <View style={styles.progressLabels}>
@@ -493,18 +508,6 @@ const styles = StyleSheet.create({
   },
   statusBarSpacer: {
     height: 44,
-  },
-  quitButton: {
-    position: 'absolute',
-    top: 8,
-    right: 16,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#121214',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
   },
   progressTracker: {
     height: 55,

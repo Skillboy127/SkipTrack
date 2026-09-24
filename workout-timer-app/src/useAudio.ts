@@ -49,6 +49,37 @@ export function useAudio() {
     keepAlivePlayer.loop = true;
   }, [keepAlivePlayer]);
 
+  // Prime the beep players by actually playing them once, muted, right away.
+  // The audio session being "active" (via the keep-alive loop) isn't enough —
+  // each individual player still does its own first-play buffering/setup the
+  // first time .play() is called on it, which is exactly the ~1s lateness
+  // reported on the very first countdown beep of a session. Playing (and
+  // immediately stopping) each player as soon as it's created absorbs that
+  // one-time cost well before the real first cue is due.
+  useEffect(() => {
+    [player, goBeepPlayer].forEach(source => {
+      if (!source) return;
+      try {
+        source.volume = 0;
+        source.play();
+        // Give the native player a moment to actually start (play/pause back
+        // to back in the same tick can land at the native side before
+        // playback has really engaged, since the bridge call is async).
+        setTimeout(() => {
+          try {
+            source.pause();
+            source.seekTo(0).catch(() => {});
+            source.volume = 1.0;
+          } catch (e) {
+            console.warn('Failed to finish priming beep player:', e);
+          }
+        }, 100);
+      } catch (e) {
+        console.warn('Failed to prime beep player:', e);
+      }
+    });
+  }, [player, goBeepPlayer]);
+
   const startBackgroundKeepAlive = useCallback(() => {
     if (!keepAlivePlayer) return;
     try {
