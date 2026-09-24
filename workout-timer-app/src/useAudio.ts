@@ -1,19 +1,23 @@
 import { useCallback, useEffect } from 'react';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
-// Require the asset directly. 
+// Require the asset directly.
 // We will create/download a beep.mp3 later.
 const BEEP_ASSET = require('../assets/audio/beep.mp3');
+// A 1-second track of true digital silence (all-zero PCM samples), used only
+// to keep the audio route active in the background — see keepAlivePlayer below.
+const SILENCE_ASSET = require('../assets/audio/silence.wav');
 
 export function useAudio() {
   const player = useAudioPlayer(BEEP_ASSET);
-  // A second, near-silent looping player. iOS (and Android's foreground
-  // playback service) only keep the app alive in the background for as long
-  // as audio is actively playing — brief, spaced-out beeps don't count as
-  // "active" and the OS suspends the app between them once the screen locks.
-  // Looping a near-silent track for the whole session keeps the audio route
-  // continuously active so the countdown timer and beeps keep running.
-  const keepAlivePlayer = useAudioPlayer(BEEP_ASSET);
+  // A second, silent looping player. iOS (and Android's foreground playback
+  // service) only keep the app alive in the background for as long as audio
+  // is actively playing — brief, spaced-out beeps don't count as "active"
+  // and the OS suspends the app between them once the screen locks. Looping
+  // real silence (not a quiet beep — that's still audibly rhythmic) keeps
+  // the audio route continuously active so the countdown timer and beeps
+  // keep running without the user hearing anything extra.
+  const keepAlivePlayer = useAudioPlayer(SILENCE_ASSET);
 
   useEffect(() => {
     async function configureAudio() {
@@ -36,7 +40,6 @@ export function useAudio() {
   useEffect(() => {
     if (!keepAlivePlayer) return;
     keepAlivePlayer.loop = true;
-    keepAlivePlayer.volume = 0.01;
   }, [keepAlivePlayer]);
 
   const startBackgroundKeepAlive = useCallback(() => {
