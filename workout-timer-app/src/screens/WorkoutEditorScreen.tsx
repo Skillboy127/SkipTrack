@@ -102,10 +102,10 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
           <View style={styles.stepper}>
             <TouchableOpacity
               style={styles.stepButton}
-              onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? -1 : -5)}
-              hitSlop={{ top: 10, bottom: 10, left: 8, right: 2 }}
+              onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? 1 : 5)}
+              hitSlop={{ top: 6, bottom: 2, left: 10, right: 10 }}
             >
-              <Text style={styles.stepText}>−</Text>
+              <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
             <TextInput
               style={[styles.metricInput, styles.workInput]}
@@ -116,10 +116,10 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
             />
             <TouchableOpacity
               style={styles.stepButton}
-              onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? 1 : 5)}
-              hitSlop={{ top: 10, bottom: 10, left: 2, right: 8 }}
+              onPress={() => step(repBased ? 'reps' : 'workSeconds', repBased ? -1 : -5)}
+              hitSlop={{ top: 2, bottom: 6, left: 10, right: 10 }}
             >
-              <Text style={styles.stepText}>+</Text>
+              <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
           </View>
           {warning && <Text style={styles.inlineWarning}>!</Text>}
@@ -128,10 +128,10 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
           <View style={styles.stepper}>
             <TouchableOpacity
               style={styles.stepButton}
-              onPress={() => step('restSeconds', -5)}
-              hitSlop={{ top: 10, bottom: 10, left: 8, right: 2 }}
+              onPress={() => step('restSeconds', 5)}
+              hitSlop={{ top: 6, bottom: 2, left: 10, right: 10 }}
             >
-              <Text style={styles.stepText}>−</Text>
+              <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
             <TextInput
               style={[styles.metricInput, styles.restInput]}
@@ -142,10 +142,10 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
             />
             <TouchableOpacity
               style={styles.stepButton}
-              onPress={() => step('restSeconds', 5)}
-              hitSlop={{ top: 10, bottom: 10, left: 2, right: 8 }}
+              onPress={() => step('restSeconds', -5)}
+              hitSlop={{ top: 2, bottom: 6, left: 10, right: 10 }}
             >
-              <Text style={styles.stepText}>+</Text>
+              <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -153,10 +153,10 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
           <View style={styles.stepper}>
             <TouchableOpacity
               style={styles.stepButton}
-              onPress={() => step('sets', -1)}
-              hitSlop={{ top: 10, bottom: 10, left: 8, right: 2 }}
+              onPress={() => step('sets', 1)}
+              hitSlop={{ top: 6, bottom: 2, left: 10, right: 10 }}
             >
-              <Text style={styles.stepText}>−</Text>
+              <Text style={styles.stepText}>+</Text>
             </TouchableOpacity>
             <TextInput
               style={[styles.metricInput, styles.setsInput]}
@@ -167,10 +167,10 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
             />
             <TouchableOpacity
               style={styles.stepButton}
-              onPress={() => step('sets', 1)}
-              hitSlop={{ top: 10, bottom: 10, left: 2, right: 8 }}
+              onPress={() => step('sets', -1)}
+              hitSlop={{ top: 2, bottom: 6, left: 10, right: 10 }}
             >
-              <Text style={styles.stepText}>+</Text>
+              <Text style={styles.stepText}>−</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -747,6 +747,7 @@ const styles = StyleSheet.create({
   exerciseRow: {
     minHeight: 56,
     paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: '#09090A',
     flexDirection: 'row',
     alignItems: 'center',
@@ -778,7 +779,7 @@ const styles = StyleSheet.create({
   exerciseName: {
     flex: 1,
     minHeight: 20,
-    maxHeight: 40,
+    maxHeight: 80,
     padding: 0,
     color: '#FFFFFF',
     fontFamily: 'Geist',
@@ -786,12 +787,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 20,
   },
-  // Width = 3 metricColumns (72 each) + 3 gaps (4 each) between all 4 row
+  // Width = 3 metricColumns (44 each) + 3 gaps (4 each) between all 4 row
   // children (the columns plus the trailing delete button) + the delete
   // button itself (26) — recompute this if any of those sizes change.
+  // Stacking the +/- buttons above/below the number (rather than beside it)
+  // keeps each column narrow, leaving much more room for the exercise name.
   metricsInputs: {
-    width: 254,
-    height: 52,
+    width: 170,
+    height: 96,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -803,8 +806,8 @@ const styles = StyleSheet.create({
   // extra element, and without an explicit shared height + baseline, the
   // row's default center-alignment pushed it down relative to the other two.
   metricColumn: {
-    width: 72,
-    height: 52,
+    width: 44,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
@@ -824,40 +827,44 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '700',
   },
+  // A vertical stepper (+ above, − below the number) instead of side-by-side
+  // buttons — this is what actually saves the horizontal space that used to
+  // get eaten by wide left/right buttons flanking the input.
   stepper: {
-    width: 72,
-    height: 32,
-    flexDirection: 'row',
+    width: 36,
+    flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 3,
   },
-  // Large enough to comfortably tap on their own — the generous hitSlop on
-  // the TouchableOpacity itself (see JSX) extends the real touch target
-  // further still without needing to make the visible button any bigger.
+  // Filled so they read as real buttons even at this size — the generous
+  // hitSlop on the TouchableOpacity itself (see JSX) extends the real touch
+  // target well beyond the visible box on top of that.
   stepButton: {
-    width: 22,
-    height: 32,
+    width: 36,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: '#1F1F24',
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepText: {
     color: '#94A3B8',
     fontFamily: 'Geist',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    lineHeight: 18,
+    lineHeight: 17,
   },
   inlineWarning: {
     position: 'absolute',
-    top: 50,
+    top: 98,
     color: '#F59E0B',
     fontFamily: 'JetBrains Mono',
     fontSize: 10,
     fontWeight: '700',
   },
   metricInput: {
-    width: 28,
-    height: 30,
+    width: 36,
+    height: 26,
     paddingVertical: 3,
     paddingHorizontal: 1,
     backgroundColor: '#121214',
