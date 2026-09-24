@@ -33,10 +33,10 @@ export function useAudio() {
         await setAudioModeAsync({
           playsInSilentMode: true,
           shouldPlayInBackground: true,
-          // Duck (temporarily lower) other apps' audio instead of just mixing
-          // at equal level, so the countdown beep actually cuts through
-          // background music instead of getting buried under it.
-          interruptionMode: 'duckOthers',
+          // Mix with other apps' audio at equal volume rather than ducking
+          // (temporarily lowering) it — ducking was reported as annoying
+          // since it dips the user's own music every time a beep plays.
+          interruptionMode: 'mixWithOthers',
         });
         // Android 13+ requires this before a media-session notification (the
         // lock-screen/notification-shade "now playing" card below) is allowed
