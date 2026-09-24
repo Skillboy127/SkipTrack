@@ -8,8 +8,9 @@ import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
 import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit } from '../storage';
-import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, CloseIcon } from '../components/WorkoutIcons';
+import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, CloseIcon, ChevronIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { UpNextDrawer } from '../components/UpNextDrawer';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
@@ -66,6 +67,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const [weightInputValue, setWeightInputValue] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [quitStep, setQuitStep] = useState<QuitStep>('closed');
+  const [upNextVisible, setUpNextVisible] = useState(false);
   // Seconds left in the "get ready" countdown shown before the workout timer
   // actually starts; null once it's finished and the real session has begun.
   const [preStartSeconds, setPreStartSeconds] = useState<number | null>(PRE_START_SECONDS);
@@ -271,6 +273,15 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     ? (completedExerciseCount / totalExerciseCount) * 100
     : 0;
   const nextPhase = phases[engine.currentPhaseIndex + 1];
+  // Every remaining work phase after the current position, each tagged with
+  // its overall exercise number, for the "Up Next" drawer.
+  const upcomingEntries = phases
+    .map((phase, index) => ({ phase, index }))
+    .filter(({ phase, index }) => phase.type === 'work' && index > engine.currentPhaseIndex)
+    .map(({ phase, index }) => ({
+      phase,
+      exerciseNumber: 1 + phases.slice(0, index).filter(p => p.type === 'work').length,
+    }));
   const phaseAccent = isRest ? '#6B9EFA' : '#CCFF00';
   const phaseProgress = engine.currentPhaseDuration > 0
      ? Math.min(1, Math.max(0, (engine.currentPhaseDuration - engine.remainingSeconds) / engine.currentPhaseDuration))
@@ -308,11 +319,9 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         <View style={styles.progressLabels}>
           <Text style={styles.workoutTag} numberOfLines={1}>{workout.name || 'WORKOUT'}</Text>
           <View style={styles.progressRightGroup}>
-            {!isRest && (
-              <Text style={styles.progressPercentage}>
-                EXERCISE {Math.min(activeExerciseNumber, totalExerciseCount)} OF {totalExerciseCount}
-              </Text>
-            )}
+            <Text style={styles.progressPercentage}>
+              EXERCISE {Math.min(activeExerciseNumber, totalExerciseCount)} OF {totalExerciseCount}
+            </Text>
             <TouchableOpacity onPress={cycleSoundMode} hitSlop={8} accessibilityLabel="Change countdown sound">
               <SpeakerIcon color="#94A3B8" size={22} muted={soundMode === 'silent'} />
             </TouchableOpacity>
@@ -364,6 +373,16 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           </View>
         )}
         {isRest && <Text style={styles.adjustmentCue}>Tweak rest time (+/- 5s) directly during rest phase</Text>}
+        {isRest && (
+          <TouchableOpacity
+            style={styles.upNextTrigger}
+            onPress={() => setUpNextVisible(true)}
+            accessibilityLabel="View upcoming exercises"
+          >
+            <Text style={styles.upNextTriggerText}>View Upcoming Exercises</Text>
+            <ChevronIcon color="#CCFF00" size={12} direction="up" />
+          </TouchableOpacity>
+        )}
         {isRepPhase && (
           <View style={styles.repActionsGroup}>
             {weightInputVisible ? (
@@ -456,6 +475,12 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           { label: 'Save', variant: 'primary', onPress: confirmSaveToHistory },
           { label: "Don't Save", variant: 'destructive', onPress: proceedWithLeave },
         ]}
+      />
+      <UpNextDrawer
+        visible={upNextVisible}
+        onRequestClose={() => setUpNextVisible(false)}
+        entries={upcomingEntries}
+        totalExerciseCount={totalExerciseCount}
       />
     </View>
   );
@@ -693,6 +718,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     textAlign: 'center',
+  },
+  upNextTrigger: {
+    position: 'absolute',
+    bottom: 32,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    backgroundColor: '#121214',
+  },
+  upNextTriggerText: {
+    color: '#CCFF00',
+    fontSize: 12,
+    fontWeight: '700',
   },
   adjustBtn: {
     width: 48,
