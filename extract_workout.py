@@ -365,26 +365,21 @@ def extract(transcript: str, description: str, youtube_url: str, start_time: str
         print(f"  [Video Extraction Error] {error_msg}")
         is_access_error = "403" in error_msg or "permission" in error_msg.lower()
         is_invalid_request = "400" in error_msg or "invalid_request" in error_msg.lower() or "unknown parameter" in error_msg.lower()
-        # Video/multimodal analysis hits Gemini's capacity limits far more
-        # readily than a plain text call does — every model in
-        # VIDEO_MODEL_FALLBACK_CHAIN can be "experiencing high demand" for
-        # video while the exact same models are perfectly fine for text.
-        # Rather than hard-failing the whole import, fall back to the
-        # transcript/description the same way we already do for 400/403s.
-        is_capacity_error = _is_retryable_model_error(video_error)
-        if is_access_error or is_invalid_request or is_capacity_error:
+        if is_access_error or is_invalid_request:
             has_transcript = transcript and "[NO TRANSCRIPT AVAILABLE" not in transcript
             has_desc = description and "[NO DESCRIPTION]" not in description and "[COULD NOT FETCH" not in description
             if has_transcript or has_desc:
-                if is_access_error:
-                    reason = "restricted by YouTube/Gemini (403)"
-                elif is_invalid_request:
-                    reason = "rejected video parameters (400)"
-                else:
-                    reason = "video model(s) at capacity (503)"
+                reason = "restricted by YouTube/Gemini (403)" if is_access_error else "rejected video parameters (400)"
                 print(f"  [Fallback] Direct video analysis {reason}. Extracting from transcript and description...")
                 text_content = f"VIDEO DESCRIPTION & CHAPTERS:\n{description}\n\nVIDEO TRANSCRIPT:\n{transcript}"
                 return extract_from_text(text_content)
+        # Deliberately NOT falling back to transcript/description text here:
+        # a capacity error means the video models themselves are overloaded,
+        # not that the video is unreadable — text extraction would silently
+        # produce a lower-quality result (no on-screen timing/countdown data)
+        # instead of the accurate one the user actually asked for. Surface it
+        # as a clear, retryable error instead; friendly_error_message() in
+        # server.py turns this into a "busy right now, try again" message.
         raise
 
 def extract_from_image(image_path_or_bytes, mime_type: str | None = None) -> dict:

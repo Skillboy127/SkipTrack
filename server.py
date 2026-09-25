@@ -31,7 +31,7 @@ def friendly_error_message(error: Exception) -> str:
     """
     text = str(error).lower()
     if any(marker in text for marker in ("high demand", "503", "unavailable", "resource exhausted", "quota", "429", "rate limit")):
-        return "The AI service is busy right now. Please wait a minute and try again."
+        return "We're facing high demand right now. Please try again in a couple of minutes."
     if "403" in text or "permission" in text:
         return "That video couldn't be accessed for analysis."
     if "400" in text or "invalid_request" in text or "invalid argument" in text:
