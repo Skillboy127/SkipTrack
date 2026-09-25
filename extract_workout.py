@@ -322,35 +322,44 @@ def generate_with_fallback(model_names, generate_call):
 
 def extract(transcript: str, description: str, youtube_url: str, start_time: str, end_time: str) -> dict:
     client = genai.Client()
-    
+
     prompt = FULL_PROMPT.replace("__TRANSCRIPT_PLACEHOLDER__", transcript).replace(
         "__DESCRIPTION_PLACEHOLDER__", description
     )
-    
-    video_part = {
-        "type": "video",
-        "uri": youtube_url,
-    }
-    
-    video_metadata = {}
+
+    # Uses the same stable client.models.generate_content() call as the image
+    # and text extractors (see extract_from_image/extract_from_text below),
+    # instead of the newer client.interactions.create() API this used to call
+    # with a hand-built dict shape. That dict included a top-level
+    # "video_metadata" key that isn't part of that API's video content
+    # schema at all, which is exactly what was producing the
+    # "Request contains an invalid argument" 400 error on every video import
+    # that had a start/end time set. types.VideoMetadata below is the
+    # correctly-typed, documented way to trim a YouTube video on this API.
+    video_metadata_kwargs = {}
     if start_time:
-        video_metadata["start_offset"] = parse_time_to_seconds(start_time)
+        video_metadata_kwargs["start_offset"] = parse_time_to_seconds(start_time)
     if end_time:
-        video_metadata["end_offset"] = parse_time_to_seconds(end_time)
-    if video_metadata:
-        video_part["video_metadata"] = video_metadata
+        video_metadata_kwargs["end_offset"] = parse_time_to_seconds(end_time)
+
+    video_part = types.Part(
+        file_data=types.FileData(file_uri=youtube_url, mime_type="video/*"),
+        video_metadata=types.VideoMetadata(**video_metadata_kwargs) if video_metadata_kwargs else None,
+    )
 
     try:
-        interaction = generate_with_fallback(
+        response = generate_with_fallback(
             VIDEO_MODEL_FALLBACK_CHAIN,
-            lambda model_name: client.interactions.create(
+            lambda model_name: client.models.generate_content(
                 model=model_name,
-                input=[video_part, {"type": "text", "text": prompt}],
-                response_format={"type": "text", "mime_type": "application/json"},
-                generation_config={"temperature": 0.1}
+                contents=[video_part, prompt],
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                ),
             ),
         )
-        return parse_gemini_response(interaction.output_text)
+        return parse_gemini_response(response.text)
     except Exception as video_error:
         error_msg = str(video_error)
         print(f"  [Video Extraction Error] {error_msg}")
