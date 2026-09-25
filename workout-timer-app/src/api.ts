@@ -119,7 +119,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 6
   }
 }
 
-async function postJson(path: string, body: Record<string, string>): Promise<Workout> {
+async function postJson(path: string, body: Record<string, string>, timeoutMs = 60000): Promise<Workout> {
   let response: Response | null = null;
   let lastError: any = null;
 
@@ -133,7 +133,7 @@ async function postJson(path: string, body: Record<string, string>): Promise<Wor
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         },
-        60000,
+        timeoutMs,
       );
       break;
     } catch (err) {
@@ -162,7 +162,13 @@ async function postJson(path: string, body: Record<string, string>): Promise<Wor
 /** Phase 3 — YouTube video URL */
 export async function extractWorkoutFromVideo(url: string): Promise<Workout> {
   console.log('Sending extraction request to:', `${API_BASE}/extract`);
-  return postJson('/extract', { url });
+  // Video analysis genuinely takes longer than an image/text call — it reads
+  // the actual video content, and can fall back through multiple models on
+  // transient errors (see VIDEO_MODEL_FALLBACK_CHAIN server-side). The
+  // default 60s budget was firing the client's own abort ("Fetch request
+  // has been canceled") on perfectly successful-but-slow extractions,
+  // especially layered on top of a Render free-tier cold start.
+  return postJson('/extract', { url }, 150000);
 }
 
 /** Phase 4 — Single image (base64) */

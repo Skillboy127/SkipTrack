@@ -26,7 +26,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ImportVideo'>;
 type Tab = 'video' | 'image' | 'text';
 
 const LOADING_MESSAGES: Record<Tab, string[]> = {
-  video: ['Watching the video...', 'Identifying exercises...', 'Reading timing and reps...', 'Structuring your workout...'],
+  // Video analysis genuinely takes longer than image/text (and can retry
+  // through a couple of models on the server), so this rotation includes a
+  // reassurance message rather than just looping the same 4 lines for up to
+  // ~2 minutes, which otherwise reads as stuck.
+  video: ['Watching the video...', 'Identifying exercises...', 'Reading timing and reps...', 'Structuring your workout...', 'Longer videos can take a minute or two...'],
   image: ['Scanning the image...', 'Reading exercise names...', 'Extracting sets and reps...', 'Structuring your workout...'],
   text: ['Reading your workout...', 'Identifying exercises...', 'Structuring sets and reps...', 'Almost done...'],
 };
