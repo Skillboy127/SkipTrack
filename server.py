@@ -5,6 +5,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()  # Load .env before any SDK clients are imported
 
+if not os.getenv('GEMINI_API_KEY') and os.getenv('GOOGLE_API_KEY'):
+    os.environ['GEMINI_API_KEY'] = os.getenv('GOOGLE_API_KEY')
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import traceback
@@ -15,6 +18,27 @@ CORS(app)
 MAX_TEXT_LENGTH = 30_000
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+def friendly_error_message(error: Exception) -> str:
+    """Translate a raw Gemini/SDK exception into a short, user-facing message.
+
+    The full exception and traceback are still printed to the server logs —
+    this only controls what reaches the app, since dumping a raw Python
+    exception repr (e.g. "400 - {'error': {'message': ...}}") straight to
+    the UI is confusing and looks broken even when the underlying cause is
+    a normal, explainable thing like the AI provider being temporarily busy.
+    """
+    text = str(error).lower()
+    if any(marker in text for marker in ("high demand", "503", "unavailable", "resource exhausted", "quota", "429", "rate limit")):
+        return "The AI service is busy right now. Please wait a minute and try again."
+    if "403" in text or "permission" in text:
+        return "That video couldn't be accessed for analysis."
+    if "400" in text or "invalid_request" in text or "invalid argument" in text:
+        return "That import couldn't be processed. Try a different source, or paste it in as text instead."
+    if "timeout" in text or "timed out" in text:
+        return "That took too long to process. Please try again."
+    return "Something went wrong processing that import. Please try again."
 
 
 @app.get('/health')
@@ -51,7 +75,7 @@ def extract_endpoint():
         return jsonify(result)
     except Exception as e:
         print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": friendly_error_message(e)}), 500
 
 @app.route('/extract/image', methods=['POST'])
 def extract_image_endpoint():
@@ -77,7 +101,7 @@ def extract_image_endpoint():
         return jsonify({"error": "The uploaded image could not be read."}), 400
     except Exception as e:
         print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": friendly_error_message(e)}), 500
 
 @app.route('/extract/text', methods=['POST'])
 def extract_text_endpoint():
@@ -99,7 +123,7 @@ def extract_text_endpoint():
         return jsonify(result)
     except Exception as e:
         print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": friendly_error_message(e)}), 500
 
 if __name__ == '__main__':
     # Listen on all interfaces so the phone/emulator can connect
