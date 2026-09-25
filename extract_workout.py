@@ -70,6 +70,8 @@ If you find a complete master program overview card (like a list specifying dura
 - Parse the explicit work/duration time for each exercise (e.g., "1 minute" = 60 seconds) and any global or per-exercise rest time mentioned (e.g., "REST 15 SEC" = 15 seconds).
 - If the work/rest times are mentioned as (e.g. 45 seconds on and 15 seconds off), set work_seconds and rest_seconds accordingly.)
 
+UNILATERAL / PER-SIDE EXERCISES: If an exercise is explicitly labeled or shown as done one side of the body at a time (single-arm, single-leg, "each side", "alternating sides", etc.), split it into two consecutive entries instead of one: "<Exercise Name> (Left)" and "<Exercise Name> (Right)", in that order. If the shown duration is already per side, give both entries that same duration. If a single combined duration is shown for both sides together, split it evenly in half between the two entries. Set rest_after_seconds to 0 on the "(Left)" entry (switching sides has no rest) and keep the normal rest value on the "(Right)" entry. Do not split ordinary bilateral (both-sides-at-once) exercises.
+
 Return a JSON object matching this exact schema:
 {
   "coverage": "good" | "none",
@@ -107,6 +109,8 @@ Distinguish between two different structures before setting total_rounds:
 If unsure which case applies, prefer treating it as case 2 (grouped list, total_rounds: null) rather than guessing a repeat count that isn't clearly stated.
 
 If a rest period between full rounds/circuits is explicitly stated (e.g. 'rest 90 seconds between rounds', 'take 2 minutes after each circuit'), separate from the rest between individual exercises, capture it in rest_between_rounds_seconds. Set it to null if not stated or if total_rounds is null.
+
+UNILATERAL / PER-SIDE EXERCISES: If an exercise is performed on one side of the body at a time (single-arm, single-leg, or cued as "each side", "alternating sides", "switch sides", "other leg", etc. — from on-screen text, spoken cues, or visible side-switching), split it into two consecutive entries in the exercises array instead of one: "<Exercise Name> (Left)" and "<Exercise Name> (Right)", in the order they're actually performed. If the stated duration/reps is already per side (e.g. "20 seconds each leg"), give both entries that same duration/rep count. If it's a single combined duration/rep count for both sides together, split it evenly in half between the two entries. Set rest_after_seconds to 0 on the "(Left)" entry (switching sides has no rest) and keep the normal rest value on the "(Right)" entry. Do not split ordinary bilateral (both-sides-at-once) exercises.
 
 Return a JSON object matching this exact schema:
 {
@@ -194,6 +198,8 @@ If unsure which case applies, prefer treating it as case 2 (grouped list, total_
 
 If a rest period between full rounds/circuits is explicitly stated (e.g. 'rest 90 seconds between rounds', 'take 2 minutes after each circuit'), separate from the rest between individual exercises, capture it in rest_between_rounds_seconds. Set it to null if not stated or if total_rounds is null.
 
+UNILATERAL / PER-SIDE EXERCISES: If an exercise is explicitly indicated as being performed on one side of the body at a time (single-arm, single-leg, or explicitly labeled "each side" / "alternating sides" / "per leg" / "per arm" / etc.), split it into two consecutive entries in the exercises array instead of one: "<Exercise Name> (Left)" and "<Exercise Name> (Right)". If the stated duration/reps is already per side, give both entries that same duration/rep count. If a single combined duration/rep count is stated for both sides together, split it evenly in half between the two entries. Set rest_after_seconds to 0 on the "(Left)" entry and keep the normal rest value on the "(Right)" entry. Only split when the source clearly indicates one-side-at-a-time work — do not split ordinary bilateral exercises or guess that an exercise is unilateral without a stated cue.
+
 Return ONLY a JSON object matching this exact schema:
 {
     "coverage": "good" | "partial" | "none",
@@ -243,6 +249,8 @@ Distinguish between two different structures before setting total_rounds:
 If unsure which case applies, prefer treating it as case 2 (grouped list, total_rounds: null) rather than guessing a repeat count that isn't clearly stated.
 
 If a rest period between full rounds/circuits is explicitly stated (e.g. 'rest 90 seconds between rounds', 'take 2 minutes after each circuit'), separate from the rest between individual exercises, capture it in rest_between_rounds_seconds. Set it to null if not stated or if total_rounds is null.
+
+UNILATERAL / PER-SIDE EXERCISES: If an exercise is explicitly indicated as being performed on one side of the body at a time (single-arm, single-leg, or explicitly labeled "each side" / "alternating sides" / "per leg" / "per arm" / etc.), split it into two consecutive entries in the exercises array instead of one: "<Exercise Name> (Left)" and "<Exercise Name> (Right)". If the stated duration/reps is already per side, give both entries that same duration/rep count. If a single combined duration/rep count is stated for both sides together, split it evenly in half between the two entries. Set rest_after_seconds to 0 on the "(Left)" entry and keep the normal rest value on the "(Right)" entry. Only split when the source clearly indicates one-side-at-a-time work — do not split ordinary bilateral exercises or guess that an exercise is unilateral without a stated cue.
 
 Return ONLY a JSON object matching this exact schema:
 {
