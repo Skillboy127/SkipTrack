@@ -11,6 +11,7 @@ import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWe
 import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { UpNextDrawer } from '../components/UpNextDrawer';
+import { AdBanner } from '../components/AdBanner';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
@@ -536,6 +537,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         entries={upcomingEntries}
         totalExerciseCount={totalExerciseCount}
       />
+      <AdBanner />
     </View>
   );
 }

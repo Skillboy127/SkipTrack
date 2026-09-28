@@ -5,6 +5,7 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useShareIntent } from 'expo-share-intent';
 import * as Updates from 'expo-updates';
+import mobileAds from 'react-native-google-mobile-ads';
 import { RootStackParamList } from './src/types';
 
 import { LibraryScreen } from './src/screens/LibraryScreen';
@@ -28,6 +29,13 @@ function extractUrl(text: string | null | undefined): string | null {
 export default function App() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
   const pendingShareRef = useRef<string | null>(null);
+
+  // Required once at startup before any BannerAd can load.
+  useEffect(() => {
+    mobileAds()
+      .initialize()
+      .catch(error => console.warn('Mobile Ads SDK failed to initialize:', error));
+  }, []);
 
   useEffect(() => {
     if (__DEV__ || !Updates.isEnabled) return;

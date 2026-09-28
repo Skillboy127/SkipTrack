@@ -35,6 +35,20 @@ export type CountdownSoundMode = 'speech' | 'beep' | 'silent';
 
 export type WeightUnit = 'lb' | 'kg';
 
+export type ImportType = 'video' | 'image' | 'text';
+
+export const MONTHLY_IMPORT_LIMIT = 15;
+
+/** Tracks import usage for the current calendar month, reset automatically when the month rolls over. */
+export type ImportUsage = {
+  /** "YYYY-MM" for the month this usage applies to. */
+  month: string;
+  count: number;
+  video: number;
+  image: number;
+  text: number;
+};
+
 export type WorkoutHistoryEntry = {
   id: string;
   workout: Workout; // full snapshot as it was at completion time, so "Repeat" still works after edits/deletes

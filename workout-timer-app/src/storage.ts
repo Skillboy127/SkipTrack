@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CountdownSoundMode, RepSetLog, WeightUnit, Workout, WorkoutHistoryEntry } from './types';
+import { CountdownSoundMode, ImportType, ImportUsage, RepSetLog, WeightUnit, Workout, WorkoutHistoryEntry } from './types';
 
 const WORKOUTS_KEY = '@workouts_v1';
 const HISTORY_KEY = '@workout_history_v1';
 const MAX_HISTORY_ENTRIES = 200;
 const COUNTDOWN_SOUND_KEY = '@countdown_sound_mode_v1';
 const WEIGHT_UNIT_KEY = '@weight_unit_v1';
+const IMPORT_USAGE_KEY = '@import_usage_v1';
+const AD_FREE_KEY = '@ad_free_v1';
 
 function normalizeWorkout(value: unknown): Workout | null {
   if (!value || typeof value !== 'object') return null;
@@ -181,5 +183,70 @@ export async function saveWeightUnit(unit: WeightUnit): Promise<void> {
     await AsyncStorage.setItem(WEIGHT_UNIT_KEY, unit);
   } catch (e) {
     console.error('Failed to save weight unit setting', e);
+  }
+}
+
+function currentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function emptyImportUsage(): ImportUsage {
+  return { month: currentMonthKey(), count: 0, video: 0, image: 0, text: 0 };
+}
+
+/** Loads this month's import usage, transparently resetting it if the stored month has rolled over. */
+export async function loadImportUsage(): Promise<ImportUsage> {
+  try {
+    const jsonValue = await AsyncStorage.getItem(IMPORT_USAGE_KEY);
+    if (jsonValue != null) {
+      const parsed = JSON.parse(jsonValue) as Partial<ImportUsage>;
+      if (parsed.month === currentMonthKey()) {
+        return {
+          month: parsed.month,
+          count: Math.max(0, Number(parsed.count) || 0),
+          video: Math.max(0, Number(parsed.video) || 0),
+          image: Math.max(0, Number(parsed.image) || 0),
+          text: Math.max(0, Number(parsed.text) || 0),
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load import usage', e);
+  }
+  return emptyImportUsage();
+}
+
+/** Records one import of the given type against this month's usage (auto-resetting on month rollover) and returns the updated usage. */
+export async function recordImport(type: ImportType): Promise<ImportUsage> {
+  const usage = await loadImportUsage();
+  const updated: ImportUsage = { ...usage, count: usage.count + 1, [type]: usage[type] + 1 };
+  try {
+    await AsyncStorage.setItem(IMPORT_USAGE_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.error('Failed to save import usage', e);
+  }
+  // Lightweight, local-only usage analytics — no external service. Just for
+  // spotting which import method people actually reach for.
+  console.log(
+    `[Import Analytics] ${type} import recorded — this month: video=${updated.video} image=${updated.image} text=${updated.text} (total ${updated.count})`
+  );
+  return updated;
+}
+
+export async function loadAdFreeStatus(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(AD_FREE_KEY)) === 'true';
+  } catch (e) {
+    console.error('Failed to load ad-free status', e);
+    return false;
+  }
+}
+
+export async function saveAdFreeStatus(adFree: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(AD_FREE_KEY, adFree ? 'true' : 'false');
+  } catch (e) {
+    console.error('Failed to save ad-free status', e);
   }
 }

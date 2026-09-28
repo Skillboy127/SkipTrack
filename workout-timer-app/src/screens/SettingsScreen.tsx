@@ -1,11 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIAP } from 'react-native-iap';
 import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
-import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit } from '../storage';
+import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit, loadAdFreeStatus, saveAdFreeStatus } from '../storage';
 import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
+
+// TODO: replace with the real product ID once created in Play Console /
+// App Store Connect — must match exactly on both, and on both platforms
+// this needs to be configured as a one-time non-consumable product priced
+// at $2.99 before a real purchase can succeed.
+const REMOVE_ADS_SKU = 'remove_ads';
+const REMOVE_ADS_FALLBACK_PRICE = '$2.99';
 
 const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string }[] = [
   {
@@ -42,14 +50,91 @@ export function SettingsScreen({ navigation }: Props) {
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const [loaded, setLoaded] = useState(false);
+  const [adFree, setAdFree] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
 
   useEffect(() => {
-    Promise.all([loadCountdownSoundMode(), loadWeightUnit()]).then(([sound, unit]) => {
+    Promise.all([loadCountdownSoundMode(), loadWeightUnit(), loadAdFreeStatus()]).then(([sound, unit, ads]) => {
       setSoundMode(sound);
       setWeightUnit(unit);
+      setAdFree(ads);
       setLoaded(true);
     });
   }, []);
+
+  const {
+    connected,
+    products,
+    fetchProducts,
+    requestPurchase,
+    finishTransaction,
+    restorePurchases,
+    availablePurchases,
+  } = useIAP({
+    onPurchaseSuccess: async purchase => {
+      if (purchase.productId !== REMOVE_ADS_SKU) return;
+      try {
+        await finishTransaction({ purchase, isConsumable: false });
+      } catch (e) {
+        console.warn('Failed to finish Remove Ads transaction:', e);
+      }
+      await saveAdFreeStatus(true);
+      setAdFree(true);
+      setPurchasing(false);
+    },
+    onPurchaseError: error => {
+      setPurchasing(false);
+      if (error.code !== 'user-cancelled') {
+        Alert.alert('Purchase failed', error.message || 'Something went wrong. Please try again.');
+      }
+    },
+  });
+
+  // Fetch the real store-listed price as soon as the store connection is
+  // ready, so the button can show the actual localized price instead of
+  // just the $2.99 fallback label.
+  useEffect(() => {
+    if (connected) fetchProducts({ skus: [REMOVE_ADS_SKU], type: 'in-app' }).catch(() => {});
+  }, [connected, fetchProducts]);
+
+  // Restoring purchases (or a purchase made on another device syncing in)
+  // surfaces here — pick it up without requiring a manual "I already own
+  // this" confirmation.
+  useEffect(() => {
+    const alreadyOwned = availablePurchases.some(p => p.productId === REMOVE_ADS_SKU);
+    if (alreadyOwned && !adFree) {
+      saveAdFreeStatus(true);
+      setAdFree(true);
+    }
+  }, [availablePurchases]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const removeAdsPrice = products.find(p => p.id === REMOVE_ADS_SKU)?.displayPrice ?? REMOVE_ADS_FALLBACK_PRICE;
+
+  const handlePurchaseRemoveAds = async () => {
+    if (!connected) {
+      Alert.alert('Store unavailable', 'Could not connect to the store right now. Please try again later.');
+      return;
+    }
+    setPurchasing(true);
+    try {
+      await requestPurchase({
+        request: { apple: { sku: REMOVE_ADS_SKU }, google: { skus: [REMOVE_ADS_SKU] } },
+        type: 'in-app',
+      });
+    } catch (e: any) {
+      setPurchasing(false);
+      Alert.alert('Purchase failed', e?.message || 'Something went wrong. Please try again.');
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    try {
+      await restorePurchases();
+    } catch (e) {
+      console.warn('Restore purchases failed:', e);
+      Alert.alert('Restore failed', 'Could not restore purchases right now. Please try again later.');
+    }
+  };
 
   const handleSelect = (mode: CountdownSoundMode) => {
     setSoundMode(mode);
@@ -124,6 +209,42 @@ export function SettingsScreen({ navigation }: Props) {
               );
             })}
           </View>
+
+          <Text style={styles.sectionHeader}>SUPPORT SKIPTRACK</Text>
+          {adFree ? (
+            <View style={styles.card}>
+              <View style={styles.adFreeConfirmedRow}>
+                <CheckIcon color="#CCFF00" size={16} />
+                <Text style={styles.adFreeConfirmedText}>Ads removed — thank you for supporting SkipTrack!</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.removeAdsRow}
+                onPress={handlePurchaseRemoveAds}
+                disabled={purchasing}
+                accessibilityLabel="Remove ads"
+              >
+                <View style={styles.optionInfo}>
+                  <Text style={styles.optionTitle}>Remove Ads</Text>
+                  <Text style={styles.optionDescription}>One-time purchase. Removes all banner ads, forever.</Text>
+                </View>
+                {purchasing ? (
+                  <ActivityIndicator color="#CCFF00" />
+                ) : (
+                  <Text style={styles.removeAdsPrice}>{removeAdsPrice}</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.optionRow, styles.optionRowBorder]}
+                onPress={handleRestorePurchases}
+                accessibilityLabel="Restore purchases"
+              >
+                <Text style={styles.restoreLink}>Restore Purchases</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -185,5 +306,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     paddingHorizontal: 4,
+  },
+  removeAdsRow: {
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+  },
+  removeAdsPrice: {
+    color: '#CCFF00',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  restoreLink: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  adFreeConfirmedRow: {
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  adFreeConfirmedText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 19,
   },
 });

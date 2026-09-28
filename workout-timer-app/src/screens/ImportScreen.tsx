@@ -14,13 +14,17 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
+import { MONTHLY_IMPORT_LIMIT } from '../types';
 import {
   extractWorkoutFromVideo,
   extractWorkoutFromImage,
   extractWorkoutFromText,
 } from '../api';
+import { loadImportUsage, recordImport } from '../storage';
 import { CloseIcon, InfoIcon, CameraIcon, ChevronIcon, YouTubePlayIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ImportVideo'>;
 type Tab = 'video' | 'image' | 'text';
@@ -54,6 +58,29 @@ export function ImportScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [importError, setImportError] = useState<ImportError | null>(null);
+
+  // Free-tier import limit, resets monthly (see recordImport/loadImportUsage in storage.ts)
+  const [remainingImports, setRemainingImports] = useState<number | null>(null);
+  const [limitModalVisible, setLimitModalVisible] = useState(false);
+  const isFocused = useIsFocused();
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadImportUsage().then(usage => {
+      const remaining = Math.max(0, MONTHLY_IMPORT_LIMIT - usage.count);
+      setRemainingImports(remaining);
+      if (remaining <= 0) setLimitModalVisible(true);
+    });
+  }, [isFocused]);
+
+  /** Returns true if the import can proceed; otherwise shows the limit-reached modal. */
+  const checkImportAllowed = (): boolean => {
+    if (remainingImports !== null && remainingImports <= 0) {
+      setLimitModalVisible(true);
+      return false;
+    }
+    return true;
+  };
 
   // Cycle through contextual status lines while extraction is underway
   useEffect(() => {
@@ -91,10 +118,12 @@ export function ImportScreen({ navigation, route }: Props) {
       Alert.alert('Error', 'Please enter a YouTube URL');
       return;
     }
+    if (!checkImportAllowed()) return;
     setLoading(true);
     setImportError(null);
     try {
       const workout = await extractWorkoutFromVideo(url.trim());
+      await recordImport('video');
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
       setImportError({ tab: 'video', message: e.message || 'Something went wrong reading that video.' });
@@ -157,10 +186,12 @@ export function ImportScreen({ navigation, route }: Props) {
       Alert.alert('No Image', 'Pick a workout image first.');
       return;
     }
+    if (!checkImportAllowed()) return;
     setLoading(true);
     setImportError(null);
     try {
       const workout = await extractWorkoutFromImage(imageBase64, imageMime);
+      await recordImport('image');
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
       setImportError({ tab: 'image', message: e.message || 'Something went wrong reading that image.' });
@@ -174,10 +205,12 @@ export function ImportScreen({ navigation, route }: Props) {
       Alert.alert('Error', 'Paste or type a workout description first.');
       return;
     }
+    if (!checkImportAllowed()) return;
     setLoading(true);
     setImportError(null);
     try {
       const workout = await extractWorkoutFromText(workoutText.trim());
+      await recordImport('text');
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
       setImportError({ tab: 'text', message: e.message || 'Something went wrong reading that workout.' });
@@ -286,9 +319,10 @@ export function ImportScreen({ navigation, route }: Props) {
     : activeTab === 'image'
       ? 'Workout image'
       : 'Workout description';
-  const canImportText = workoutText.trim().length > 0;
-  const canImportImage = imageBase64 !== null;
-  const canImportVideo = url.trim().length > 0;
+  const limitReached = remainingImports !== null && remainingImports <= 0;
+  const canImportText = workoutText.trim().length > 0 && !limitReached;
+  const canImportImage = imageBase64 !== null && !limitReached;
+  const canImportVideo = url.trim().length > 0 && !limitReached;
   const activeLoadingMessages = LOADING_MESSAGES[activeTab];
   const loadingMessage = activeLoadingMessages[loadingMessageIndex % activeLoadingMessages.length];
 
@@ -302,6 +336,16 @@ export function ImportScreen({ navigation, route }: Props) {
             <CloseIcon color="#94A3B8" size={16} />
           </TouchableOpacity>
         </View>
+
+        {remainingImports !== null && (
+          <View style={styles.importsRemainingRow}>
+            <Text style={[styles.importsRemainingText, limitReached && styles.importsRemainingTextZero]}>
+              {limitReached
+                ? 'No imports remaining this month'
+                : `${remainingImports} import${remainingImports === 1 ? '' : 's'} remaining this month`}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.tabBarContainer}>
           <View style={styles.tabBar}>
@@ -402,6 +446,15 @@ export function ImportScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       ) : null}
+      <ConfirmDialog
+        visible={limitModalVisible}
+        title="Import limit reached"
+        message={`You've used all ${MONTHLY_IMPORT_LIMIT} imports for this month. Your limit resets at the start of next month.`}
+        onRequestClose={() => setLimitModalVisible(false)}
+        actions={[
+          { label: 'Got it', variant: 'primary', onPress: () => setLimitModalVisible(false) },
+        ]}
+      />
     </View>
   );
 }
@@ -441,6 +494,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#121214',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  importsRemainingRow: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+  },
+  importsRemainingText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  importsRemainingTextZero: {
+    color: '#F87171',
   },
   contentContainer: {
     padding: 20,

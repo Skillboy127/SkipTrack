@@ -7,6 +7,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon, SettingsIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdBanner } from '../components/AdBanner';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -363,6 +364,7 @@ export function LibraryScreen({ navigation }: Props) {
           { label: 'Cancel', variant: 'neutral', onPress: () => setDeleteConfirmTarget(null) },
         ]}
       />
+      <AdBanner />
     </View>
   );
 }
