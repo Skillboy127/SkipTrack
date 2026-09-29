@@ -537,9 +537,14 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         entries={upcomingEntries}
         totalExerciseCount={totalExerciseCount}
       />
-      {/* Ads only show during rest — never during work, when the timer, reps,
-          and rest-adjustment controls need full attention and screen space. */}
-      {isRest && <AdBanner />}
+      {/* Kept mounted for the whole session (not conditionally rendered) so
+          the ad loads once and is ready — toggling visibility here instead
+          of mounting/unmounting on every phase change, which never gave the
+          ad SDK enough time to actually finish loading a creative before a
+          short rest period ended. Only ever visible during rest, never
+          during work, when the timer/reps/rest-adjustment controls need
+          full attention and screen space. */}
+      <AdBanner visible={isRest} />
     </View>
   );
 }
