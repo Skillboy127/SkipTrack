@@ -210,12 +210,12 @@ export function SettingsScreen({ navigation }: Props) {
             })}
           </View>
 
-          <Text style={styles.sectionHeader}>SUPPORT SKIPTRACK</Text>
+          <Text style={styles.sectionHeader}>SUPPORT FLEX</Text>
           {adFree ? (
             <View style={styles.card}>
               <View style={styles.adFreeConfirmedRow}>
                 <CheckIcon color="#CCFF00" size={16} />
-                <Text style={styles.adFreeConfirmedText}>Ads removed — thank you for supporting SkipTrack!</Text>
+                <Text style={styles.adFreeConfirmedText}>Ads removed — thank you for supporting Flex!</Text>
               </View>
             </View>
           ) : (

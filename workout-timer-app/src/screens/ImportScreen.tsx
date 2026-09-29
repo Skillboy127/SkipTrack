@@ -265,7 +265,7 @@ export function ImportScreen({ navigation, route }: Props) {
         <View style={styles.annotationBox}>
           <InfoIcon color="#CCFF00" size={16} />
           <Text style={styles.annotationText}>
-            Tip: you can also share any video straight from the YouTube app — tap Share, then choose Skiptrack.
+            Tip: you can also share any video straight from the YouTube app — tap Share, then choose Flex.
           </Text>
         </View>
       )}
