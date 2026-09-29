@@ -21,7 +21,7 @@
     "expo-updates": "~57.0.22",
     "react": "19.2.3",
     "react-native": "0.86.3",
-    "react-native-google-mobile-ads": "^17.2.0",
+    "react-native-google-mobile-ads": "17.0.0",
     "react-native-iap": "^16.7.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0"
