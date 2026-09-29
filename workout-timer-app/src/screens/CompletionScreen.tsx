@@ -5,6 +5,7 @@ import { RootStackParamList, WeightUnit } from '../types';
 import { addHistoryEntry, loadWeightUnit } from '../storage';
 import { CheckIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
+import { AdBanner } from '../components/AdBanner';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Completion'>;
 
@@ -74,6 +75,7 @@ export function CompletionScreen({ route, navigation }: Props) {
           <CheckIcon color="#09090A" size={22} /><Text style={styles.doneLabel}>Done</Text>
         </TouchableOpacity>
       </View>
+      <AdBanner />
     </View>
   );
 }

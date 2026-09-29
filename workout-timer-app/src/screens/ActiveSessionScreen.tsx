@@ -537,7 +537,9 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         entries={upcomingEntries}
         totalExerciseCount={totalExerciseCount}
       />
-      <AdBanner />
+      {/* Ads only show during rest — never during work, when the timer, reps,
+          and rest-adjustment controls need full attention and screen space. */}
+      {isRest && <AdBanner />}
     </View>
   );
 }
