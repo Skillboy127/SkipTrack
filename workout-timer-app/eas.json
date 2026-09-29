@@ -1,9 +1,13 @@
 {
   "build": {
     "preview": {
+      "environment": "preview",
       "channel": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://skiptrack-api.onrender.com"
       }
     }
   }
