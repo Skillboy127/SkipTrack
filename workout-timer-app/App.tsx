@@ -1,9 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useShareIntent } from 'expo-share-intent';
 import * as Updates from 'expo-updates';
 import mobileAds from 'react-native-google-mobile-ads';
 import { RootStackParamList } from './src/types';
@@ -20,16 +19,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
-function extractUrl(text: string | null | undefined): string | null {
-  if (!text) return null;
-  const match = text.match(/https?:\/\/[^\s]+/);
-  return match ? match[0] : null;
-}
-
 export default function App() {
-  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
-  const pendingShareRef = useRef<string | null>(null);
-
   // Required once at startup before any BannerAd can load.
   useEffect(() => {
     mobileAds()
@@ -63,46 +53,25 @@ export default function App() {
     };
   }, []);
 
-  const openPendingShare = () => {
-    const targetUrl = pendingShareRef.current;
-    if (!targetUrl || !navigationRef.isReady()) return;
-    navigationRef.navigate('ImportVideo', { initialUrl: targetUrl });
-    pendingShareRef.current = null;
-    resetShareIntent();
-  };
-
-  // Handle incoming Android share intents (e.g., sharing a video from the YouTube app)
-  useEffect(() => {
-    if (hasShareIntent && shareIntent) {
-      const raw = shareIntent.webUrl || shareIntent.text || '';
-      const targetUrl = extractUrl(raw) || (raw.startsWith('http') ? raw.trim() : raw.trim());
-
-      if (targetUrl) {
-        pendingShareRef.current = targetUrl;
-        openPendingShare();
-      }
-    }
-  }, [hasShareIntent, shareIntent, resetShareIntent]);
-
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
-      <NavigationContainer ref={navigationRef} onReady={openPendingShare}>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator initialRouteName="Library">
-          <Stack.Screen 
-            name="Library" 
-            component={LibraryScreen} 
-            options={{ headerShown: false }} 
+          <Stack.Screen
+            name="Library"
+            component={LibraryScreen}
+            options={{ headerShown: false }}
           />
-          <Stack.Screen 
-            name="WorkoutEditor" 
-            component={WorkoutEditorScreen} 
-            options={{ headerShown: false }} 
+          <Stack.Screen
+            name="WorkoutEditor"
+            component={WorkoutEditorScreen}
+            options={{ headerShown: false }}
           />
-          <Stack.Screen 
-            name="ImportVideo" 
-            component={ImportScreen} 
-            options={{ headerShown: false }} 
+          <Stack.Screen
+            name="Import"
+            component={ImportScreen}
+            options={{ headerShown: false }}
           />
           <Stack.Screen 
             name="WorkoutPreview" 

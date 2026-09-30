@@ -9,52 +9,42 @@ import {
   ScrollView,
   Image,
   Platform,
-  Linking,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as Clipboard from 'expo-clipboard';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import { MONTHLY_IMPORT_LIMIT } from '../types';
 import {
-  extractWorkoutFromVideo,
   extractWorkoutFromImage,
   extractWorkoutFromText,
 } from '../api';
 import { loadImportUsage, recordImport } from '../storage';
-import { CloseIcon, InfoIcon, CameraIcon, ChevronIcon, YouTubePlayIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
+import { CloseIcon, InfoIcon, CameraIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'ImportVideo'>;
-type Tab = 'video' | 'image' | 'text';
+type Props = NativeStackScreenProps<RootStackParamList, 'Import'>;
+type Tab = 'image' | 'text';
 
 const LOADING_MESSAGES: Record<Tab, string[]> = {
-  // Video analysis genuinely takes longer than image/text (and can retry
-  // through a couple of models on the server), so this rotation includes a
-  // reassurance message rather than just looping the same 4 lines for up to
-  // ~2 minutes, which otherwise reads as stuck.
-  video: ['Watching the video...', 'Identifying exercises...', 'Reading timing and reps...', 'Structuring your workout...', 'Longer videos can take a minute or two...'],
   image: ['Scanning the image...', 'Reading exercise names...', 'Extracting sets and reps...', 'Structuring your workout...'],
   text: ['Reading your workout...', 'Identifying exercises...', 'Structuring sets and reps...', 'Almost done...'],
 };
 
 const ERROR_TITLES: Record<Tab, string> = {
-  video: "Couldn't read that video",
   image: "Couldn't read that image",
   text: "Couldn't understand that workout",
 };
 
 const ERROR_ALT_ACTION: Record<Tab, string | null> = {
-  video: 'Or paste it in as text instead',
   image: 'Or type it in as text instead',
   text: null,
 };
 
 type ImportError = { tab: Tab; message: string };
 
-export function ImportScreen({ navigation, route }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('video');
+export function ImportScreen({ navigation }: Props) {
+  const [activeTab, setActiveTab] = useState<Tab>('image');
   const [loading, setLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [importError, setImportError] = useState<ImportError | null>(null);
@@ -92,17 +82,6 @@ export function ImportScreen({ navigation, route }: Props) {
     return () => clearInterval(id);
   }, [loading]);
 
-  // Video tab state
-  const [url, setUrl] = useState(route.params?.initialUrl ?? '');
-
-  // Pre-fill URL and switch to Video tab when an intent or navigation parameter is received
-  useEffect(() => {
-    if (route.params?.initialUrl) {
-      setUrl(route.params.initialUrl);
-      setActiveTab('video');
-    }
-  }, [route.params?.initialUrl]);
-
   // Image tab state
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -112,43 +91,6 @@ export function ImportScreen({ navigation, route }: Props) {
   const [workoutText, setWorkoutText] = useState('');
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
-
-  const handleVideoExtract = async () => {
-    if (!url.trim()) {
-      Alert.alert('Error', 'Please enter a YouTube URL');
-      return;
-    }
-    if (!checkImportAllowed()) return;
-    setLoading(true);
-    setImportError(null);
-    try {
-      const workout = await extractWorkoutFromVideo(url.trim());
-      await recordImport('video');
-      navigation.replace('WorkoutEditor', { draftWorkout: workout });
-    } catch (e: any) {
-      setImportError({ tab: 'video', message: e.message || 'Something went wrong reading that video.' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePasteUrl = async () => {
-    const clipboardText = await Clipboard.getStringAsync();
-    if (clipboardText.trim()) {
-      setUrl(clipboardText.trim());
-    }
-  };
-
-  const handleOpenYouTube = async () => {
-    const nativeUrl = 'youtube://';
-    const webUrl = 'https://www.youtube.com';
-    try {
-      const canOpenNative = await Linking.canOpenURL(nativeUrl);
-      await Linking.openURL(canOpenNative ? nativeUrl : webUrl);
-    } catch {
-      Linking.openURL(webUrl).catch(() => {});
-    }
-  };
 
   const handlePickImage = async () => {
     try {
@@ -221,8 +163,7 @@ export function ImportScreen({ navigation, route }: Props) {
 
   const handleRetryImport = () => {
     if (!importError) return;
-    if (importError.tab === 'video') handleVideoExtract();
-    else if (importError.tab === 'image') handleImageExtract();
+    if (importError.tab === 'image') handleImageExtract();
     else handleTextExtract();
   };
 
@@ -232,45 +173,6 @@ export function ImportScreen({ navigation, route }: Props) {
   };
 
   // ─── Tab content ─────────────────────────────────────────────────────────────
-
-  const renderVideoTab = () => (
-    <View style={styles.videoInputSection}>
-      <TouchableOpacity style={styles.openYoutubeButton} onPress={handleOpenYouTube} accessibilityLabel="Open YouTube to find a video">
-        <YouTubePlayIcon size={24} />
-        <Text style={styles.openYoutubeLabel}>Open YouTube to find a video</Text>
-        <ChevronIcon color="#94A3B8" size={14} direction="right" />
-      </TouchableOpacity>
-
-      <View style={styles.videoUrlInput}>
-        <View style={styles.videoInputLeft}>
-          <YouTubePlayIcon size={18} />
-          <TextInput
-            style={styles.videoUrlTextInput}
-            placeholder="Paste YouTube URL"
-            placeholderTextColor="#475569"
-            value={url}
-            onChangeText={setUrl}
-            autoCapitalize="none"
-            autoCorrect={false}
-            numberOfLines={1}
-          />
-        </View>
-        <TouchableOpacity style={styles.pasteButton} onPress={handlePasteUrl} accessibilityLabel="Paste YouTube URL">
-          <Text style={styles.pasteLabel}>PASTE</Text>
-        </TouchableOpacity>
-      </View>
-      <Text style={styles.videoInputHint}>We'll pull exercise names, timing, and rest from the video</Text>
-
-      {Platform.OS === 'android' && (
-        <View style={styles.annotationBox}>
-          <InfoIcon color="#CCFF00" size={16} />
-          <Text style={styles.annotationText}>
-            Tip: you can also share any video straight from the YouTube app — tap Share, then choose Flex.
-          </Text>
-        </View>
-      )}
-    </View>
-  );
 
   const renderImageTab = () => (
     <View style={styles.imageInputSection}>
@@ -309,20 +211,16 @@ export function ImportScreen({ navigation, route }: Props) {
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   const TABS: { id: Tab; label: string; emoji: string }[] = [
-    { id: 'video', label: 'Video', emoji: '' },
     { id: 'image', label: 'Image', emoji: '' },
     { id: 'text',  label: 'Text',  emoji: '' },
   ];
 
-  const processingSource = activeTab === 'video'
-    ? url.trim() || 'youtube.com/watch'
-    : activeTab === 'image'
-      ? 'Workout image'
-      : 'Workout description';
+  const processingSource = activeTab === 'image'
+    ? 'Workout image'
+    : 'Workout description';
   const limitReached = remainingImports !== null && remainingImports <= 0;
   const canImportText = workoutText.trim().length > 0 && !limitReached;
   const canImportImage = imageBase64 !== null && !limitReached;
-  const canImportVideo = url.trim().length > 0 && !limitReached;
   const activeLoadingMessages = LOADING_MESSAGES[activeTab];
   const loadingMessage = activeLoadingMessages[loadingMessageIndex % activeLoadingMessages.length];
 
@@ -402,7 +300,6 @@ export function ImportScreen({ navigation, route }: Props) {
             contentContainerStyle={styles.formReferenceContentContainer}
             keyboardShouldPersistTaps="handled"
           >
-            {activeTab === 'video' && renderVideoTab()}
             {activeTab === 'image' && renderImageTab()}
             {activeTab === 'text'  && renderTextTab()}
           </ScrollView>
@@ -433,16 +330,6 @@ export function ImportScreen({ navigation, route }: Props) {
             disabled={!canImportImage}
           >
             <Text style={[styles.importLabel, canImportImage && styles.importLabelEnabled]}>IMPORT</Text>
-          </TouchableOpacity>
-        </View>
-      ) : activeTab === 'video' ? (
-        <View style={styles.stickyFooter}>
-          <TouchableOpacity
-            style={[styles.importButton, canImportVideo && styles.importButtonEnabled]}
-            onPress={handleVideoExtract}
-            disabled={!canImportVideo}
-          >
-            <Text style={[styles.importLabel, canImportVideo && styles.importLabelEnabled]}>IMPORT</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -565,70 +452,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94A3B8',
     lineHeight: 20,
-  },
-  videoInputSection: {
-    gap: 16,
-  },
-  videoUrlInput: {
-    height: 56,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  videoInputLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minWidth: 0,
-  },
-  openYoutubeButton: {
-    height: 52,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  openYoutubeLabel: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  videoUrlTextInput: {
-    flex: 1,
-    padding: 0,
-    color: '#FFFFFF',
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  pasteButton: {
-    height: 26,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: '#1F1F24',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pasteLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-  },
-  videoInputHint: {
-    color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 18,
   },
   // ── Inputs ─────────────────────────────────────────────────────────────────
   input: {

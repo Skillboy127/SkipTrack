@@ -60,7 +60,7 @@ export type WorkoutHistoryEntry = {
 export type RootStackParamList = {
   Library: undefined;
   WorkoutEditor: { workoutId?: string, draftWorkout?: Workout };
-  ImportVideo: { initialUrl?: string } | undefined;
+  Import: undefined;
   WorkoutPreview: { workout: Workout };
   ActiveSession: { workout: Workout };
   Completion: { totalElapsed: number; workout: Workout; repLogs?: RepSetLog[] };

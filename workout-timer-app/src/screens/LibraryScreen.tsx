@@ -282,13 +282,13 @@ export function LibraryScreen({ navigation }: Props) {
               <View style={styles.textGroup}>
                 <Text style={styles.emptyTitle}>No workouts yet</Text>
                 <Text style={styles.emptyDescription}>
-                  Import a YouTube video to build sets instantly or craft your exercises manually.
+                  Import a workout from a photo or text, or craft your exercises manually.
                 </Text>
               </View>
               <View style={styles.buttonWrap}>
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={() => navigation.navigate('ImportVideo')}
+                  onPress={() => navigation.navigate('Import')}
                 >
                   <DownloadIcon color="#09090A" size={20} />
                   <Text style={styles.primaryButtonLabel}>Import Workout</Text>
@@ -321,7 +321,7 @@ export function LibraryScreen({ navigation }: Props) {
         <View style={styles.fabRow}>
           <TouchableOpacity
             style={styles.fabImport}
-            onPress={() => navigation.navigate('ImportVideo')}
+            onPress={() => navigation.navigate('Import')}
             accessibilityLabel="Import workout"
           >
             <DownloadIcon color="#CCFF00" size={16} />
