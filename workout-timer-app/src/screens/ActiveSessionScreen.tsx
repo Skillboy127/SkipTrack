@@ -2,22 +2,15 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
-import { useInterstitialAd, TestIds } from 'react-native-google-mobile-ads';
 import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
-import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, loadAdFreeStatus } from '../storage';
+import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit } from '../storage';
 import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { UpNextDrawer } from '../components/UpNextDrawer';
-
-// Show an interstitial on at most every Nth rest phase, not every single
-// one — a long circuit can have a dozen+ rests, and an ad on every one of
-// them would be far more disruptive than the extra revenue is worth. This
-// is the one knob to turn if that balance needs adjusting.
-const INTERSTITIAL_REST_INTERVAL = 3;
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
@@ -74,42 +67,6 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     return () => clearWorkoutNowPlaying();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Free users only, and only once we actually know that — adUnitId: null
-  // means "no ad instance at all", so nothing loads while this is still
-  // resolving or once a purchase is confirmed.
-  const [adFree, setAdFree] = useState<boolean | null>(null);
-  useEffect(() => {
-    loadAdFreeStatus().then(setAdFree);
-  }, []);
-
-  // Preloaded well ahead of time (autoLoad fetches it in the background as
-  // soon as the ad unit is set) so it's instantly ready the moment a rest
-  // phase actually needs it — unlike a banner, which only starts its own
-  // load once it becomes visible and then has no way to finish before a
-  // short rest ends.
-  const interstitial = useInterstitialAd({
-    adUnitId: adFree === false ? TestIds.INTERSTITIAL : null,
-    requestOptions: { requestNonPersonalizedAdsOnly: true },
-  });
-  const restPhaseCountRef = useRef(0);
-  const wasShowingInterstitialRef = useRef(false);
-
-  // Resume the workout the moment the ad is dismissed (or fails to show),
-  // and immediately start preloading the next one for a future rest phase.
-  useEffect(() => {
-    if (interstitial.status === 'showing') {
-      wasShowingInterstitialRef.current = true;
-      return;
-    }
-    if (!wasShowingInterstitialRef.current) return;
-    if (interstitial.status === 'closed' || interstitial.status === 'error') {
-      wasShowingInterstitialRef.current = false;
-      engine.resume();
-      interstitial.load();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interstitial.status]);
-
   const handleCountdownTick = (secondsRemaining: number) => {
     if (soundModeRef.current === 'speech') speakCountdown(secondsRemaining);
     else if (soundModeRef.current === 'beep') playBeep();
@@ -122,16 +79,6 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // from the countdown beeps/speech themselves.
   const handlePhaseStart = (phase: { type: 'work' | 'rest' }) => {
     if (phase.type === 'work' && soundModeRef.current !== 'silent') playGoBeep();
-    if (phase.type === 'rest') {
-      restPhaseCountRef.current += 1;
-      const isEligibleRest = restPhaseCountRef.current % INTERSTITIAL_REST_INTERVAL === 1;
-      // Not loaded yet? Skip silently rather than delaying the rest phase to
-      // wait for it — the next eligible rest picks up whenever it's ready.
-      if (isEligibleRest && interstitial.status === 'loaded') {
-        engine.pause();
-        interstitial.show();
-      }
-    }
   };
   const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick, handlePhaseStart);
 
