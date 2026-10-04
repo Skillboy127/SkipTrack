@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
+import { useInterstitialAd, TestIds } from 'react-native-google-mobile-ads';
 import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
-import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit } from '../storage';
+import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, loadAdFreeStatus } from '../storage';
 import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { UpNextDrawer } from '../components/UpNextDrawer';
@@ -16,6 +17,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
+
+const COMPLETION_INTERSTITIAL_AD_UNIT_ID = __DEV__
+  ? TestIds.INTERSTITIAL
+  : 'ca-app-pub-9013066559297172/3697937890';
 
 // The get-ready countdown runs for this many seconds, but only cues (spoken or
 // beeped) the last 3 — the first couple of seconds count down silently.
@@ -66,6 +71,20 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     setWorkoutNowPlaying(workout.name || 'Workout', 'Get ready...');
     return () => clearWorkoutNowPlaying();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Free users only, and only once that's known. Preloaded for the whole session
+  // so it's ready the moment the workout ends; nothing is shown mid-session.
+  const [adFree, setAdFree] = useState<boolean | null>(null);
+  useEffect(() => {
+    loadAdFreeStatus().then(setAdFree);
+  }, []);
+  const completionAd = useInterstitialAd({
+    adUnitId: adFree === false ? COMPLETION_INTERSTITIAL_AD_UNIT_ID : null,
+    requestOptions: { requestNonPersonalizedAdsOnly: true },
+  });
+  const completionStartedRef = useRef(false);
+  const showingCompletionAdRef = useRef(false);
+  const completionNavigatedRef = useRef(false);
 
   const handleCountdownTick = (secondsRemaining: number) => {
     if (soundModeRef.current === 'speech') speakCountdown(secondsRemaining);
@@ -280,13 +299,30 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     setWeightInputValue('');
   }, [engine.currentPhaseIndex]);
 
-  // Handle completion
+  const goToCompletion = () => {
+    if (completionNavigatedRef.current) return;
+    completionNavigatedRef.current = true;
+    navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout, repLogs });
+  };
+
+  // Finish: show the preloaded ad if it's ready, then move to the stats once it's
+  // dismissed. If there's no ad or it can't show, go straight to the stats.
   useEffect(() => {
-    if (engine.timerState === 'completed') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout, repLogs });
+    if (engine.timerState !== 'completed' || completionStartedRef.current) return;
+    completionStartedRef.current = true;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    if (completionAd.status === 'loaded') {
+      showingCompletionAdRef.current = true;
+      completionAd.show();
+    } else {
+      goToCompletion();
     }
-  }, [engine.timerState, engine.totalElapsed, navigation, workout, repLogs]);
+  }, [engine.timerState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showingCompletionAdRef.current) return;
+    if (completionAd.status === 'closed' || completionAd.status === 'error') goToCompletion();
+  }, [completionAd.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!engine.currentPhase) {
     return (

@@ -4,11 +4,8 @@ import { useIsFocused } from '@react-navigation/native';
 import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 import { loadAdFreeStatus } from '../storage';
 
-// TODO: swap for real AdMob banner ad unit IDs once an AdMob account/app is
-// set up — TestIds always resolves to Google's sample ads, safe to ship
-// until then (using a real ID before the AdMob app review completes would
-// just serve no-fill errors anyway).
-const BANNER_AD_UNIT_ID = TestIds.BANNER;
+// Google's sample ads in development so we never tap our own live units.
+const BANNER_AD_UNIT_ID = __DEV__ ? TestIds.BANNER : 'ca-app-pub-9013066559297172/8344769072';
 
 /**
  * Bottom-anchored banner ad, shown to free users only. Re-checks the ad-free
