@@ -19,10 +19,12 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
   // The total duration of the current phase (accounting for adjustments)
   const [currentPhaseDuration, setCurrentPhaseDuration] = useState<number>(0);
 
-  // Wall-clock time from the moment the session was started, unaffected by
-  // skips, rest adjustments, or how any individual phase's duration changes.
+  // Time the workout has actually been running — paused time (including the quit
+  // dialog) is excluded, while skips and rest adjustments don't affect it.
   const [sessionElapsedSeconds, setSessionElapsedSeconds] = useState<number>(0);
   const sessionStartTimeRef = useRef<number | null>(null);
+  const activeMsRef = useRef(0);
+  const lastTickAtRef = useRef<number | null>(null);
 
   // For tracking when to beep (3, 2, 1)
   const lastBeepTimeRef = useRef<number>(-1);
@@ -57,6 +59,8 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
     setRemainingSeconds(initialDuration);
     setPhaseStartTime(Date.now());
     sessionStartTimeRef.current = Date.now();
+    activeMsRef.current = 0;
+    lastTickAtRef.current = Date.now();
     setSessionElapsedSeconds(0);
     lastBeepTimeRef.current = -1;
   }, [phases]);
@@ -79,7 +83,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
 
   const skipToNextPhase = useCallback(() => {
     if (sessionStartTimeRef.current != null) {
-      setSessionElapsedSeconds((Date.now() - sessionStartTimeRef.current) / 1000);
+      setSessionElapsedSeconds(activeMsRef.current / 1000);
     }
 
     if (currentPhaseIndex >= phases.length - 1) {
@@ -102,7 +106,7 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
     if (!currentPhase || currentPhase.mode !== 'reps') return;
 
     if (sessionStartTimeRef.current != null) {
-      setSessionElapsedSeconds((Date.now() - sessionStartTimeRef.current) / 1000);
+      setSessionElapsedSeconds(activeMsRef.current / 1000);
     }
 
     if (currentPhaseIndex >= phases.length - 1) {
@@ -152,11 +156,15 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
     const interval = setInterval(() => {
       const now = Date.now();
 
-      // The overall session timer runs continuously from start() to completion —
-      // it never resets or rewinds on skip/rest adjustments, so it always reflects
-      // real time-to-finish regardless of what happens to individual phases.
+      // Only accrue time while actually running, so pauses don't count toward the
+      // session total. Skips and rest adjustments don't touch this accumulator.
+      if (lastTickAtRef.current != null && stateRef.current === 'running') {
+        activeMsRef.current += now - lastTickAtRef.current;
+      }
+      lastTickAtRef.current = now;
+
       if (sessionStartTimeRef.current != null && stateRef.current !== 'idle' && stateRef.current !== 'completed') {
-        setSessionElapsedSeconds((now - sessionStartTimeRef.current) / 1000);
+        setSessionElapsedSeconds(activeMsRef.current / 1000);
       }
 
       if (stateRef.current !== 'running' || phaseStartTimeRef.current === null) return;

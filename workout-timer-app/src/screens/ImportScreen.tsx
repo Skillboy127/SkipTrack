@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -72,6 +72,11 @@ export function ImportScreen({ navigation }: Props) {
     return true;
   };
 
+  // An extraction can finish after the user has backed out of this screen; its
+  // result is dropped in that case rather than navigating them somewhere unexpected.
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
+
   // Cycle through contextual status lines while extraction is underway
   useEffect(() => {
     if (!loading) {
@@ -133,6 +138,7 @@ export function ImportScreen({ navigation }: Props) {
     setImportError(null);
     try {
       const workout = await extractWorkoutFromImage(imageBase64, imageMime);
+      if (!isMountedRef.current) return;
       await recordImport('image');
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
@@ -152,6 +158,7 @@ export function ImportScreen({ navigation }: Props) {
     setImportError(null);
     try {
       const workout = await extractWorkoutFromText(workoutText.trim());
+      if (!isMountedRef.current) return;
       await recordImport('text');
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {

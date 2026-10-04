@@ -1,4 +1,8 @@
-import { Workout, Phase } from './types';
+import { Workout, Phase, Exercise } from './types';
+
+export function isRepExercise(ex: Pick<Exercise, 'reps' | 'workSeconds'>): boolean {
+  return ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0;
+}
 
 export function expandWorkout(workout: Workout): Phase[] {
   const phases: Phase[] = [];
@@ -11,13 +15,13 @@ export function expandWorkout(workout: Workout): Phase[] {
 
       for (let set = 0; set < ex.sets; set++) {
         // Work phase
-        if (ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0) {
+        if (isRepExercise(ex)) {
           phases.push({
             type: 'work',
             mode: 'reps',
             exerciseName: ex.name,
             duration: 0,
-            reps: ex.reps,
+            reps: ex.reps ?? undefined,
           });
         } else if (ex.workSeconds > 0) {
           phases.push({
@@ -66,5 +70,5 @@ export function getWorkoutDuration(workout: Workout): number {
 }
 
 export function workoutHasReps(workout: Workout): boolean {
-  return workout.exercises.some(ex => ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0);
+  return workout.exercises.some(isRepExercise);
 }

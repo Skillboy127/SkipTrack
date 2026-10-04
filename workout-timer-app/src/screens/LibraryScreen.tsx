@@ -727,9 +727,6 @@ const styles = StyleSheet.create({
   },
   footerSpace: {
     height: 50,
-    paddingTop: 16,
-    backgroundColor: '#09090A',
-    alignItems: 'center',
   },
   snackbar: {
     position: 'absolute',

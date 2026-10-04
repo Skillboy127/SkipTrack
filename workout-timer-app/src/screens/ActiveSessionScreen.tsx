@@ -227,6 +227,11 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   };
 
   const promptQuit = () => {
+    // Still in the get-ready countdown: nothing has started, so there's nothing to confirm.
+    if (engine.timerState === 'idle') {
+      navigation.goBack();
+      return;
+    }
     wasRunningRef.current = engine.timerState === 'running';
     if (wasRunningRef.current) engine.pause();
     setQuitStep('confirmQuit');

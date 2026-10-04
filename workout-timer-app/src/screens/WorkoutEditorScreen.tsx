@@ -9,10 +9,17 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutEditor'>;
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
+const DEFAULT_REST_BETWEEN_ROUNDS = 90;
 
+// Deliberately looser than the engine's rule: a row stays in REPS mode while its
+// reps field is being edited (even momentarily at 0), and save validation catches
+// anything that isn't actually runnable.
 function isRepBased(ex: { reps?: number | null; workSeconds: number }): boolean {
   return ex.reps != null && ex.workSeconds <= 0;
 }
+
+const snapshotOf = (name: string, exercises: Exercise[], rounds: number, restBetweenRoundsSeconds: number | null) =>
+  JSON.stringify({ name, exercises, rounds, restBetweenRoundsSeconds });
 
 type ExerciseRowProps = {
   exercise: Exercise;
@@ -201,6 +208,17 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   const nameInputs = useRef<Record<string, TextInput | null>>({});
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createdAtRef = useRef<number | null>(null);
+  // Snapshot of the workout as it was loaded, compared against the live state to
+  // decide whether leaving should prompt about discarding unsaved edits.
+  const baselineRef = useRef<string | null>(null);
+  const savingRef = useRef(false);
+  const allowLeaveRef = useRef(false);
+  const pendingLeaveActionRef = useRef<Parameters<typeof navigation.dispatch>[0] | null>(null);
+  const [discardVisible, setDiscardVisible] = useState(false);
+
+  const currentSnapshot = snapshotOf(name, exercises, rounds, restBetweenRoundsSeconds);
+  const currentSnapshotRef = useRef(currentSnapshot);
+  currentSnapshotRef.current = currentSnapshot;
 
   useEffect(() => {
     if (draftWorkout) {
@@ -209,6 +227,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       setRounds(draftWorkout.rounds ?? 1);
       setRestBetweenRoundsSeconds(draftWorkout.restBetweenRoundsSeconds ?? null);
       createdAtRef.current = draftWorkout.createdAt ?? null;
+      baselineRef.current = snapshotOf(draftWorkout.name, draftWorkout.exercises, draftWorkout.rounds ?? 1, draftWorkout.restBetweenRoundsSeconds ?? null);
       setLoading(false);
     } else if (workoutId) {
       loadWorkouts().then(workouts => {
@@ -219,20 +238,38 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
           setRounds(found.rounds ?? 1);
           setRestBetweenRoundsSeconds(found.restBetweenRoundsSeconds ?? null);
           createdAtRef.current = found.createdAt ?? null;
+          baselineRef.current = snapshotOf(found.name, found.exercises, found.rounds ?? 1, found.restBetweenRoundsSeconds ?? null);
         }
         setLoading(false);
       });
     } else {
+      baselineRef.current = snapshotOf('', [], 1, null);
       setLoading(false);
     }
   }, [workoutId, draftWorkout]);
+
+  useEffect(() => {
+    return navigation.addListener('beforeRemove', e => {
+      if (allowLeaveRef.current || baselineRef.current === null) return;
+      if (currentSnapshotRef.current === baselineRef.current) return;
+      e.preventDefault();
+      pendingLeaveActionRef.current = e.data.action;
+      setDiscardVisible(true);
+    });
+  }, [navigation]);
+
+  const confirmDiscard = () => {
+    setDiscardVisible(false);
+    allowLeaveRef.current = true;
+    if (pendingLeaveActionRef.current) navigation.dispatch(pendingLeaveActionRef.current);
+  };
 
   const stepRounds = (amount: number) => {
     setRounds(current => Math.max(1, current + amount));
   };
 
   const stepRestBetweenRounds = (amount: number) => {
-    setRestBetweenRoundsSeconds(current => Math.max(0, (current ?? 0) + amount));
+    setRestBetweenRoundsSeconds(current => Math.max(0, (current ?? DEFAULT_REST_BETWEEN_ROUNDS) + amount));
   };
 
   const handleApplyBulkWork = () => {
@@ -303,6 +340,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   };
 
   const handleSave = async () => {
+    if (savingRef.current) return;
     if (!name.trim()) {
       Alert.alert('Workout name needed', 'Add a name before saving this workout.');
       return;
@@ -311,20 +349,31 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       Alert.alert('Error', 'Add at least one exercise');
       return;
     }
+    const incomplete = exercises.filter(ex => (isRepBased(ex) ? !ex.reps : ex.workSeconds <= 0));
+    if (incomplete.length > 0) {
+      const names = incomplete.map(ex => ex.name.trim() || 'Untitled exercise').join(', ');
+      Alert.alert(
+        'Set a work time or rep count',
+        `${names} ${incomplete.length === 1 ? 'needs' : 'need'} a work time or rep count before saving.`,
+      );
+      return;
+    }
 
+    savingRef.current = true;
     const workout: Workout = {
-      id: workoutId || generateId(),
+      id: workoutId || draftWorkout?.id || generateId(),
       name,
       exercises,
       rounds,
-      restBetweenRoundsSeconds: rounds > 1 ? (restBetweenRoundsSeconds ?? 90) : null,
+      restBetweenRoundsSeconds: rounds > 1 ? (restBetweenRoundsSeconds ?? DEFAULT_REST_BETWEEN_ROUNDS) : null,
       createdAt: createdAtRef.current ?? Date.now(),
     };
 
     await saveWorkout(workout);
-    // If this was an import draft, go straight to Library.
-    // If it was a regular edit, go back to wherever we came from.
-    if (draftWorkout) {
+    allowLeaveRef.current = true;
+    // A brand-new import draft goes straight to Library; an edit (even one opened
+    // from a preview) returns to wherever it came from so that screen refreshes.
+    if (draftWorkout && !workoutId) {
       navigation.navigate('Library');
     } else {
       navigation.goBack();
@@ -406,7 +455,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
                 <View style={styles.restInputWithSuffix}>
                   <TextInput
                     style={[styles.roundsValueInput, styles.restValueInput]}
-                    value={(restBetweenRoundsSeconds ?? 90).toString()}
+                    value={(restBetweenRoundsSeconds ?? DEFAULT_REST_BETWEEN_ROUNDS).toString()}
                     onChangeText={text => setRestBetweenRoundsSeconds(Math.max(0, parseInt(text, 10) || 0))}
                     keyboardType="number-pad"
                     selectionColor="#CCFF00"
@@ -537,6 +586,16 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
         actions={[
           { label: 'Apply', variant: 'primary', onPress: bulkConfirmField === 'work' ? handleApplyBulkWork : handleApplyBulkRest },
           { label: 'Cancel', variant: 'neutral', onPress: () => setBulkConfirmField(null) },
+        ]}
+      />
+      <ConfirmDialog
+        visible={discardVisible}
+        title="Discard changes?"
+        message="You have unsaved changes to this workout."
+        onRequestClose={() => setDiscardVisible(false)}
+        actions={[
+          { label: 'Discard', variant: 'destructive', onPress: confirmDiscard },
+          { label: 'Keep Editing', variant: 'neutral', onPress: () => setDiscardVisible(false) },
         ]}
       />
     </KeyboardAvoidingView>

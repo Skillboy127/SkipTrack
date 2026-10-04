@@ -1,19 +1,28 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import { PencilIcon, ChevronIcon, LockIcon, CheckIcon } from '../components/WorkoutIcons';
-import { RootStackParamList } from '../types';
-import { loadCountdownSoundMode } from '../storage';
+import { RootStackParamList, Workout } from '../types';
+import { loadCountdownSoundMode, loadWorkouts } from '../storage';
 import { primeSpeechEngine } from '../useSpeech';
+import { isRepExercise } from '../workoutLogic';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
 
-function isRepBased(ex: { reps?: number | null; workSeconds: number }): boolean {
-  return ex.reps != null && ex.reps > 0 && ex.workSeconds <= 0;
-}
-
 export function WorkoutPreviewScreen({ route, navigation }: Props) {
-  const { workout } = route.params;
+  const [workout, setWorkout] = useState<Workout>(route.params.workout);
+  const isFocused = useIsFocused();
+
+  // Re-read the saved copy whenever this screen regains focus, so changes made
+  // in the editor show up here and are what Start actually runs.
+  useEffect(() => {
+    if (!isFocused) return;
+    loadWorkouts().then(workouts => {
+      const latest = workouts.find(w => w.id === route.params.workout.id);
+      if (latest) setWorkout(latest);
+    });
+  }, [isFocused, route.params.workout.id]);
 
   // Give the TTS engine a head start while the user is still reviewing the
   // workout, so the "get ready" countdown's first word doesn't lag once they
@@ -28,8 +37,10 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
     navigation.replace('ActiveSession', { workout });
   };
 
+  // Pass the current copy too, so a workout that's no longer in the library
+  // (opened via History's Repeat) still opens populated instead of blank.
   const handleEdit = () => {
-    navigation.navigate('WorkoutEditor', { workoutId: workout.id });
+    navigation.navigate('WorkoutEditor', { workoutId: workout.id, draftWorkout: workout });
   };
 
   return (
@@ -67,7 +78,7 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
               </View>
               <View style={styles.metricsInputs}>
                 <View style={[styles.metricInput, styles.workInput]}>
-                  <Text style={styles.workValue} numberOfLines={1}>{isRepBased(ex) ? `${ex.reps}r` : `${ex.workSeconds}s`}</Text>
+                  <Text style={styles.workValue} numberOfLines={1}>{isRepExercise(ex) ? `${ex.reps}r` : `${ex.workSeconds}s`}</Text>
                 </View>
                 <View style={[styles.metricInput, styles.restInput]}>
                   <Text style={styles.restValue} numberOfLines={1}>{ex.restSeconds}s</Text>
