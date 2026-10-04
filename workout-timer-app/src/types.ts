@@ -58,6 +58,7 @@ export type WorkoutHistoryEntry = {
 };
 
 export type RootStackParamList = {
+  Onboarding: undefined;
   Library: undefined;
   WorkoutEditor: { workoutId?: string, draftWorkout?: Workout };
   Import: undefined;

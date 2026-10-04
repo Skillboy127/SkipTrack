@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StatusBar, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -15,11 +15,20 @@ import { ActiveSessionScreen } from './src/screens/ActiveSessionScreen';
 import { CompletionScreen } from './src/screens/CompletionScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { loadHasSeenOnboarding } from './src/storage';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 export default function App() {
+  // Decided before the navigator mounts so a returning user never sees the
+  // onboarding flash, and a first-time user lands on it instead of Library.
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
+  useEffect(() => {
+    loadHasSeenOnboarding().then(setHasSeenOnboarding);
+  }, []);
+
   // Required once at startup before any BannerAd can load.
   useEffect(() => {
     mobileAds()
@@ -53,11 +62,20 @@ export default function App() {
     };
   }, []);
 
+  if (hasSeenOnboarding === null) {
+    return <View style={{ flex: 1, backgroundColor: '#0B0B0B' }} />;
+  }
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
       <NavigationContainer ref={navigationRef}>
-        <Stack.Navigator initialRouteName="Library">
+        <Stack.Navigator initialRouteName={hasSeenOnboarding ? 'Library' : 'Onboarding'}>
+          <Stack.Screen
+            name="Onboarding"
+            component={OnboardingScreen}
+            options={{ headerShown: false, gestureEnabled: false }}
+          />
           <Stack.Screen
             name="Library"
             component={LibraryScreen}

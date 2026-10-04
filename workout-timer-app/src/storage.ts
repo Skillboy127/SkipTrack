@@ -8,6 +8,7 @@ const COUNTDOWN_SOUND_KEY = '@countdown_sound_mode_v1';
 const WEIGHT_UNIT_KEY = '@weight_unit_v1';
 const IMPORT_USAGE_KEY = '@import_usage_v1';
 const AD_FREE_KEY = '@ad_free_v1';
+const ONBOARDING_SEEN_KEY = '@onboarding_seen_v1';
 
 function normalizeWorkout(value: unknown): Workout | null {
   if (!value || typeof value !== 'object') return null;
@@ -248,5 +249,22 @@ export async function saveAdFreeStatus(adFree: boolean): Promise<void> {
     await AsyncStorage.setItem(AD_FREE_KEY, adFree ? 'true' : 'false');
   } catch (e) {
     console.error('Failed to save ad-free status', e);
+  }
+}
+
+export async function loadHasSeenOnboarding(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(ONBOARDING_SEEN_KEY)) === 'true';
+  } catch (e) {
+    console.error('Failed to load onboarding status', e);
+    return true;
+  }
+}
+
+export async function saveHasSeenOnboarding(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
+  } catch (e) {
+    console.error('Failed to save onboarding status', e);
   }
 }
