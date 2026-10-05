@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIAP } from 'react-native-iap';
 import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
@@ -115,6 +115,10 @@ export function SettingsScreen({ navigation }: Props) {
       Alert.alert('Store unavailable', 'Could not connect to the store right now. Please try again later.');
       return;
     }
+    if (!products.some(p => p.id === REMOVE_ADS_SKU)) {
+      Alert.alert('Not available right now', 'Remove Ads can\'t be purchased right now. Please try again later.');
+      return;
+    }
     setPurchasing(true);
     try {
       await requestPurchase({
@@ -160,7 +164,7 @@ export function SettingsScreen({ navigation }: Props) {
       </View>
 
       {loaded && (
-        <View style={styles.content}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
           <Text style={styles.sectionHeader}>SESSION COUNTDOWN</Text>
           <View style={styles.card}>
             {SOUND_MODES.map((option, index) => {
@@ -245,7 +249,7 @@ export function SettingsScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -265,7 +269,8 @@ const styles = StyleSheet.create({
   backLabel: { color: '#94A3B8', fontSize: 15, lineHeight: 20 },
   screenTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', lineHeight: 23 },
   headerSpacer: { width: 64 },
-  content: { paddingHorizontal: 20, paddingTop: 16, gap: 10 },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40, gap: 10 },
   sectionHeader: { color: '#94A3B8', fontSize: 11, fontWeight: '700', lineHeight: 14, textTransform: 'uppercase' },
   card: {
     borderWidth: 1,

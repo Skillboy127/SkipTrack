@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StatusBar, View } from 'react-native';
+import { StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -17,9 +17,19 @@ import { HistoryScreen } from './src/screens/HistoryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { loadHasSeenOnboarding } from './src/storage';
+import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
+const styles = StyleSheet.create({
+  launch: {
+    flex: 1,
+    backgroundColor: '#0B0B0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 export default function App() {
   // Decided before the navigator mounts so a returning user never sees the
@@ -63,7 +73,11 @@ export default function App() {
   }, []);
 
   if (hasSeenOnboarding === null) {
-    return <View style={{ flex: 1, backgroundColor: '#0B0B0B' }} />;
+    return (
+      <View style={styles.launch}>
+        <RotatingDumbbellIcon color="#CCFF00" size={56} />
+      </View>
+    );
   }
 
   return (

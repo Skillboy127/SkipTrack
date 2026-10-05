@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, useWin
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { saveHasSeenOnboarding } from '../storage';
-import { CameraIcon, SpeakerIcon, PencilIcon, CheckIcon } from '../components/WorkoutIcons';
+import { CameraIcon, SpeakerIcon, PencilIcon, CheckIcon, DumbbellIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
@@ -14,6 +14,11 @@ type Slide = {
 };
 
 const SLIDES: Slide[] = [
+  {
+    title: 'Welcome to Flex',
+    body: 'Your workout companion.',
+    icon: <DumbbellIcon color="#CCFF00" size={36} />,
+  },
   {
     title: 'Import Any Workout',
     body: 'Snap a photo of a workout plan or card, or paste the exercises as text. Flex turns it into a timed routine you can start right away.',
