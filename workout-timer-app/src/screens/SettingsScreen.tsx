@@ -230,7 +230,7 @@ export function SettingsScreen({ navigation }: Props) {
               >
                 <View style={styles.optionInfo}>
                   <Text style={styles.optionTitle}>{removeAdsPrice ? `Remove Ads - ${removeAdsPrice}` : 'Remove Ads'}</Text>
-                  <Text style={styles.optionDescription}>One-time purchase. Removes all banner ads, forever.</Text>
+                  <Text style={styles.optionDescription}>One-time purchase. You won't see any ads, forever.</Text>
                 </View>
                 {purchasing && <ActivityIndicator color="#CCFF00" />}
               </TouchableOpacity>
