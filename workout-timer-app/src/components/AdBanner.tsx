@@ -23,6 +23,7 @@ const BANNER_AD_UNIT_ID = __DEV__ ? TestIds.BANNER : 'ca-app-pub-901306655929717
  */
 export function AdBanner({ visible = true }: { visible?: boolean }) {
   const [adFree, setAdFree] = useState<boolean | null>(null);
+  const [adLoaded, setAdLoaded] = useState(false);
   const isFocused = useIsFocused();
 
   React.useEffect(() => {
@@ -31,12 +32,16 @@ export function AdBanner({ visible = true }: { visible?: boolean }) {
 
   if (adFree !== false) return null;
 
+  // Collapsed to zero height until an ad actually loads, so a missing ad leaves
+  // no blank bar. The BannerAd stays mounted (not display:none) so it still loads.
   return (
-    <View style={[styles.container, !visible && styles.hidden]}>
+    <View style={[styles.container, !visible && styles.hidden, !adLoaded && styles.collapsed]}>
       <BannerAd
         unitId={BANNER_AD_UNIT_ID}
         size={BannerAdSize.LARGE_ANCHORED_ADAPTIVE_BANNER}
         requestOptions={{ requestNonPersonalizedAdsOnly: true }}
+        onAdLoaded={() => setAdLoaded(true)}
+        onAdFailedToLoad={error => console.log('[AdMob banner] failed to load', error.code, error.message)}
       />
     </View>
   );
@@ -52,5 +57,9 @@ const styles = StyleSheet.create({
   // hidden) without unmounting the underlying native ad view.
   hidden: {
     display: 'none',
+  },
+  collapsed: {
+    height: 0,
+    overflow: 'hidden',
   },
 });

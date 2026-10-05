@@ -85,6 +85,11 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const completionStartedRef = useRef(false);
   const showingCompletionAdRef = useRef(false);
   const completionNavigatedRef = useRef(false);
+  useEffect(() => {
+    if (completionAd.status === 'error' || completionAd.status === 'no-fill') {
+      console.log('[AdMob interstitial] failed to load', completionAd.status, completionAd.error?.code, completionAd.error?.message);
+    }
+  }, [completionAd.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCountdownTick = (secondsRemaining: number) => {
     if (soundModeRef.current === 'speech') speakCountdown(secondsRemaining);
