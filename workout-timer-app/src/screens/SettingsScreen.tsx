@@ -10,10 +10,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 // TODO: replace with the real product ID once created in Play Console /
 // App Store Connect — must match exactly on both, and on both platforms
-// this needs to be configured as a one-time non-consumable product priced
-// at $2.99 before a real purchase can succeed.
+// this needs to be configured as a one-time non-consumable product before a
+// real purchase can succeed.
 const REMOVE_ADS_SKU = 'remove_ads';
-const REMOVE_ADS_FALLBACK_PRICE = '$2.99';
 
 const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string }[] = [
   {
@@ -90,9 +89,8 @@ export function SettingsScreen({ navigation }: Props) {
     },
   });
 
-  // Fetch the real store-listed price as soon as the store connection is
-  // ready, so the button can show the actual localized price instead of
-  // just the $2.99 fallback label.
+  // Fetch the store-listed price as soon as the store connection is ready, so
+  // the button can show the localized price once it's known.
   useEffect(() => {
     if (connected) fetchProducts({ skus: [REMOVE_ADS_SKU], type: 'in-app' }).catch(() => {});
   }, [connected, fetchProducts]);
@@ -108,7 +106,7 @@ export function SettingsScreen({ navigation }: Props) {
     }
   }, [availablePurchases]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const removeAdsPrice = products.find(p => p.id === REMOVE_ADS_SKU)?.displayPrice ?? REMOVE_ADS_FALLBACK_PRICE;
+  const removeAdsPrice = products.find(p => p.id === REMOVE_ADS_SKU)?.displayPrice;
 
   const handlePurchaseRemoveAds = async () => {
     if (!connected) {
@@ -231,14 +229,10 @@ export function SettingsScreen({ navigation }: Props) {
                 accessibilityLabel="Remove ads"
               >
                 <View style={styles.optionInfo}>
-                  <Text style={styles.optionTitle}>Remove Ads</Text>
+                  <Text style={styles.optionTitle}>{removeAdsPrice ? `Remove Ads - ${removeAdsPrice}` : 'Remove Ads'}</Text>
                   <Text style={styles.optionDescription}>One-time purchase. Removes all banner ads, forever.</Text>
                 </View>
-                {purchasing ? (
-                  <ActivityIndicator color="#CCFF00" />
-                ) : (
-                  <Text style={styles.removeAdsPrice}>{removeAdsPrice}</Text>
-                )}
+                {purchasing && <ActivityIndicator color="#CCFF00" />}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.optionRow, styles.optionRowBorder]}
@@ -318,11 +312,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 14,
-  },
-  removeAdsPrice: {
-    color: '#CCFF00',
-    fontSize: 16,
-    fontWeight: '800',
   },
   restoreLink: {
     color: '#94A3B8',
