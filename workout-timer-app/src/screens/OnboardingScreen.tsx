@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, useWin
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { saveHasSeenOnboarding } from '../storage';
-import { CameraIcon, SpeakerIcon, PencilIcon, CheckIcon, DumbbellIcon } from '../components/WorkoutIcons';
+import { CameraIcon, SpeakerIcon, PencilIcon, PlusIcon, DumbbellIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
@@ -11,6 +11,8 @@ type Slide = {
   title: string;
   body: string;
   icon: React.ReactNode;
+  // Display-only info cards shown under the body text. Not tappable.
+  options?: { title: string; description: string }[];
 };
 
 const SLIDES: Slide[] = [
@@ -25,19 +27,24 @@ const SLIDES: Slide[] = [
     icon: <CameraIcon color="#CCFF00" size={36} />,
   },
   {
-    title: 'Follow Along Hands-Free',
-    body: 'Spoken countdowns and exercise announcements tell you what\'s next, so you can keep your eyes on the workout instead of your phone.',
+    title: 'Build Your Own',
+    body: 'Create a workout from scratch. Add exercises, set work and rest times, or use reps instead of a timer. Reorder and edit anytime.',
+    icon: <PlusIcon color="#CCFF00" size={36} />,
+  },
+  {
+    title: 'Choose Your Countdown',
+    body: 'Pick how Flex guides you. You can switch any time from Settings or the speaker icon during a workout.',
     icon: <SpeakerIcon color="#CCFF00" size={36} />,
+    options: [
+      { title: 'Spoken', description: 'Counts down out loud and announces your next exercise.' },
+      { title: 'Beep', description: 'A short beep for the countdown and phase changes.' },
+      { title: 'Silent', description: 'No sound, just the visual timer.' },
+    ],
   },
   {
     title: 'Adjust On The Fly',
     body: 'Edit any exercise, and drag its handle to reorder. During a rest, nudge the timer up or down by 5 seconds.',
     icon: <PencilIcon color="#6B9EFA" size={36} />,
-  },
-  {
-    title: "You're All Set",
-    body: 'Build your first workout, import one, or start from a saved routine. Your progress and history will be right here.',
-    icon: <CheckIcon color="#CCFF00" size={36} />,
   },
 ];
 
@@ -84,13 +91,28 @@ export function OnboardingScreen({ navigation }: Props) {
         style={styles.pager}
       >
         {SLIDES.map(slide => (
-          <View key={slide.title} style={[styles.slide, { width }]}>
+          <ScrollView
+            key={slide.title}
+            style={{ width }}
+            contentContainerStyle={styles.slide}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.card}>
               <View style={styles.iconCircle}>{slide.icon}</View>
               <Text style={styles.title}>{slide.title}</Text>
               <Text style={styles.body}>{slide.body}</Text>
+              {slide.options && (
+                <View style={styles.options}>
+                  {slide.options.map(option => (
+                    <View key={option.title} style={styles.optionCard}>
+                      <Text style={styles.optionTitle}>{option.title}</Text>
+                      <Text style={styles.optionDescription}>{option.description}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
-          </View>
+          </ScrollView>
         ))}
       </ScrollView>
 
@@ -137,8 +159,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   slide: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 24,
+    paddingVertical: 8,
     justifyContent: 'center',
   },
   card: {
@@ -178,6 +201,31 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     lineHeight: 23,
     textAlign: 'center',
+  },
+  options: {
+    alignSelf: 'stretch',
+    gap: 8,
+    marginTop: 4,
+  },
+  optionCard: {
+    borderWidth: 1,
+    borderColor: '#1F1F24',
+    borderRadius: 12,
+    backgroundColor: '#121214',
+    padding: 16,
+    gap: 4,
+  },
+  optionTitle: {
+    color: '#FFFFFF',
+    fontFamily: 'Geist',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  optionDescription: {
+    color: '#94A3B8',
+    fontFamily: 'Geist',
+    fontSize: 12,
+    lineHeight: 17,
   },
   footer: {
     paddingHorizontal: 24,
