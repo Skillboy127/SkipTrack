@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
-import { Workout, Exercise } from './types';
+import { Workout, Exercise, ServerUsage } from './types';
+import { getDeviceId } from './deviceId';
 
 // Get API URL from env, or dynamically from Expo's hostUri, with fallback
 const getHostUrl = () => {
@@ -119,7 +120,50 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 6
   }
 }
 
-async function postJson(path: string, body: Record<string, string>, timeoutMs = 60000): Promise<Workout> {
+/** Thrown when the server refuses an import because the allowance for this window is used up. */
+export class ImportLimitError extends Error {
+  usage: ServerUsage;
+  constructor(usage: ServerUsage) {
+    super('limit_reached');
+    this.usage = usage;
+  }
+}
+
+const DEVICE_UNAVAILABLE_MESSAGE =
+  "This version of the app can't verify your device, so imports are unavailable. Please update the app.";
+
+// Last allowance the server told us about, kept in memory only (never persisted),
+// so the Import screen has something to show if a later /usage request fails.
+let lastKnownUsage: ServerUsage | null = null;
+export function getLastKnownUsage(): ServerUsage | null {
+  return lastKnownUsage;
+}
+
+function parseUsage(value: any): ServerUsage | null {
+  if (!value || typeof value !== 'object') return null;
+  const { limit, used, remaining, resets_at } = value;
+  if (![limit, used, remaining].every(n => typeof n === 'number' && Number.isFinite(n))) return null;
+  return { limit, used, remaining, resets_at: typeof resets_at === 'string' ? resets_at : null };
+}
+
+/** Asks the server how many imports are left. Throws if the request fails. */
+export async function fetchUsage(): Promise<ServerUsage> {
+  const deviceId = getDeviceId();
+  if (!deviceId) throw new Error(DEVICE_UNAVAILABLE_MESSAGE);
+  const response = await fetchWithTimeout(`${API_BASE}/usage`, { headers: { 'X-Device-Id': deviceId } }, 20000);
+  if (!response.ok) throw new Error(`Usage request failed (${response.status})`);
+  const usage = parseUsage(await response.json().catch(() => null));
+  if (!usage) throw new Error('Usage response was not understood');
+  lastKnownUsage = usage;
+  return usage;
+}
+
+type ExtractionResult = { workout: Workout; usage: ServerUsage | null };
+
+async function postJson(path: string, body: Record<string, string>, timeoutMs = 60000): Promise<ExtractionResult> {
+  const deviceId = getDeviceId();
+  if (!deviceId) throw new Error(DEVICE_UNAVAILABLE_MESSAGE);
+
   let response: Response | null = null;
   let lastError: any = null;
 
@@ -130,7 +174,7 @@ async function postJson(path: string, body: Record<string, string>, timeoutMs = 
         `${API_BASE}${path}`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Device-Id': deviceId },
           body: JSON.stringify(body),
         },
         timeoutMs,
@@ -154,9 +198,23 @@ async function postJson(path: string, body: Record<string, string>, timeoutMs = 
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error || `Server error (${response.status}): The workout server could not process that import.`);
+    if (response.status === 429 && payload?.error === 'limit_reached') {
+      const usage: ServerUsage = {
+        limit: Number(payload.limit) || 0,
+        used: Number(payload.used) || 0,
+        remaining: 0,
+        resets_at: typeof payload.resets_at === 'string' ? payload.resets_at : null,
+      };
+      lastKnownUsage = usage;
+      throw new ImportLimitError(usage);
+    }
+    throw new Error(
+      payload?.message || payload?.error || `Server error (${response.status}): The workout server could not process that import.`,
+    );
   }
-  return mapResponseToWorkout(payload);
+  const usage = parseUsage(payload?.usage);
+  if (usage) lastKnownUsage = usage;
+  return { workout: mapResponseToWorkout(payload), usage };
 }
 
 /** Phase 3 — YouTube video URL */
@@ -168,20 +226,20 @@ export async function extractWorkoutFromVideo(url: string): Promise<Workout> {
   // default 60s budget was firing the client's own abort ("Fetch request
   // has been canceled") on perfectly successful-but-slow extractions,
   // especially layered on top of a Render free-tier cold start.
-  return postJson('/extract', { url }, 150000);
+  return (await postJson('/extract', { url }, 150000)).workout;
 }
 
 /** Phase 4 — Single image (base64) */
 export async function extractWorkoutFromImage(
   imageBase64: string,
   mimeType: string = 'image/jpeg',
-): Promise<Workout> {
+): Promise<ExtractionResult> {
   console.log('Sending image extraction request to:', `${API_BASE}/extract/image`);
   return postJson('/extract/image', { image_b64: imageBase64, mime_type: mimeType });
 }
 
 /** Phase 5 — Plain text workout description */
-export async function extractWorkoutFromText(text: string): Promise<Workout> {
+export async function extractWorkoutFromText(text: string): Promise<ExtractionResult> {
   console.log('Sending text extraction request to:', `${API_BASE}/extract/text`);
   return postJson('/extract/text', { text });
 }

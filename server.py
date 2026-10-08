@@ -12,12 +12,94 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import traceback
 
+import usage_limits
+
 app = Flask(__name__)
 CORS(app)
 
 MAX_TEXT_LENGTH = 30_000
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+if usage_limits.is_configured():
+    usage_limits.init_schema()
+
+SERVICE_BUSY_BODY = {
+    "error": "service_busy",
+    "message": "Flex is very busy today. Please try again tomorrow.",
+}
+USAGE_UNAVAILABLE_BODY = {
+    "error": "usage_unavailable",
+    "message": "We couldn't check your import allowance right now. Please try again in a moment.",
+}
+MISSING_DEVICE_ID_BODY = {
+    "error": "missing_device_id",
+    "message": "This version of the app can't verify your device. Please update the app.",
+}
+
+
+def device_hash_from_request():
+    """Returns (device_hash, None), or (None, (response, status)) when the header is missing/invalid or unusable."""
+    device_id = request.headers.get('X-Device-Id', '')
+    if not usage_limits.valid_device_id(device_id):
+        return None, (jsonify(MISSING_DEVICE_ID_BODY), 400)
+    try:
+        return usage_limits.hash_device_id(device_id), None
+    except usage_limits.UsageUnavailable as exc:
+        print(f"[usage] unavailable: {exc}")
+        return None, (jsonify(USAGE_UNAVAILABLE_BODY), 503)
+
+
+def limit_reached_response(usage: dict):
+    return jsonify({
+        "error": "limit_reached",
+        "limit": usage["limit"],
+        "used": usage["used"],
+        "resets_at": usage["resets_at"],
+    }), 429
+
+
+def begin_metered_import():
+    """Gate run before any extraction: returns (device_hash, None) to proceed, or (None, (response, status)) to stop."""
+    device_hash, error = device_hash_from_request()
+    if error:
+        return None, error
+    try:
+        status, usage = usage_limits.check_allowance(device_hash)
+    except usage_limits.UsageUnavailable as exc:
+        print(f"[usage] unavailable: {exc}")
+        return None, (jsonify(USAGE_UNAVAILABLE_BODY), 503)
+    if status == 'limit_reached':
+        return None, limit_reached_response(usage)
+    if status == 'service_busy':
+        return None, (jsonify(SERVICE_BUSY_BODY), 503)
+    return device_hash, None
+
+
+def finish_metered_import(device_hash: str, result):
+    """Count the import if (and only if) it succeeded, and attach the usage object to the response."""
+    if not usage_limits.is_successful_result(result):
+        return jsonify(result)
+
+    try:
+        status, usage = usage_limits.record_success(device_hash)
+    except usage_limits.UsageUnavailable as exc:
+        # The extraction already happened and the pre-check passed; don't throw
+        # the user's result away over a counting hiccup.
+        print(f"[usage] could not record a successful import: {exc}")
+        return jsonify(result)
+
+    if status == 'service_busy':
+        return jsonify(SERVICE_BUSY_BODY), 503
+    if status == 'limit_reached':
+        # Lost a race with a concurrent import: the allowance ran out in between.
+        try:
+            current = usage_limits.get_usage(device_hash)
+        except usage_limits.UsageUnavailable:
+            current = {"limit": usage_limits.limit(), "used": usage_limits.limit(), "resets_at": None}
+        return limit_reached_response(current)
+    return jsonify({**result, "usage": usage})
 
 
 def friendly_error_message(error: Exception) -> str:
@@ -46,7 +128,20 @@ def health_endpoint():
     """Used by the hosting platform to verify that the API is ready."""
     if not os.getenv('GEMINI_API_KEY'):
         return jsonify({"status": "misconfigured", "error": "GEMINI_API_KEY is not configured"}), 503
+    if not usage_limits.is_configured():
+        return jsonify({"status": "misconfigured", "error": "DATABASE_URL and DEVICE_ID_SECRET must both be set"}), 503
     return jsonify({"status": "ok"})
+
+@app.get('/usage')
+def usage_endpoint():
+    device_hash, error = device_hash_from_request()
+    if error:
+        return error
+    try:
+        return jsonify(usage_limits.get_usage(device_hash))
+    except usage_limits.UsageUnavailable as exc:
+        print(f"[usage] unavailable: {exc}")
+        return jsonify(USAGE_UNAVAILABLE_BODY), 503
 
 @app.route('/extract', methods=['POST'])
 def extract_endpoint():
@@ -94,9 +189,12 @@ def extract_image_endpoint():
         image_bytes = base64.b64decode(image_b64, validate=True)
         if len(image_bytes) > MAX_IMAGE_BYTES:
             return jsonify({"error": "Image is too large. Choose an image under 8 MB."}), 413
+        device_hash, blocked = begin_metered_import()
+        if blocked:
+            return blocked
         print("Extracting from image with Gemini...")
         result = extract_from_image(image_bytes, mime_type)
-        return jsonify(result)
+        return finish_metered_import(device_hash, result)
     except (ValueError, binascii.Error):
         return jsonify({"error": "The uploaded image could not be read."}), 400
     except Exception as e:
@@ -118,9 +216,12 @@ def extract_text_endpoint():
     try:
         from extract_workout import extract_from_text
 
+        device_hash, blocked = begin_metered_import()
+        if blocked:
+            return blocked
         print("Extracting from text with Gemini...")
         result = extract_from_text(text)
-        return jsonify(result)
+        return finish_metered_import(device_hash, result)
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({"error": friendly_error_message(e)}), 500

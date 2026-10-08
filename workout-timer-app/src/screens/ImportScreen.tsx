@@ -13,13 +13,14 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
-import { RootStackParamList } from '../types';
-import { MONTHLY_IMPORT_LIMIT } from '../types';
+import { RootStackParamList, ServerUsage } from '../types';
 import {
   extractWorkoutFromImage,
   extractWorkoutFromText,
+  fetchUsage,
+  getLastKnownUsage,
+  ImportLimitError,
 } from '../api';
-import { loadImportUsage, recordImport } from '../storage';
 import { CloseIcon, InfoIcon, CameraIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
@@ -49,33 +50,37 @@ export function ImportScreen({ navigation }: Props) {
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [importError, setImportError] = useState<ImportError | null>(null);
 
-  // Free-tier import limit, resets monthly (see recordImport/loadImportUsage in storage.ts)
-  const [remainingImports, setRemainingImports] = useState<number | null>(null);
+  // The import allowance lives on the server. Start from the last value we heard
+  // (if any) and refresh it each time this screen opens; if that request fails we
+  // keep the last known value, or show no counter at all if there isn't one.
+  const [usage, setUsage] = useState<ServerUsage | null>(getLastKnownUsage());
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const isFocused = useIsFocused();
-
-  useEffect(() => {
-    if (!isFocused) return;
-    loadImportUsage().then(usage => {
-      const remaining = Math.max(0, MONTHLY_IMPORT_LIMIT - usage.count);
-      setRemainingImports(remaining);
-      if (remaining <= 0) setLimitModalVisible(true);
-    });
-  }, [isFocused]);
-
-  /** Returns true if the import can proceed; otherwise shows the limit-reached modal. */
-  const checkImportAllowed = (): boolean => {
-    if (remainingImports !== null && remainingImports <= 0) {
-      setLimitModalVisible(true);
-      return false;
-    }
-    return true;
-  };
 
   // An extraction can finish after the user has backed out of this screen; its
   // result is dropped in that case rather than navigating them somewhere unexpected.
   const isMountedRef = useRef(true);
   useEffect(() => () => { isMountedRef.current = false; }, []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    fetchUsage()
+      .then(fresh => {
+        if (!isMountedRef.current) return;
+        setUsage(fresh);
+        if (fresh.remaining <= 0) setLimitModalVisible(true);
+      })
+      .catch(() => {});
+  }, [isFocused]);
+
+  /** Returns true if the import can proceed; otherwise shows the limit-reached modal. */
+  const checkImportAllowed = (): boolean => {
+    if (usage !== null && usage.remaining <= 0) {
+      setLimitModalVisible(true);
+      return false;
+    }
+    return true;
+  };
 
   // Cycle through contextual status lines while extraction is underway
   useEffect(() => {
@@ -137,11 +142,18 @@ export function ImportScreen({ navigation }: Props) {
     setLoading(true);
     setImportError(null);
     try {
-      const workout = await extractWorkoutFromImage(imageBase64, imageMime);
+      const { workout, usage: updated } = await extractWorkoutFromImage(imageBase64, imageMime);
       if (!isMountedRef.current) return;
-      await recordImport('image');
+      if (updated) setUsage(updated);
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
+      if (e instanceof ImportLimitError) {
+        if (isMountedRef.current) {
+          setUsage(e.usage);
+          setLimitModalVisible(true);
+        }
+        return;
+      }
       setImportError({ tab: 'image', message: e.message || 'Something went wrong reading that image.' });
     } finally {
       setLoading(false);
@@ -157,11 +169,18 @@ export function ImportScreen({ navigation }: Props) {
     setLoading(true);
     setImportError(null);
     try {
-      const workout = await extractWorkoutFromText(workoutText.trim());
+      const { workout, usage: updated } = await extractWorkoutFromText(workoutText.trim());
       if (!isMountedRef.current) return;
-      await recordImport('text');
+      if (updated) setUsage(updated);
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
+      if (e instanceof ImportLimitError) {
+        if (isMountedRef.current) {
+          setUsage(e.usage);
+          setLimitModalVisible(true);
+        }
+        return;
+      }
       setImportError({ tab: 'text', message: e.message || 'Something went wrong reading that workout.' });
     } finally {
       setLoading(false);
@@ -225,7 +244,13 @@ export function ImportScreen({ navigation }: Props) {
   const processingSource = activeTab === 'image'
     ? 'Workout image'
     : 'Workout description';
-  const limitReached = remainingImports !== null && remainingImports <= 0;
+  const limitReached = usage !== null && usage.remaining <= 0;
+  const resetDate = usage?.resets_at
+    ? new Date(usage.resets_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+    : null;
+  const limitMessage = usage
+    ? `You've used all ${usage.limit} imports for this month.${resetDate ? ` Your imports reset on ${resetDate}.` : ''}`
+    : "You've used all your imports for this month.";
   const canImportText = workoutText.trim().length > 0 && !limitReached;
   const canImportImage = imageBase64 !== null && !limitReached;
   const activeLoadingMessages = LOADING_MESSAGES[activeTab];
@@ -242,12 +267,12 @@ export function ImportScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {remainingImports !== null && (
+        {usage !== null && (
           <View style={styles.importsRemainingRow}>
             <Text style={[styles.importsRemainingText, limitReached && styles.importsRemainingTextZero]}>
               {limitReached
-                ? 'No imports remaining this month'
-                : `${remainingImports} import${remainingImports === 1 ? '' : 's'} remaining this month`}
+                ? 'No imports left this month'
+                : `${usage.remaining} import${usage.remaining === 1 ? '' : 's'} left this month`}
             </Text>
           </View>
         )}
@@ -343,10 +368,10 @@ export function ImportScreen({ navigation }: Props) {
       <ConfirmDialog
         visible={limitModalVisible}
         title="Import limit reached"
-        message={`You've used all ${MONTHLY_IMPORT_LIMIT} imports for this month. Your limit resets at the start of next month.`}
+        message={limitMessage}
         onRequestClose={() => setLimitModalVisible(false)}
         actions={[
-          { label: 'Got it', variant: 'primary', onPress: () => setLimitModalVisible(false) },
+          { label: 'OK', variant: 'primary', onPress: () => setLimitModalVisible(false) },
         ]}
       />
     </View>

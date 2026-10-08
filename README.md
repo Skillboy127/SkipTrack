@@ -49,3 +49,27 @@ The mobile app needs one permanent API URL for workout imports. This repository 
 6. Build the APK from `workout-timer-app` with `npx eas-cli@latest build --platform android --profile preview`.
 
 The generated APK includes the import workflow. The API key remains only on Render, never in the mobile app.
+
+## Import limit (server-side)
+
+Each device gets `LIMIT` (default 10) successful imports per `WINDOW_DAYS` (default 30), counted in Postgres and
+keyed by `HMAC-SHA256(Android ID, DEVICE_ID_SECRET)`, so it survives clearing app data and reinstalling. Only
+successful imports (at least one exercise, coverage not "none") count. Windows are consecutive blocks anchored on
+the user's first successful import. `GET /usage` returns the current allowance.
+
+Environment variables (Render dashboard): `DATABASE_URL` and `DEVICE_ID_SECRET` are required (`/health` reports
+"misconfigured" until both are set); optional: `LIMIT`, `WINDOW_DAYS` (fractions allowed),
+`DAILY_GLOBAL_IMPORT_CAP` (default 300 successful imports per UTC day across all users).
+
+### Testing it
+
+Automated, against a scratch Postgres (never production):
+
+    DATABASE_URL=postgresql://... DEVICE_ID_SECRET=test python test_usage_limits.py
+
+By hand against a deployed test server, set `LIMIT=2` and `WINDOW_DAYS=0.0003` (about 26 seconds), then:
+
+1. Make an import fail (e.g. turn the phone offline, or send gibberish) - the counter must not move.
+2. Make two good imports - the screen shows "1 import left", then the limit dialog on the third try.
+3. Clear the app's data (or uninstall and reinstall) and reopen Import - the count is unchanged.
+4. Wait about 30 seconds and reopen Import - the allowance is back to 2.

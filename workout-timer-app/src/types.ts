@@ -35,18 +35,13 @@ export type CountdownSoundMode = 'speech' | 'beep' | 'silent';
 
 export type WeightUnit = 'lb' | 'kg';
 
-export type ImportType = 'video' | 'image' | 'text';
-
-export const MONTHLY_IMPORT_LIMIT = 15;
-
-/** Tracks import usage for the current calendar month, reset automatically when the month rolls over. */
-export type ImportUsage = {
-  /** "YYYY-MM" for the month this usage applies to. */
-  month: string;
-  count: number;
-  video: number;
-  image: number;
-  text: number;
+/** Import allowance reported by the server (the source of truth; nothing is counted locally). */
+export type ServerUsage = {
+  limit: number;
+  used: number;
+  remaining: number;
+  /** ISO-8601 UTC time the current window ends; null for a user who has never imported. */
+  resets_at: string | null;
 };
 
 export type WorkoutHistoryEntry = {
