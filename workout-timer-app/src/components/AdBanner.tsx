@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { loadAdFreeStatus } from '../storage';
-
-// Google's sample ads in development so we never tap our own live units.
-const BANNER_AD_UNIT_ID = __DEV__ ? TestIds.BANNER : 'ca-app-pub-9013066559297172/8344769072';
+import { BANNER_AD_UNIT_ID } from '../adConfig';
 
 /**
  * Bottom-anchored banner ad, shown to free users only. Re-checks the ad-free
@@ -40,7 +38,10 @@ export function AdBanner({ visible = true }: { visible?: boolean }) {
         unitId={BANNER_AD_UNIT_ID}
         size={BannerAdSize.LARGE_ANCHORED_ADAPTIVE_BANNER}
         requestOptions={{ requestNonPersonalizedAdsOnly: true }}
-        onAdLoaded={() => setAdLoaded(true)}
+        onAdLoaded={() => {
+          console.log('[AdMob banner] loaded', BANNER_AD_UNIT_ID);
+          setAdLoaded(true);
+        }}
         onAdFailedToLoad={error => console.log('[AdMob banner] failed to load', error.code, error.message)}
       />
     </View>

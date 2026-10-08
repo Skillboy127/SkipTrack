@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanRe
 import { bgLog } from '../bgLog';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
-import { useInterstitialAd, TestIds } from 'react-native-google-mobile-ads';
+import { useInterstitialAd } from 'react-native-google-mobile-ads';
+import { INTERSTITIAL_AD_UNIT_ID } from '../adConfig';
 import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
@@ -18,10 +19,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
-
-const COMPLETION_INTERSTITIAL_AD_UNIT_ID = __DEV__
-  ? TestIds.INTERSTITIAL
-  : 'ca-app-pub-9013066559297172/3697937890';
 
 // The get-ready countdown runs for this many seconds, but only cues (spoken or
 // beeped) the last 3 — the first couple of seconds count down silently.
@@ -87,14 +84,16 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     loadAdFreeStatus().then(setAdFree);
   }, []);
   const completionAd = useInterstitialAd({
-    adUnitId: adFree === false ? COMPLETION_INTERSTITIAL_AD_UNIT_ID : null,
+    adUnitId: adFree === false ? INTERSTITIAL_AD_UNIT_ID : null,
     requestOptions: { requestNonPersonalizedAdsOnly: true },
   });
   const completionStartedRef = useRef(false);
   const showingCompletionAdRef = useRef(false);
   const completionNavigatedRef = useRef(false);
   useEffect(() => {
-    if (completionAd.status === 'error' || completionAd.status === 'no-fill') {
+    if (completionAd.status === 'loaded') {
+      console.log('[AdMob interstitial] loaded', INTERSTITIAL_AD_UNIT_ID);
+    } else if (completionAd.status === 'error' || completionAd.status === 'no-fill') {
       console.log('[AdMob interstitial] failed to load', completionAd.status, completionAd.error?.code, completionAd.error?.message);
     }
   }, [completionAd.status]); // eslint-disable-line react-hooks/exhaustive-deps

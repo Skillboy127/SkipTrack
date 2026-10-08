@@ -16,7 +16,7 @@ import { CompletionScreen } from './src/screens/CompletionScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
-import { loadHasSeenOnboarding } from './src/storage';
+import { loadHasSeenOnboarding, loadAdFreeStatus } from './src/storage';
 import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -37,6 +37,10 @@ export default function App() {
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
   useEffect(() => {
     loadHasSeenOnboarding().then(setHasSeenOnboarding);
+  }, []);
+
+  useEffect(() => {
+    loadAdFreeStatus().then(adsRemoved => console.log('[AdMob] adsRemoved =', adsRemoved));
   }, []);
 
   // Required once at startup before any BannerAd can load.
