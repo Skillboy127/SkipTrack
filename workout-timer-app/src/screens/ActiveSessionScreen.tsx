@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder, AppState } from 'react-native';
+import { bgLog } from '../bgLog';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
 import { useInterstitialAd, TestIds } from 'react-native-google-mobile-ads';
@@ -61,6 +62,13 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     startBackgroundKeepAlive();
     return () => stopBackgroundKeepAlive();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // [BG] diagnostics: when the screen locks / the app is backgrounded and returns.
+  useEffect(() => {
+    bgLog('session screen mounted');
+    const sub = AppState.addEventListener('change', state => bgLog(`AppState -> ${state}`));
+    return () => sub.remove();
+  }, []);
 
   // Surface a lock-screen / notification-shade "now playing" card with the
   // current exercise and time remaining — the same media-session mechanism

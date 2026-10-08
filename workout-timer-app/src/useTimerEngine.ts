@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Phase } from './types';
+import { bgLog } from './bgLog';
+
+// A 3-2-1 countdown cue that is detected more than this long after it was due is
+// skipped instead of spoken out of sync (e.g. after the app was stalled).
+const STALE_CUE_SECONDS = 0.6;
 
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 
@@ -25,6 +30,8 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
   const sessionStartTimeRef = useRef<number | null>(null);
   const activeMsRef = useRef(0);
   const lastTickAtRef = useRef<number | null>(null);
+  const lastDiagTickRef = useRef<number | null>(null);
+  const lastHeartbeatRef = useRef(0);
 
   // For tracking when to beep (3, 2, 1)
   const lastBeepTimeRef = useRef<number>(-1);
@@ -167,38 +174,80 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
         setSessionElapsedSeconds(activeMsRef.current / 1000);
       }
 
+      // [BG] diagnostics: record when ticks stop or run late, and a slow heartbeat.
+      if (lastDiagTickRef.current != null && now - lastDiagTickRef.current > 500) {
+        bgLog(`tick gap ${now - lastDiagTickRef.current}ms (timers were stalled or throttled)`);
+      }
+      lastDiagTickRef.current = now;
+      if (now - lastHeartbeatRef.current >= 5000) {
+        lastHeartbeatRef.current = now;
+        bgLog(`heartbeat state=${stateRef.current} phase=${phaseIndexRef.current}`);
+      }
+
       if (stateRef.current !== 'running' || phaseStartTimeRef.current === null) return;
       if (phasesRef.current[phaseIndexRef.current]?.mode === 'reps') return;
 
-      const elapsedSeconds = (now - phaseStartTimeRef.current) / 1000;
-      const newRemaining = durationRef.current - elapsedSeconds;
+      const index = phaseIndexRef.current;
+      const startMs = phaseStartTimeRef.current;
+      const duration = durationRef.current;
+      const remaining = duration - (now - startMs) / 1000;
 
       // Countdown cue for 3, 2, 1 — spoken via TTS (see onCountdown in ActiveSessionScreen).
-      const ceilRemaining = Math.ceil(newRemaining);
+      // Cue N is due the moment `remaining` hits N, so lateness is N - remaining. A
+      // cue that is already stale (this tick arrived well after it was due) is
+      // dropped rather than spoken out of sync; phase changes below are never dropped.
+      const ceilRemaining = Math.ceil(remaining);
       if (ceilRemaining <= 3 && ceilRemaining > 0 && ceilRemaining !== lastBeepTimeRef.current) {
         lastBeepTimeRef.current = ceilRemaining;
-        // Fallback: uncomment to use the beep sound instead of the spoken countdown.
-        // onBeepRef.current();
-        onCountdownRef.current?.(ceilRemaining);
+        const lateness = ceilRemaining - remaining;
+        if (lateness <= STALE_CUE_SECONDS) {
+          bgLog(`cue ${ceilRemaining} fired lateness=${Math.round(lateness * 1000)}ms`);
+          // Fallback: uncomment to use the beep sound instead of the spoken countdown.
+          // onBeepRef.current();
+          onCountdownRef.current?.(ceilRemaining);
+        } else {
+          bgLog(`cue ${ceilRemaining} skipped as stale lateness=${Math.round(lateness * 1000)}ms`);
+        }
       }
 
-      if (newRemaining <= 0) {
-        const nextIndex = phaseIndexRef.current + 1;
+      if (remaining > 0) {
+        setRemainingSeconds(remaining);
+        return;
+      }
+
+      // The phase is over. Each next phase starts exactly where the previous one
+      // ended (not at "now"), so a late tick never loses time, and if several timed
+      // phases elapsed since the last tick we land on the one that is current now.
+      let landedStart = startMs;
+      let landedIndex = index;
+      let landedRemaining = 0;
+      let previousDuration = duration;
+      let skipped = 0;
+      for (;;) {
+        const nextIndex = landedIndex + 1;
         if (nextIndex >= phasesRef.current.length) {
+          bgLog('workout completed');
           setTimerState('completed');
           setRemainingSeconds(0);
-        } else {
-          const nextPhase = phasesRef.current[nextIndex];
-          setCurrentPhaseIndex(nextIndex);
-          setCurrentPhaseDuration(nextPhase.duration);
-          setRemainingSeconds(nextPhase.duration);
-          setPhaseStartTime(Date.now());
-          lastBeepTimeRef.current = -1;
-          onPhaseStartRef.current?.(nextPhase);
+          return;
         }
-      } else {
-        setRemainingSeconds(newRemaining);
+        const nextPhase = phasesRef.current[nextIndex];
+        landedStart += previousDuration * 1000;
+        landedIndex = nextIndex;
+        landedRemaining = nextPhase.duration - (now - landedStart) / 1000;
+        if (nextPhase.mode === 'reps' || landedRemaining > 0) break;
+        previousDuration = nextPhase.duration;
+        skipped += 1;
       }
+
+      const landedPhase = phasesRef.current[landedIndex];
+      bgLog(`phase change -> ${landedIndex} (${landedPhase.type}) caught up ${skipped} elapsed phase(s)`);
+      setCurrentPhaseIndex(landedIndex);
+      setCurrentPhaseDuration(landedPhase.duration);
+      setRemainingSeconds(Math.max(0, landedRemaining));
+      setPhaseStartTime(landedStart);
+      lastBeepTimeRef.current = -1;
+      onPhaseStartRef.current?.(landedPhase);
     }, 100);
 
     return () => clearInterval(interval);

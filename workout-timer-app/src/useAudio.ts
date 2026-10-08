@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { useAudioPlayer, setAudioModeAsync, requestNotificationPermissionsAsync } from 'expo-audio';
+import { bgLog } from './bgLog';
 
 // A full-amplitude 1kHz tone, generated at full scale so it's as loud as the
 // device volume allows — not dependent on ducking other apps, which only
@@ -128,6 +129,7 @@ export function useAudio() {
   const playFrom = (source: ReturnType<typeof useAudioPlayer>) => {
     if (!source) return;
     lastRealPlayAt.current.set(source, Date.now());
+    bgLog(`beep requested (silence keep-alive playing=${keepAlivePlayer?.playing})`);
     (async () => {
       try {
         // Stop and rewind before replaying so rapid, back-to-back beeps

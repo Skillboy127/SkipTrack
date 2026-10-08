@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import * as Speech from 'expo-speech';
+import { bgLog } from './bgLog';
 
 const COUNTDOWN_WORDS: Record<number, string> = {
   3: 'three',
@@ -40,7 +41,13 @@ export function useSpeech(enabled: boolean) {
 
   const speak = useCallback((text: string) => {
     if (!enabledRef.current || !text) return;
-    Speech.speak(text, { rate: 1.0 });
+    bgLog(`speak("${text}") requested`);
+    Speech.speak(text, {
+      rate: 1.0,
+      onStart: () => bgLog(`speak("${text}") started`),
+      onDone: () => bgLog(`speak("${text}") done`),
+      onError: error => bgLog(`speak("${text}") ERROR ${String(error)}`),
+    });
   }, []);
 
   const speakCountdown = useCallback((secondsRemaining: number) => {
