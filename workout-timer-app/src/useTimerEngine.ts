@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Phase } from './types';
-import { bgLog } from './bgLog';
 
 // A 3-2-1 countdown cue that is detected more than this long after it was due is
 // skipped instead of spoken out of sync (e.g. after the app was stalled).
@@ -30,8 +29,6 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
   const sessionStartTimeRef = useRef<number | null>(null);
   const activeMsRef = useRef(0);
   const lastTickAtRef = useRef<number | null>(null);
-  const lastDiagTickRef = useRef<number | null>(null);
-  const lastHeartbeatRef = useRef(0);
 
   // For tracking when to beep (3, 2, 1)
   const lastBeepTimeRef = useRef<number>(-1);
@@ -174,16 +171,6 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
         setSessionElapsedSeconds(activeMsRef.current / 1000);
       }
 
-      // [BG] diagnostics: record when ticks stop or run late, and a slow heartbeat.
-      if (lastDiagTickRef.current != null && now - lastDiagTickRef.current > 500) {
-        bgLog(`tick gap ${now - lastDiagTickRef.current}ms (timers were stalled or throttled)`);
-      }
-      lastDiagTickRef.current = now;
-      if (now - lastHeartbeatRef.current >= 5000) {
-        lastHeartbeatRef.current = now;
-        bgLog(`heartbeat state=${stateRef.current} phase=${phaseIndexRef.current}`);
-      }
-
       if (stateRef.current !== 'running' || phaseStartTimeRef.current === null) return;
       if (phasesRef.current[phaseIndexRef.current]?.mode === 'reps') return;
 
@@ -201,12 +188,9 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
         lastBeepTimeRef.current = ceilRemaining;
         const lateness = ceilRemaining - remaining;
         if (lateness <= STALE_CUE_SECONDS) {
-          bgLog(`cue ${ceilRemaining} fired lateness=${Math.round(lateness * 1000)}ms`);
           // Fallback: uncomment to use the beep sound instead of the spoken countdown.
           // onBeepRef.current();
           onCountdownRef.current?.(ceilRemaining);
-        } else {
-          bgLog(`cue ${ceilRemaining} skipped as stale lateness=${Math.round(lateness * 1000)}ms`);
         }
       }
 
@@ -222,11 +206,9 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
       let landedIndex = index;
       let landedRemaining = 0;
       let previousDuration = duration;
-      let skipped = 0;
       for (;;) {
         const nextIndex = landedIndex + 1;
         if (nextIndex >= phasesRef.current.length) {
-          bgLog('workout completed');
           setTimerState('completed');
           setRemainingSeconds(0);
           return;
@@ -237,11 +219,9 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
         landedRemaining = nextPhase.duration - (now - landedStart) / 1000;
         if (nextPhase.mode === 'reps' || landedRemaining > 0) break;
         previousDuration = nextPhase.duration;
-        skipped += 1;
       }
 
       const landedPhase = phasesRef.current[landedIndex];
-      bgLog(`phase change -> ${landedIndex} (${landedPhase.type}) caught up ${skipped} elapsed phase(s)`);
       setCurrentPhaseIndex(landedIndex);
       setCurrentPhaseDuration(landedPhase.duration);
       setRemainingSeconds(Math.max(0, landedRemaining));

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder, AppState } from 'react-native';
-import { bgLog } from '../bgLog';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
 import { useInterstitialAd } from 'react-native-google-mobile-ads';
@@ -36,7 +35,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
 
-  const { playBeep, playGoBeep, startBackgroundKeepAlive, stopBackgroundKeepAlive, setWorkoutNowPlaying, clearWorkoutNowPlaying } = useAudio();
+  const { playBeep, playGoBeep } = useAudio();
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const { speak, speakCountdown } = useSpeech(soundMode === 'speech');
@@ -51,31 +50,6 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     soundModeRef.current = soundMode;
   }, [soundMode]);
-
-  // Keep a near-silent audio loop running for the whole session so iOS/Android
-  // don't suspend the app once the screen locks — without it, the timer and
-  // countdown cues would stop firing as soon as the phone goes to sleep.
-  useEffect(() => {
-    startBackgroundKeepAlive();
-    return () => stopBackgroundKeepAlive();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // [BG] diagnostics: when the screen locks / the app is backgrounded and returns.
-  useEffect(() => {
-    bgLog('session screen mounted');
-    const sub = AppState.addEventListener('change', state => bgLog(`AppState -> ${state}`));
-    return () => sub.remove();
-  }, []);
-
-  // Surface a lock-screen / notification-shade "now playing" card with the
-  // current exercise and time remaining — the same media-session mechanism
-  // music apps use, so there's a visible, live-updating summary of the
-  // workout even while the phone is locked. Tied to the keep-alive loop
-  // above, so it's active for the whole session and cleared when it ends.
-  useEffect(() => {
-    setWorkoutNowPlaying(workout.name || 'Workout', 'Get ready...');
-    return () => clearWorkoutNowPlaying();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Free users only, and only once that's known. Preloaded for the whole session
   // so it's ready the moment the workout ends; nothing is shown mid-session.
@@ -129,24 +103,6 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     loadCountdownSoundMode().then(setSoundMode);
     loadWeightUnit().then(setWeightUnit);
   }, []);
-
-  // Keep the lock-screen "now playing" card in sync with the actual session:
-  // current exercise (or rest + what's next) and time remaining.
-  useEffect(() => {
-    const phase = engine.currentPhase;
-    if (!phase || preStartSeconds !== null) return;
-
-    const isRestPhase = phase.type === 'rest';
-    const upcoming = phases[engine.currentPhaseIndex + 1];
-    const title = isRestPhase ? 'Rest' : phase.exerciseName;
-    const subtitle = isRestPhase
-      ? `Next: ${upcoming?.exerciseName ?? 'Done'}`
-      : phase.mode === 'reps'
-        ? `${phase.reps} reps`
-        : `${Math.ceil(engine.remainingSeconds)}s left`;
-    setWorkoutNowPlaying(title, subtitle, workout.name);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.currentPhase, engine.currentPhaseIndex, Math.ceil(engine.remainingSeconds), preStartSeconds]);
 
   const cycleSoundMode = () => {
     const next = SOUND_MODE_ORDER[(SOUND_MODE_ORDER.indexOf(soundMode) + 1) % SOUND_MODE_ORDER.length];

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
-import { useAudioPlayer, setAudioModeAsync, requestNotificationPermissionsAsync } from 'expo-audio';
-import { bgLog } from './bgLog';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
 // A full-amplitude 1kHz tone, generated at full scale so it's as loud as the
 // device volume allows — not dependent on ducking other apps, which only
@@ -12,21 +10,10 @@ const BEEP_ASSET = require('../assets/audio/beep-loud.wav');
 // at runtime, since that relies on native playbackRate/pitch-correction
 // support that isn't guaranteed to do anything audible on every device.
 const GO_BEEP_ASSET = require('../assets/audio/go-beep.wav');
-// A 1-second track of true digital silence (all-zero PCM samples), used only
-// to keep the audio route active in the background — see keepAlivePlayer below.
-const SILENCE_ASSET = require('../assets/audio/silence.wav');
 
 export function useAudio() {
   const player = useAudioPlayer(BEEP_ASSET);
   const goBeepPlayer = useAudioPlayer(GO_BEEP_ASSET);
-  // A third, silent looping player. iOS (and Android's foreground playback
-  // service) only keep the app alive in the background for as long as audio
-  // is actively playing — brief, spaced-out beeps don't count as "active"
-  // and the OS suspends the app between them once the screen locks. Looping
-  // real silence (not a quiet beep — that's still audibly rhythmic) keeps
-  // the audio route continuously active so the countdown timer and beeps
-  // keep running without the user hearing anything extra.
-  const keepAlivePlayer = useAudioPlayer(SILENCE_ASSET);
 
   useEffect(() => {
     async function configureAudio() {
@@ -39,23 +26,12 @@ export function useAudio() {
           // since it dips the user's own music every time a beep plays.
           interruptionMode: 'mixWithOthers',
         });
-        // Android 13+ requires this before a media-session notification (the
-        // lock-screen/notification-shade "now playing" card below) is allowed
-        // to show at all.
-        if (Platform.OS === 'android') {
-          await requestNotificationPermissionsAsync();
-        }
       } catch (e) {
         console.warn('Failed to configure audio mode', e);
       }
     }
     configureAudio();
   }, []);
-
-  useEffect(() => {
-    if (!keepAlivePlayer) return;
-    keepAlivePlayer.loop = true;
-  }, [keepAlivePlayer]);
 
   // Track when each player last actually played a real (audible) cue, so the
   // warm-up loop below can avoid stepping on one that just fired.
@@ -108,28 +84,9 @@ export function useAudio() {
     return () => clearInterval(interval);
   }, [player, goBeepPlayer]);
 
-  const startBackgroundKeepAlive = useCallback(() => {
-    if (!keepAlivePlayer) return;
-    try {
-      keepAlivePlayer.play();
-    } catch (e) {
-      console.warn('Failed to start background keep-alive audio:', e);
-    }
-  }, [keepAlivePlayer]);
-
-  const stopBackgroundKeepAlive = useCallback(() => {
-    if (!keepAlivePlayer) return;
-    try {
-      keepAlivePlayer.pause();
-    } catch (e) {
-      console.warn('Failed to stop background keep-alive audio:', e);
-    }
-  }, [keepAlivePlayer]);
-
   const playFrom = (source: ReturnType<typeof useAudioPlayer>) => {
     if (!source) return;
     lastRealPlayAt.current.set(source, Date.now());
-    bgLog(`beep requested (silence keep-alive playing=${keepAlivePlayer?.playing})`);
     (async () => {
       try {
         // Stop and rewind before replaying so rapid, back-to-back beeps
@@ -148,49 +105,5 @@ export function useAudio() {
   const playBeep = useCallback(() => playFrom(player), [player]);
   const playGoBeep = useCallback(() => playFrom(goBeepPlayer), [goBeepPlayer]);
 
-  // Lock-screen / notification-shade "now playing" info for the current
-  // workout — this is what lets someone see (and the app keep running)
-  // while the phone is locked, the same mechanism music apps use. It's tied
-  // to the keep-alive player since that's the one actually producing
-  // continuous audio; the beep players only play brief one-shot cues and
-  // wouldn't make sense as the "active" media session.
-  const lockScreenActiveRef = useRef(false);
-  const setWorkoutNowPlaying = useCallback((title: string, subtitle: string, album?: string) => {
-    if (!keepAlivePlayer) return;
-    try {
-      const metadata = { title, artist: subtitle, albumTitle: album };
-      if (!lockScreenActiveRef.current) {
-        lockScreenActiveRef.current = true;
-        keepAlivePlayer.setActiveForLockScreen(true, metadata, {
-          showSeekForward: false,
-          showSeekBackward: false,
-          isLiveStream: true,
-        });
-      } else {
-        keepAlivePlayer.updateLockScreenMetadata(metadata);
-      }
-    } catch (e) {
-      console.warn('Failed to update lock screen now-playing info:', e);
-    }
-  }, [keepAlivePlayer]);
-
-  const clearWorkoutNowPlaying = useCallback(() => {
-    if (!keepAlivePlayer) return;
-    try {
-      keepAlivePlayer.clearLockScreenControls();
-    } catch (e) {
-      console.warn('Failed to clear lock screen now-playing info:', e);
-    } finally {
-      lockScreenActiveRef.current = false;
-    }
-  }, [keepAlivePlayer]);
-
-  return {
-    playBeep,
-    playGoBeep,
-    startBackgroundKeepAlive,
-    stopBackgroundKeepAlive,
-    setWorkoutNowPlaying,
-    clearWorkoutNowPlaying,
-  };
+  return { playBeep, playGoBeep };
 }
