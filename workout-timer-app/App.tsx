@@ -18,6 +18,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { loadHasSeenOnboarding, loadAdFreeStatus } from './src/storage';
 import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
+import { fetchUsage } from './src/api';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -41,6 +42,12 @@ export default function App() {
 
   useEffect(() => {
     loadAdFreeStatus().then(adsRemoved => console.log('[AdMob] adsRemoved =', adsRemoved));
+  }, []);
+
+  // Warm up the server and learn the import allowance at launch, so the Import
+  // screen already has it (and a sleeping free-tier server is awake) when opened.
+  useEffect(() => {
+    fetchUsage().catch(() => {});
   }, []);
 
   // Required once at startup before any BannerAd can load.

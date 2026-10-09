@@ -146,16 +146,44 @@ function parseUsage(value: any): ServerUsage | null {
   return { limit, used, remaining, resets_at: typeof resets_at === 'string' ? resets_at : null };
 }
 
-/** Asks the server how many imports are left. Throws if the request fails. */
-export async function fetchUsage(): Promise<ServerUsage> {
+let usageRequest: Promise<ServerUsage> | null = null;
+
+/**
+ * Asks the server how many imports are left. Throws if every attempt fails.
+ *
+ * Retries with a generous timeout because the free-tier server can take 30-60s
+ * to wake up after sitting idle, and a single short attempt would just give up
+ * (leaving no counter on screen). Concurrent callers share one request.
+ */
+export function fetchUsage(): Promise<ServerUsage> {
+  if (usageRequest) return usageRequest;
+  usageRequest = fetchUsageWithRetries().finally(() => {
+    usageRequest = null;
+  });
+  return usageRequest;
+}
+
+async function fetchUsageWithRetries(): Promise<ServerUsage> {
   const deviceId = getDeviceId();
   if (!deviceId) throw new Error(DEVICE_UNAVAILABLE_MESSAGE);
-  const response = await fetchWithTimeout(`${API_BASE}/usage`, { headers: { 'X-Device-Id': deviceId } }, 20000);
-  if (!response.ok) throw new Error(`Usage request failed (${response.status})`);
-  const usage = parseUsage(await response.json().catch(() => null));
-  if (!usage) throw new Error('Usage response was not understood');
-  lastKnownUsage = usage;
-  return usage;
+
+  const attempts = 3;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE}/usage`, { headers: { 'X-Device-Id': deviceId } }, 30000);
+      if (!response.ok) throw new Error(`Usage request failed (${response.status})`);
+      const usage = parseUsage(await response.json().catch(() => null));
+      if (!usage) throw new Error('Usage response was not understood');
+      lastKnownUsage = usage;
+      return usage;
+    } catch (err: any) {
+      lastError = err;
+      console.log(`[Usage] attempt ${attempt}/${attempts} failed:`, err?.message ?? err);
+      if (attempt < attempts) await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  throw lastError;
 }
 
 type ExtractionResult = { workout: Workout; usage: ServerUsage | null };
