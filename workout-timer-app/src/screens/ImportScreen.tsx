@@ -55,6 +55,8 @@ export function ImportScreen({ navigation }: Props) {
   // keep the last known value, or show no counter at all if there isn't one.
   const [usage, setUsage] = useState<ServerUsage | null>(getLastKnownUsage());
   const [limitModalVisible, setLimitModalVisible] = useState(false);
+  // TEMPORARY diagnostic: why the count couldn't be loaded (remove once fixed).
+  const [usageError, setUsageError] = useState<string | null>(null);
   const isFocused = useIsFocused();
 
   // An extraction can finish after the user has backed out of this screen; its
@@ -68,9 +70,12 @@ export function ImportScreen({ navigation }: Props) {
       .then(fresh => {
         if (!isMountedRef.current) return;
         setUsage(fresh);
+        setUsageError(null);
         if (fresh.remaining <= 0) setLimitModalVisible(true);
       })
-      .catch(() => {});
+      .catch(e => {
+        if (isMountedRef.current) setUsageError(String(e?.message ?? e));
+      });
   }, [isFocused]);
 
   /** Returns true if the import can proceed; otherwise shows the limit-reached modal. */
@@ -246,7 +251,7 @@ export function ImportScreen({ navigation }: Props) {
     : 'Workout description';
   const limitReached = usage !== null && usage.remaining <= 0;
   const resetDate = usage?.resets_at
-    ? new Date(usage.resets_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+    ? new Date(usage.resets_at.replace(/(.d{3})d+/, '$1')).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
   const limitMessage = usage
     ? `You've used all ${usage.limit} imports for this month.${resetDate ? ` Your imports reset on ${resetDate}.` : ''}`
@@ -267,6 +272,11 @@ export function ImportScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
+        {usage === null && usageError !== null && (
+          <View style={styles.importsRemainingRow}>
+            <Text style={styles.importsRemainingTextZero}>Import count unavailable: {usageError}</Text>
+          </View>
+        )}
         {usage !== null && (
           <View style={styles.importsRemainingRow}>
             <Text style={[styles.importsRemainingText, limitReached && styles.importsRemainingTextZero]}>
