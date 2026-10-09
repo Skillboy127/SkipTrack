@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, useWin
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { saveHasSeenOnboarding } from '../storage';
-import { CameraIcon, SpeakerIcon, PencilIcon, PlusIcon, DumbbellIcon } from '../components/WorkoutIcons';
+import { CameraIcon, SpeakerIcon, PencilIcon, PlusIcon, DumbbellIcon, DownloadIcon } from '../components/WorkoutIcons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
@@ -45,6 +45,11 @@ const SLIDES: Slide[] = [
     title: 'Adjust On The Fly',
     body: 'Edit any exercise, and drag its handle to reorder. During a rest, nudge the timer up or down by 5 seconds.',
     icon: <PencilIcon color="#6B9EFA" size={36} />,
+  },
+  {
+    title: 'Free, With Ads',
+    body: 'Flex is free to use and supported by ads. Free users get 10 imports each month. Building your own workouts and running sessions is always unlimited.',
+    icon: <DownloadIcon color="#CCFF00" size={36} />,
   },
 ];
 
