@@ -77,7 +77,8 @@ def _connect():
     if not url:
         raise UsageUnavailable('DATABASE_URL is not configured')
     try:
-        conn = psycopg.connect(url, connect_timeout=10)
+        # prepare_threshold=None: Neon's -pooler endpoint is PgBouncer, which can't be relied on for server-side prepared statements.
+        conn = psycopg.connect(url, connect_timeout=10, prepare_threshold=None)
     except psycopg.Error as exc:
         raise UsageUnavailable(str(exc)) from exc
     _ensure_schema(conn)
