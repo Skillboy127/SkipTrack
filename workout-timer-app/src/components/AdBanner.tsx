@@ -4,6 +4,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { loadAdFreeStatus } from '../storage';
 import { BANNER_AD_UNIT_ID } from '../adConfig';
+import { colors, rule } from '../theme';
 
 /**
  * Bottom-anchored banner ad, shown to free users only. Re-checks the ad-free
@@ -52,7 +53,9 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     alignItems: 'center',
-    backgroundColor: '#09090A',
+    backgroundColor: colors.adStrip,
+    borderBottomWidth: rule.heavy,
+    borderBottomColor: colors.ink,
   },
   // display: 'none' removes it from layout entirely (no blank gap while
   // hidden) without unmounting the underlying native ad view.

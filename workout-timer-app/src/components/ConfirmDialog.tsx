@@ -1,5 +1,7 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Display, Body, Label } from './PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 export type ConfirmDialogAction = {
   label: string;
@@ -21,8 +23,8 @@ export function ConfirmDialog({ visible, title, message, actions, onRequestClose
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
       <Pressable style={styles.backdrop} onPress={onRequestClose}>
         <Pressable style={styles.card} onPress={() => {}}>
-          <Text style={styles.title}>{title}</Text>
-          {message ? <Text style={styles.message}>{message}</Text> : null}
+          <Display style={styles.title}>{title}</Display>
+          {message ? <Body style={styles.message}>{message}</Body> : null}
           <View style={styles.actions}>
             {actions.map((action, index) => (
               <Pressable
@@ -34,8 +36,9 @@ export function ConfirmDialog({ visible, title, message, actions, onRequestClose
                   pressed && styles.actionBtnPressed,
                 ]}
                 onPress={action.onPress}
+                accessibilityRole="button"
               >
-                <Text
+                <Label
                   style={[
                     styles.actionText,
                     action.variant === 'primary' && styles.actionTextPrimary,
@@ -43,7 +46,7 @@ export function ConfirmDialog({ visible, title, message, actions, onRequestClose
                   ]}
                 >
                   {action.label}
-                </Text>
+                </Label>
               </Pressable>
             ))}
           </View>
@@ -56,68 +59,61 @@ export function ConfirmDialog({ visible, title, message, actions, onRequestClose
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(14, 14, 14, 0.7)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 28,
   },
   card: {
     width: '100%',
-    maxWidth: 340,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 16,
-    gap: 8,
+    maxWidth: 360,
+    backgroundColor: colors.paper,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.gutter,
+    paddingBottom: space.block,
+    gap: space.row,
   },
   title: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
   },
   message: {
-    color: '#94A3B8',
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
-    marginBottom: 12,
+    fontSize: label.base,
+    lineHeight: label.base * 1.5,
+    color: colors.inkMuted,
   },
   actions: {
-    gap: 8,
+    gap: space.tight,
+    marginTop: space.hair,
   },
   actionBtn: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#1A1A1E',
+    height: band.actionHeight,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnPrimary: {
-    borderColor: '#CCFF00',
-    backgroundColor: '#CCFF00',
+    backgroundColor: colors.ink,
   },
   actionBtnDestructive: {
-    borderColor: 'rgba(248, 113, 113, 0.4)',
-    backgroundColor: 'rgba(248, 113, 113, 0.12)',
+    backgroundColor: colors.danger,
+    borderColor: colors.danger,
   },
   actionBtnPressed: {
     opacity: 0.75,
   },
   actionText: {
-    color: '#94A3B8',
-    fontSize: 15,
-    fontWeight: '700',
+    color: colors.ink,
+    fontSize: label.base,
+    letterSpacing: tracking.wide,
   },
   actionTextPrimary: {
-    color: '#09090A',
+    color: colors.onInk,
   },
   actionTextDestructive: {
-    color: '#F87171',
+    color: colors.onInk,
   },
 });

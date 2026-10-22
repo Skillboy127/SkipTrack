@@ -4,6 +4,15 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Updates from 'expo-updates';
+import { useFonts } from 'expo-font';
+import { Anton_400Regular } from '@expo-google-fonts/anton';
+import {
+  Archivo_400Regular,
+  Archivo_500Medium,
+  Archivo_600SemiBold,
+  Archivo_700Bold,
+  Archivo_800ExtraBold,
+} from '@expo-google-fonts/archivo';
 import mobileAds from 'react-native-google-mobile-ads';
 import { RootStackParamList } from './src/types';
 
@@ -19,6 +28,7 @@ import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { loadHasSeenOnboarding, loadAdFreeStatus } from './src/storage';
 import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
 import { fetchUsage } from './src/api';
+import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -26,13 +36,24 @@ export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 const styles = StyleSheet.create({
   launch: {
     flex: 1,
-    backgroundColor: '#0B0B0B',
+    backgroundColor: colors.paper,
     alignItems: 'center',
     justifyContent: 'center',
   },
 });
 
 export default function App() {
+  // Anton carries the display type and Archivo the labels; the poster layouts
+  // depend on both, so nothing renders until they are ready.
+  const [fontsLoaded] = useFonts({
+    Anton_400Regular,
+    Archivo_400Regular,
+    Archivo_500Medium,
+    Archivo_600SemiBold,
+    Archivo_700Bold,
+    Archivo_800ExtraBold,
+  });
+
   // Decided before the navigator mounts so a returning user never sees the
   // onboarding flash, and a first-time user lands on it instead of Library.
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
@@ -83,10 +104,10 @@ export default function App() {
     };
   }, []);
 
-  if (hasSeenOnboarding === null) {
+  if (hasSeenOnboarding === null || !fontsLoaded) {
     return (
       <View style={styles.launch}>
-        <RotatingDumbbellIcon color="#CCFF00" size={56} />
+        <RotatingDumbbellIcon color={colors.ink} size={56} />
       </View>
     );
   }
