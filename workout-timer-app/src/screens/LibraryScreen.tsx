@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image, Animated, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerUsage, Workout } from '../types';
-import { loadWorkouts, deleteWorkout, saveWorkout } from '../storage';
+import { loadWorkouts, deleteWorkout, saveWorkout, saveWorkouts } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { getLastKnownUsage } from '../api';
-import { PlayIcon, PlusIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
+import { PlayIcon, PlusIcon, SearchIcon, CloseIcon, DragHandleIcon } from '../components/WorkoutIcons';
+import { ReorderableList, ReorderItemInfo, ReorderScrollView } from '../components/ReorderableList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { Display, Label, Body } from '../components/PosterText';
@@ -18,11 +19,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
 type PendingDelete = { workout: Workout; index: number };
 type FilterMode = 'all' | 'timed' | 'reps';
-type SortMode = 'recent' | 'name' | 'duration' | 'exercises';
+type SortMode = 'recent' | 'custom' | 'name' | 'duration' | 'exercises';
 
-const SORT_ORDER: SortMode[] = ['recent', 'name', 'duration', 'exercises'];
+const SORT_ORDER: SortMode[] = ['recent', 'custom', 'name', 'duration', 'exercises'];
 const SORT_LABELS: Record<SortMode, string> = {
   recent: 'Recent',
+  custom: 'Custom',
   name: 'Name A–Z',
   duration: 'Duration',
   exercises: 'Most',
@@ -43,6 +45,7 @@ export function LibraryScreen({ navigation }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [reorderMode, setReorderMode] = useState(false);
   const [usage, setUsage] = useState<ServerUsage | null>(getLastKnownUsage());
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,6 +102,9 @@ export function LibraryScreen({ navigation }: Props) {
       case 'exercises':
         withDuration.sort((a, b) => b.workout.exercises.length - a.workout.exercises.length);
         break;
+      case 'custom':
+        // The stored order is the user's own arrangement; leave it untouched.
+        break;
       case 'recent':
       default:
         withDuration.sort((a, b) => (b.workout.createdAt ?? 0) - (a.workout.createdAt ?? 0));
@@ -108,6 +114,27 @@ export function LibraryScreen({ navigation }: Props) {
   }, [workouts, filterMode, searchQuery, sortMode]);
 
   const isFiltering = searchQuery.trim().length > 0 || filterMode !== 'all';
+  // Reordering only makes sense on the full, unfiltered list.
+  const reordering = reorderMode && !isFiltering;
+
+  const startReordering = () => {
+    // Switching to Custom keeps what's on screen: freeze the current order as the
+    // stored one, so nothing jumps when the mode changes.
+    if (sortMode !== 'custom') {
+      setWorkouts(displayedWorkouts);
+      saveWorkouts(displayedWorkouts);
+      setSortMode('custom');
+    }
+    setReorderMode(true);
+  };
+
+  const handleReorder = (from: number, to: number) => {
+    const next = [...workouts];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setWorkouts(next);
+    saveWorkouts(next);
+  };
 
   const cycleSortMode = () => {
     const currentIndex = SORT_ORDER.indexOf(sortMode);
@@ -120,6 +147,7 @@ export function LibraryScreen({ navigation }: Props) {
   };
 
   const toggleSearch = () => {
+    setReorderMode(false);
     setSearchOpen(open => {
       if (open) setSearchQuery('');
       return !open;
@@ -218,6 +246,34 @@ export function LibraryScreen({ navigation }: Props) {
     );
   };
 
+  const renderReorderItem = ({ item, index, active, dragProps }: ReorderItemInfo<Workout>) => {
+    const exerciseCount = item.exercises.length;
+    const rounds = item.rounds && item.rounds > 1 ? ` / ${item.rounds} Rounds` : '';
+    const reps = workoutHasReps(item) ? ' / Reps' : '';
+
+    return (
+      <View
+        style={[styles.row, styles.rowReorder, active && styles.rowActive]}
+        {...dragProps()}
+        accessibilityLabel={`${item.name}. Hold and drag to reorder.`}
+      >
+        <View style={styles.numeralCol}>
+          <Display style={styles.numeral}>{String(index + 1).padStart(2, '0')}</Display>
+        </View>
+        <View style={styles.rowBody}>
+          <Display style={styles.rowTitle} numberOfLines={1}>{item.name}</Display>
+          <Label style={styles.rowMeta} numberOfLines={1}>
+            {exerciseCount} Exercise{exerciseCount !== 1 ? 's' : ''}{rounds}{reps}
+          </Label>
+        </View>
+        {/* The handle lifts the row the moment it's touched. */}
+        <View style={styles.playSquare} {...dragProps(0)} accessibilityLabel="Drag to reorder">
+          <DragHandleIcon color={colors.ink} size={22} />
+        </View>
+      </View>
+    );
+  };
+
   const emptyState = workouts.length === 0 ? (
     <View style={styles.emptyState}>
       <Display style={styles.emptyTitle}>No{'\n'}workouts{'\n'}yet</Display>
@@ -281,7 +337,10 @@ export function LibraryScreen({ navigation }: Props) {
             <Pressable
               key={filter.key}
               style={[styles.filter, index > 0 && styles.filterDivider, selected && styles.filterActive]}
-              onPress={() => setFilterMode(filter.key)}
+              onPress={() => {
+                setReorderMode(false);
+                setFilterMode(filter.key);
+              }}
               accessibilityRole="button"
               accessibilityState={{ selected }}
             >
@@ -321,14 +380,49 @@ export function LibraryScreen({ navigation }: Props) {
       {workouts.length > 0 && (
         <View style={styles.sectionLine}>
           <Label style={styles.sectionCount}>
-            {isFiltering ? `${displayedWorkouts.length} of ${workouts.length} Routines` : `${workouts.length} Routines`}
+            {reordering
+              ? 'Hold a row, then drag'
+              : isFiltering
+                ? `${displayedWorkouts.length} of ${workouts.length} Routines`
+                : `${workouts.length} Routines`}
           </Label>
-          <Pressable onPress={cycleSortMode} hitSlop={10} accessibilityRole="button" accessibilityLabel="Change sort order">
-            <Label style={styles.sortLabel}>Sort: {SORT_LABELS[sortMode]}</Label>
-          </Pressable>
+          <View style={styles.sectionActions}>
+            {!reordering && (
+              <Pressable onPress={cycleSortMode} hitSlop={10} accessibilityRole="button" accessibilityLabel="Change sort order">
+                <Label style={styles.sortLabel}>Sort: {SORT_LABELS[sortMode]}</Label>
+              </Pressable>
+            )}
+            {workouts.length > 1 && !isFiltering && !searchOpen && (
+              <Pressable
+                style={[styles.reorderBtn, reordering && styles.reorderBtnActive]}
+                onPress={reordering ? () => setReorderMode(false) : startReordering}
+                disabled={pendingDelete !== null}
+                accessibilityRole="button"
+                accessibilityLabel={reordering ? 'Finish reordering' : 'Reorder workouts'}
+              >
+                <Label style={[styles.reorderLabel, reordering && styles.reorderLabelActive]}>
+                  {reordering ? 'Done' : 'Reorder'}
+                </Label>
+              </Pressable>
+            )}
+          </View>
         </View>
       )}
 
+      {reordering ? (
+        <ReorderScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listContainer}
+          onScroll={e => scrollY.setValue(e.nativeEvent.contentOffset.y)}
+        >
+          <ReorderableList
+            data={displayedWorkouts}
+            keyExtractor={item => item.id}
+            onReorder={handleReorder}
+            renderItem={renderReorderItem}
+          />
+        </ReorderScrollView>
+      ) : (
       <FlatList
         style={styles.list}
         data={displayedWorkouts}
@@ -340,6 +434,7 @@ export function LibraryScreen({ navigation }: Props) {
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}
       />
+      )}
 
       <Pressable
         style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
@@ -512,6 +607,28 @@ const styles = StyleSheet.create({
     fontSize: label.micro,
     color: colors.inkMuted,
   },
+  sectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.row,
+  },
+  reorderBtn: {
+    minHeight: band.control,
+    paddingHorizontal: space.row,
+    justifyContent: 'center',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  reorderBtnActive: {
+    backgroundColor: colors.ink,
+  },
+  reorderLabel: {
+    fontSize: label.micro,
+    letterSpacing: tracking.wide,
+  },
+  reorderLabelActive: {
+    color: colors.onInk,
+  },
   // ── Rows ──────────────────────────────────────────────────────────────────
   list: {
     flex: 1,
@@ -532,6 +649,13 @@ const styles = StyleSheet.create({
     height: band.row,
   },
   rowPressed: {
+    backgroundColor: colors.rowPress,
+  },
+  // Rows in reorder mode need an opaque face so a lifted row covers its neighbours.
+  rowReorder: {
+    backgroundColor: colors.paper,
+  },
+  rowActive: {
     backgroundColor: colors.rowPress,
   },
   numeralCol: {

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert, StatusBar, PanResponder, Animated, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, StatusBar, PanResponder, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList, Workout, Exercise } from '../types';
 import { loadWorkouts, saveWorkout } from '../storage';
 import { PencilIcon, TrashIcon, DragHandleIcon, ChevronIcon, CheckIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ReorderableList, ReorderItemInfo, ReorderScrollView } from '../components/ReorderableList';
 import { band, colors, display, font, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutEditor'>;
@@ -26,16 +27,14 @@ const snapshotOf = (name: string, exercises: Exercise[], rounds: number, restBet
 type ExerciseRowProps = {
   exercise: Exercise;
   index: number;
-  total: number;
   onUpdate: (id: string, field: keyof Exercise, value: string | number | null) => void;
   onDelete: (id: string) => void;
-  onMove: (index: number, direction: -1 | 1) => void;
+  dragProps: ReorderItemInfo<Exercise>['dragProps'];
   nameInputRef: (input: TextInput | null) => void;
 };
 
-function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameInputRef }: ExerciseRowProps) {
+function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, nameInputRef }: ExerciseRowProps) {
   const swipeX = useRef(new Animated.Value(0)).current;
-  const dragStartY = useRef(0);
   const rowResponder = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > Math.abs(gesture.dy) && Math.abs(gesture.dx) > 8,
     onPanResponderMove: (_, gesture) => swipeX.setValue(Math.min(0, gesture.dx)),
@@ -48,21 +47,6 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
     },
     onPanResponderTerminate: () => Animated.spring(swipeX, { toValue: 0, useNativeDriver: true }).start(),
   })).current;
-  const dragResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onPanResponderGrant: (_, gesture) => { dragStartY.current = gesture.y0; },
-    onPanResponderMove: (_, gesture) => {
-      const delta = gesture.moveY - dragStartY.current;
-      if (delta <= -42 && index > 0) {
-        onMove(index, -1);
-        dragStartY.current -= 42;
-      } else if (delta >= 42 && index < total - 1) {
-        onMove(index, 1);
-        dragStartY.current += 42;
-      }
-    },
-  })).current;
-
   const repBased = isRepBased(exercise);
 
   const step = (field: 'workSeconds' | 'restSeconds' | 'sets' | 'reps', amount: number) => {
@@ -88,10 +72,11 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
       </View>
       <Animated.View style={[styles.exerciseRow, { transform: [{ translateX: swipeX }] }]} {...rowResponder.panHandlers}>
       <View style={styles.exerciseLeft}>
-        <View style={styles.dragHandle} {...dragResponder.panHandlers}>
+        {/* Press and hold here to lift the row, then drag it up or down. */}
+        <View style={styles.grabZone} {...dragProps(180)} accessibilityLabel="Hold and drag to reorder">
           <DragHandleIcon />
+          <Text style={styles.exerciseIndex}>{index + 1}</Text>
         </View>
-        <Text style={styles.exerciseIndex}>{index + 1}</Text>
         <TextInput
           ref={nameInputRef}
           style={styles.exerciseName}
@@ -321,13 +306,12 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
     undoTimer.current = setTimeout(() => setRemovedExercise(null), 4000);
   };
 
-  const handleMove = (index: number, direction: -1 | 1) => {
-    setExercises(currentExercises => {
-      const targetIndex = index + direction;
-      if (targetIndex < 0 || targetIndex >= currentExercises.length) return currentExercises;
-      const reordered = [...currentExercises];
-      [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
-      return reordered;
+  const handleReorder = (from: number, to: number) => {
+    setExercises(current => {
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
     });
   };
 
@@ -398,7 +382,11 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -100}
     >
       <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ReorderScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.statusBarSpacer} />
         <View style={styles.topNavigation}>
           <View style={styles.headerRow}>
@@ -544,21 +532,23 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
             <Text style={styles.columnHeaderLabel}>SETS</Text>
           </View>
         </View>
-        <View style={styles.exerciseList}>
-            {exercises.map((ex, index) => (
-              <ExerciseRow
-                key={ex.id}
-                exercise={ex}
-                index={index}
-                total={exercises.length}
-                onUpdate={handleUpdateExercise}
-                onDelete={handleRemoveExercise}
-                onMove={handleMove}
-                nameInputRef={input => { nameInputs.current[ex.id] = input; }}
-              />
-            ))}
-        </View>
-      </ScrollView>
+        <ReorderableList
+          data={exercises}
+          keyExtractor={ex => ex.id}
+          onReorder={handleReorder}
+          style={styles.exerciseList}
+          renderItem={({ item, index, dragProps }) => (
+            <ExerciseRow
+              exercise={item}
+              index={index}
+              onUpdate={handleUpdateExercise}
+              onDelete={handleRemoveExercise}
+              dragProps={dragProps}
+              nameInputRef={input => { nameInputs.current[item.id] = input; }}
+            />
+          )}
+        />
+      </ReorderScrollView>
 
         <TouchableOpacity style={styles.addExerciseButton} onPress={handleAddExercise}>
           <Text style={styles.addExerciseText}>+ Add Exercise</Text>
@@ -836,13 +826,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.tight,
   },
-  dragHandle: {
-    width: 24,
-    height: band.control,
+  // A generous target (handle plus number) for the press-and-hold that lifts a row.
+  grabZone: {
+    minWidth: 48,
+    height: 96,
+    paddingHorizontal: space.hair,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: space.hair,
     marginLeft: -space.hair,
-    marginRight: -space.hair,
   },
   exerciseIndex: {
     width: 22,
