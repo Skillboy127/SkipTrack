@@ -43,9 +43,15 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const timerSize = Math.round(Math.min(width * 0.92, 400));
-  const repSize = timerSize;
   const countSize = Math.round(Math.min(width * 0.74, 320));
   const nameSize = Math.round(Math.min(width * 0.26, display.exercise));
+  // Rep screens carry more controls (set label, weight, DONE), so the name is
+  // kept to one smaller line there to leave the rep count the room it needs.
+  const repNameSize = Math.round(Math.min(width * 0.15, 64));
+  // Size of the area the rep count lives in, measured once laid out. The count
+  // is sized from this directly instead of relying on auto-shrink, which left
+  // it tiny whenever the area was short.
+  const [repArea, setRepArea] = useState<{ w: number; h: number } | null>(null);
 
   const { playBeep, playGoBeep } = useAudio();
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
@@ -397,6 +403,18 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
       : `${Math.ceil(nextPhase.duration)}s`
     : '';
 
+  // Anton digits are ~0.52em wide and the line box is 0.8em tall; the count must
+  // fit both the width left of the REPS label and the measured height.
+  const repDigits = String(engine.currentPhase.reps ?? 0).length;
+  const repFont = repArea
+    ? Math.round(
+        Math.max(
+          96,
+          Math.min(420, (repArea.w - 84) / (repDigits * 0.52), (repArea.h * 0.96) / 0.8),
+        ),
+      )
+    : 180;
+
   const handleSaveWeight = () => {
     const parsed = parseFloat(weightInputValue);
     setPendingWeight(Number.isFinite(parsed) && parsed > 0 ? parsed : null);
@@ -503,8 +521,8 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         /* ── Rep-based work ───────────────────────────────────────────────── */
         <View style={styles.body}>
           <Display
-            style={[styles.exerciseName, { color: field.fg, fontSize: nameSize, lineHeight: Math.round(nameSize * leading.display) }]}
-            numberOfLines={2}
+            style={[styles.exerciseName, { color: field.fg, fontSize: repNameSize, lineHeight: Math.round(repNameSize * leading.display) }]}
+            numberOfLines={1}
             adjustsFontSizeToFit
           >
             {engine.currentPhase.exerciseName}
@@ -512,11 +530,16 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           <Label style={[styles.cue, { color: field.fg }]}>
             Set {currentSetNumber} of {totalSetsForExercise}
           </Label>
-          <View style={styles.repRow}>
+          <View
+            style={styles.repRow}
+            onLayout={e => {
+              const { width: w, height: h } = e.nativeEvent.layout;
+              setRepArea(prev => (prev && Math.abs(prev.w - w) < 1 && Math.abs(prev.h - h) < 1 ? prev : { w, h }));
+            }}
+          >
             <Display
-              style={[styles.timer, { color: field.fg, fontSize: repSize, lineHeight: Math.round(repSize * leading.tight) }]}
+              style={[styles.repCount, { color: field.fg, fontSize: repFont, lineHeight: Math.round(repFont * 0.8) }]}
               numberOfLines={1}
-              adjustsFontSizeToFit
             >
               {engine.currentPhase.reps}
             </Display>
@@ -805,7 +828,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 0,
+    minHeight: 120,
+  },
+  repCount: {
+    includeFontPadding: false,
+    fontVariant: ['tabular-nums'],
   },
   repsUnit: {
     fontSize: display.control,
