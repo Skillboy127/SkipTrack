@@ -8,7 +8,6 @@ import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { getLastKnownUsage } from '../api';
 import { PlayIcon, PlusIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { AdBanner } from '../components/AdBanner';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { Display, Label, Body } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
@@ -232,9 +231,6 @@ export function LibraryScreen({ navigation }: Props) {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
       <View style={styles.statusBarSpacer} />
-
-      {/* Kept at the top of the screen, well away from the import controls. */}
-      <AdBanner />
 
       <View style={styles.header}>
         <View style={styles.brand}>
