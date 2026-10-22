@@ -6,7 +6,7 @@ import { loadWorkouts, deleteWorkout, saveWorkout, saveWorkouts } from '../stora
 import { useIsFocused } from '@react-navigation/native';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { getLastKnownUsage } from '../api';
-import { PlayIcon, PlusIcon, SearchIcon, CloseIcon, DragHandleIcon } from '../components/WorkoutIcons';
+import { PlayIcon, PlusIcon, DownloadIcon, SearchIcon, CloseIcon, DragHandleIcon } from '../components/WorkoutIcons';
 import { ReorderableList, ReorderItemInfo, ReorderScrollView } from '../components/ReorderableList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -436,22 +436,27 @@ export function LibraryScreen({ navigation }: Props) {
       />
       )}
 
-      <Pressable
-        style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
-        onPress={() => navigation.navigate('Import')}
-        accessibilityRole="button"
-        accessibilityLabel="Import a workout"
-      >
-        <Display style={styles.ctaLabel}>Import a workout</Display>
+      {/* Two separate, equally weighted buttons: each has its own box, icon and label. */}
+      <View style={styles.ctaRow}>
         <Pressable
-          style={styles.ctaSquare}
+          style={({ pressed }) => [styles.ctaButton, styles.ctaImport, pressed && styles.ctaImportPressed]}
+          onPress={() => navigation.navigate('Import')}
+          accessibilityRole="button"
+          accessibilityLabel="Import a workout from a photo or text"
+        >
+          <DownloadIcon color={colors.accent} size={22} />
+          <Display style={[styles.ctaLabel, styles.ctaImportLabel]}>Import</Display>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.ctaButton, styles.ctaBuild, pressed && styles.ctaBuildPressed]}
           onPress={() => navigation.navigate('WorkoutEditor', {})}
           accessibilityRole="button"
           accessibilityLabel="Build a workout by hand"
         >
-          <PlusIcon color={colors.ink} size={20} />
+          <PlusIcon color={colors.ink} size={22} />
+          <Display style={[styles.ctaLabel, styles.ctaBuildLabel]}>Build</Display>
         </Pressable>
-      </Pressable>
+      </View>
 
       {pendingDelete && (
         <View style={styles.snackbar}>
@@ -719,32 +724,44 @@ const styles = StyleSheet.create({
     letterSpacing: tracking.wide,
   },
   // ── Call to action ────────────────────────────────────────────────────────
-  cta: {
-    height: band.cta,
+  ctaRow: {
+    flexDirection: 'row',
+    gap: space.tight,
     marginHorizontal: space.gutter,
     marginVertical: space.row,
-    backgroundColor: colors.ink,
+  },
+  ctaButton: {
+    flex: 1,
+    height: band.cta,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingLeft: space.gutter,
-    paddingRight: space.row,
+    justifyContent: 'center',
+    gap: space.tight,
   },
-  ctaPressed: {
+  ctaImport: {
+    backgroundColor: colors.ink,
+  },
+  ctaImportPressed: {
     backgroundColor: colors.inkPress,
   },
+  ctaBuild: {
+    backgroundColor: colors.accent,
+  },
+  ctaBuildPressed: {
+    opacity: 0.85,
+  },
   ctaLabel: {
-    color: colors.onInk,
     fontSize: display.cta,
     lineHeight: display.cta * leading.snug,
     letterSpacing: 0.6,
   },
-  ctaSquare: {
-    width: 34,
-    height: 34,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
+  ctaImportLabel: {
+    color: colors.onInk,
+  },
+  ctaBuildLabel: {
+    color: colors.ink,
   },
   // ── Snackbar ──────────────────────────────────────────────────────────────
   snackbar: {
