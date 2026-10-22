@@ -1,18 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
-import { PencilIcon, ChevronIcon, LockIcon, CheckIcon } from '../components/WorkoutIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronIcon, PlayIcon } from '../components/WorkoutIcons';
 import { RootStackParamList, Workout } from '../types';
 import { loadCountdownSoundMode, loadWorkouts } from '../storage';
 import { primeSpeechEngine } from '../useSpeech';
-import { isRepExercise } from '../workoutLogic';
+import { getWorkoutDuration, isRepExercise } from '../workoutLogic';
+import { Display, Label } from '../components/PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
 
 export function WorkoutPreviewScreen({ route, navigation }: Props) {
   const [workout, setWorkout] = useState<Workout>(route.params.workout);
   const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
 
   // Re-read the saved copy whenever this screen regains focus, so changes made
   // in the editor show up here and are what Start actually runs.
@@ -43,62 +47,81 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
     navigation.navigate('WorkoutEditor', { workoutId: workout.id, draftWorkout: workout });
   };
 
+  const totalMinutes = Math.max(1, Math.round(getWorkoutDuration(workout) / 60));
+  const rounds = workout.rounds && workout.rounds > 1 ? ` · ${workout.rounds} Rounds` : '';
+
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.statusBarSpacer} />
-        <View style={styles.topNavigation}>
-          <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.backAction} onPress={() => navigation.goBack()}>
-              <ChevronIcon color="#94A3B8" size={18} direction="left" />
-              <Text style={styles.backLabel}>Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.editButton} onPress={handleEdit} accessibilityLabel="Edit workout">
-              <PencilIcon color="#94A3B8" size={14} />
-              <Text style={styles.editButtonLabel}>Edit</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.titleField}>
-            <Text style={styles.title} numberOfLines={1}>{workout.name}</Text>
-          </View>
-        </View>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
+      <View style={styles.statusBarSpacer} />
 
-        <View style={styles.listHeader}>
-          <Text style={styles.listTitle}>
-            EXERCISE LIST ({workout.exercises.length} ITEMS{workout.rounds && workout.rounds > 1 ? ` • ${workout.rounds} ROUNDS` : ''})
-          </Text>
-        </View>
-        <View style={styles.exerciseList}>
+      <View style={styles.topBar}>
+        <Pressable
+          style={({ pressed }) => [styles.square, pressed && styles.squarePressed]}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ChevronIcon color={colors.ink} size={18} direction="left" />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.editBtn, pressed && styles.squarePressed]}
+          onPress={handleEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Edit workout"
+        >
+          <Label style={styles.editLabel}>Edit</Label>
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Display style={styles.hero} numberOfLines={3} adjustsFontSizeToFit>{workout.name}</Display>
+        <Label style={styles.meta}>
+          {workout.exercises.length} Exercise{workout.exercises.length !== 1 ? 's' : ''}{rounds} · ~{totalMinutes} Min
+        </Label>
+
+        <View style={styles.list}>
           {workout.exercises.map((ex, index) => (
-            <View key={ex.id || index} style={styles.exerciseRow}>
-              <View style={styles.exerciseLeft}>
-                <Text style={styles.exerciseIndex}>{index + 1}</Text>
-                <Text style={styles.exerciseName} numberOfLines={2}>{ex.name}</Text>
+            <View key={ex.id || index} style={styles.row}>
+              <View style={styles.numeralCol}>
+                <Display style={styles.numeral}>{String(index + 1).padStart(2, '0')}</Display>
               </View>
-              <View style={styles.metricsInputs}>
-                <View style={[styles.metricInput, styles.workInput]}>
-                  <Text style={styles.workValue} numberOfLines={1}>{isRepExercise(ex) ? `${ex.reps}r` : `${ex.workSeconds}s`}</Text>
+              <View style={styles.rowBody}>
+                <Display style={styles.rowTitle} numberOfLines={2}>{ex.name}</Display>
+                <View style={styles.chips}>
+                  <View style={styles.chip}>
+                    <Label style={styles.chipText}>
+                      {isRepExercise(ex) ? `${ex.reps} Reps` : `${ex.workSeconds}s Work`}
+                    </Label>
+                  </View>
+                  {ex.restSeconds > 0 && (
+                    <View style={styles.chip}>
+                      <Label style={styles.chipText}>{ex.restSeconds}s Rest</Label>
+                    </View>
+                  )}
+                  {ex.sets > 1 && (
+                    <View style={styles.chip}>
+                      <Label style={styles.chipText}>×{ex.sets}</Label>
+                    </View>
+                  )}
                 </View>
-                <View style={[styles.metricInput, styles.restInput]}>
-                  <Text style={styles.restValue} numberOfLines={1}>{ex.restSeconds}s</Text>
-                </View>
-                <View style={[styles.metricInput, styles.setsInput]}>
-                  <Text style={styles.setsValue} numberOfLines={1}>{ex.sets}×</Text>
-                </View>
-                <View style={styles.lockIcon}><LockIcon /></View>
               </View>
             </View>
           ))}
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.startButton} onPress={onStart}>
-          <CheckIcon color="#09090A" size={20} />
-          <Text style={styles.startLabel}>START WORKOUT</Text>
-        </TouchableOpacity>
-      </View>
+      <Pressable
+        style={({ pressed }) => [styles.cta, { marginBottom: space.row + insets.bottom }, pressed && styles.ctaPressed]}
+        onPress={onStart}
+        accessibilityRole="button"
+        accessibilityLabel="Start workout"
+      >
+        <Display style={styles.ctaLabel}>Start workout</Display>
+        <View style={styles.ctaSquare}>
+          <PlayIcon color={colors.ink} size={20} />
+        </View>
+      </Pressable>
     </View>
   );
 }
@@ -106,200 +129,127 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B0B',
-  },
-  scrollContent: {
-    paddingBottom: 24,
+    backgroundColor: colors.paper,
   },
   statusBarSpacer: {
-    height: 44,
+    height: band.statusBar,
   },
-  topNavigation: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 16,
-  },
-  headerRow: {
-    minHeight: 28,
+  topBar: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  backAction: {
-    height: 28,
-    flexDirection: 'row',
+  square: {
+    width: band.control,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
   },
-  backLabel: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    lineHeight: 20,
+  squarePressed: {
+    backgroundColor: colors.rowPress,
   },
-  editButton: {
-    height: 28,
+  editBtn: {
+    minHeight: band.control,
+    paddingHorizontal: space.block,
+    justifyContent: 'center',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  editLabel: {
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+  },
+  scroll: {
+    paddingTop: space.row,
+    paddingBottom: space.block,
+  },
+  hero: {
+    paddingHorizontal: space.gutter,
+    fontSize: display.hero,
+    lineHeight: Math.round(display.hero * leading.display),
+    letterSpacing: tracking.display,
+  },
+  meta: {
+    paddingHorizontal: space.gutter,
+    marginTop: space.tight,
+    fontSize: label.base,
+  },
+  list: {
+    marginTop: space.block,
+    borderBottomWidth: rule.heavy,
+    borderBottomColor: colors.ink,
+  },
+  row: {
     flexDirection: 'row',
+    alignItems: 'stretch',
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
+    minHeight: band.row,
+  },
+  numeralCol: {
+    width: band.numeralCol,
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    borderRadius: 7,
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#1F1F24',
+    justifyContent: 'center',
   },
-  editButtonLabel: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
+  numeral: {
+    fontSize: display.numeral,
+    lineHeight: display.numeral * leading.snug,
+    color: colors.inkMuted,
   },
-  titleField: {
-    height: 39,
-    paddingBottom: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: '#1F1F24',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  title: {
+  rowBody: {
     flex: 1,
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 31,
+    paddingVertical: space.tight,
+    paddingRight: space.gutter,
+    justifyContent: 'center',
+    minWidth: 0,
   },
-  listHeader: {
-    height: 30,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    backgroundColor: '#121214',
+  rowTitle: {
+    fontSize: display.entryTitle,
+    lineHeight: display.entryTitle * leading.snug,
   },
-  listTitle: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.hair + 2,
+    marginTop: space.hair + 2,
   },
-  exerciseList: {
-    backgroundColor: '#09090A',
+  chip: {
+    borderWidth: rule.thin,
+    borderColor: colors.ink,
+    paddingHorizontal: space.tight,
+    paddingVertical: 2,
   },
-  exerciseRow: {
-    minHeight: 56,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1F1F24',
-    backgroundColor: '#09090A',
+  chipText: {
+    fontSize: label.micro,
+  },
+  cta: {
+    height: band.cta,
+    marginHorizontal: space.gutter,
+    backgroundColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingLeft: space.gutter,
+    paddingRight: space.row,
   },
-  exerciseLeft: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  ctaPressed: {
+    backgroundColor: colors.inkPress,
   },
-  exerciseIndex: {
-    width: 18,
-    color: '#94A3B8',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 18,
+  ctaLabel: {
+    color: colors.onInk,
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
+    letterSpacing: 0.6,
   },
-  exerciseName: {
-    flex: 1,
-    minWidth: 0,
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-  metricsInputs: {
-    minWidth: 174,
-    height: 26,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginLeft: 12,
-  },
-  metricInput: {
-    height: 25,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 6,
+  ctaSquare: {
+    width: 34,
+    height: 34,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  workInput: {
-    minWidth: 40,
-    backgroundColor: '#121214',
-  },
-  restInput: {
-    minWidth: 40,
-    backgroundColor: '#121214',
-  },
-  setsInput: {
-    minWidth: 40,
-    backgroundColor: '#121214',
-  },
-  workValue: {
-    color: '#CCFF00',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  restValue: {
-    color: '#6B9EFA',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  setsValue: {
-    color: '#FFFFFF',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  lockIcon: {
-    width: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  footer: {
-    height: 112,
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    backgroundColor: '#09090A',
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
-  },
-  startButton: {
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#CCFF00',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  startLabel: {
-    color: '#09090A',
-    fontFamily: 'Geist',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 23,
   },
 });
