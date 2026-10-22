@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerUsage, Workout } from '../types';
 import { loadWorkouts, deleteWorkout, saveWorkout, saveWorkouts } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { getLastKnownUsage } from '../api';
 import { PlayIcon, PlusIcon, DownloadIcon, SearchIcon, CloseIcon, DragHandleIcon } from '../components/WorkoutIcons';
@@ -225,8 +226,11 @@ export function LibraryScreen({ navigation }: Props) {
       <Pressable
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
         onPress={() => navigation.navigate('WorkoutPreview', { workout: item })}
-        onLongPress={() => setActionMenuTarget(item)}
-        delayLongPress={500}
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          setActionMenuTarget(item);
+        }}
+        delayLongPress={280}
         accessibilityRole="button"
         accessibilityLabel={`${item.name}. ${exerciseCount} exercises. Long press for more actions.`}
       >

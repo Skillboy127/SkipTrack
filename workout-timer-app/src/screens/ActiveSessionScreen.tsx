@@ -233,6 +233,9 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   };
 
   const promptQuit = () => {
+    // A quit prompt is already open; a second request (e.g. an edge swipe) must not
+    // overwrite whether the timer was running.
+    if (quitStep !== 'closed') return;
     // Still in the get-ready countdown: nothing has started, so there's nothing to confirm.
     if (engine.timerState === 'idle') {
       navigation.goBack();
