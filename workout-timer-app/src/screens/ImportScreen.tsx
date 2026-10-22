@@ -256,7 +256,7 @@ export function ImportScreen({ navigation }: Props) {
           <Display style={styles.statusTitle} numberOfLines={2}>{loadingMessage}</Display>
           <Label style={styles.statusMeta}>{processingSource}</Label>
           <View style={styles.note}>
-            <Label style={styles.noteText}>You'll review and edit it next</Label>
+            <Label style={styles.noteText}>You&apos;ll review and edit it next</Label>
           </View>
         </View>
       ) : importError ? (

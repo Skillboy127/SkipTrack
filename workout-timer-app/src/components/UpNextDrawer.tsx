@@ -80,7 +80,7 @@ export function UpNextDrawer({ visible, onRequestClose, entries, totalExerciseCo
             </View>
           </View>
           {entries.length === 0 ? (
-            <Body style={styles.emptyText}>That's the last exercise — almost done!</Body>
+            <Body style={styles.emptyText}>That&apos;s the last exercise — almost done!</Body>
           ) : (
             <ScrollView
               style={styles.list}

@@ -54,7 +54,7 @@ export function LibraryScreen({ navigation }: Props) {
   const { width } = useWindowDimensions();
   const heroSize = Math.min(104, Math.round((width - space.gutter * 2) / 3.75));
   const heroHeight = Math.round(heroSize * leading.display) + space.tight;
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const [scrollY] = useState(() => new Animated.Value(0));
   const heroCollapse = {
     height: scrollY.interpolate({
       inputRange: [0, heroHeight],

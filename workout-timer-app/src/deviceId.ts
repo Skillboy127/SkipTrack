@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 export function getDeviceId(): string | null {
   if (Platform.OS !== 'android') return null;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded lazily on purpose; see above
     const Application = require('expo-application') as typeof import('expo-application');
     const id = Application.getAndroidId();
     return id ? id : null;

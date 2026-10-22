@@ -4,7 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList, Workout, WorkoutHistoryEntry, WeightUnit } from '../types';
 import { loadHistory, deleteHistoryEntry, loadWeightUnit } from '../storage';
-import { ChevronIcon, PlayIcon, TrashIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
+import { PlayIcon, TrashIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { AdBanner } from '../components/AdBanner';
