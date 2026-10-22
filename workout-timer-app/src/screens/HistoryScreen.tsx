@@ -7,7 +7,6 @@ import { loadHistory, deleteHistoryEntry, loadWeightUnit } from '../storage';
 import { PlayIcon, TrashIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { AdBanner } from '../components/AdBanner';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { Display, Label, Body } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
@@ -307,7 +306,6 @@ export function HistoryScreen({ navigation }: Props) {
         </View>
       )}
 
-      <AdBanner />
       <BottomTabBar active="history" />
 
       <ConfirmDialog
@@ -520,7 +518,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: space.gutter,
     right: space.gutter,
-    bottom: band.tabBar + band.adStrip + space.block,
+    bottom: band.tabBar + space.block,
     minHeight: band.actionHeight,
     paddingHorizontal: space.block,
     backgroundColor: colors.ink,

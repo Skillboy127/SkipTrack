@@ -8,7 +8,6 @@ import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { getLastKnownUsage } from '../api';
 import { PlayIcon, PlusIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { AdBanner } from '../components/AdBanner';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { Display, Label, Body } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
@@ -367,9 +366,6 @@ export function LibraryScreen({ navigation }: Props) {
           </Pressable>
         </View>
       )}
-
-      {/* Its own strip, separated from the CTA above and the tab bar below. */}
-      <AdBanner />
 
       <BottomTabBar active="workouts" />
 

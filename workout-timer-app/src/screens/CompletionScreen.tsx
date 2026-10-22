@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList, WeightUnit } from '../types';
 import { addHistoryEntry, loadWeightUnit } from '../storage';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
-import { AdBanner } from '../components/AdBanner';
 import { Display, Label } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
@@ -92,9 +91,6 @@ export function CompletionScreen({ route, navigation }: Props) {
           </View>
         )}
       </ScrollView>
-
-      {/* Separated from the Done button by its own rules and the footer padding. */}
-      <AdBanner />
 
       <View style={[styles.footer, { paddingBottom: space.row + insets.bottom }]}>
         <Pressable

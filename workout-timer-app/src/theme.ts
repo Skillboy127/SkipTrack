@@ -15,8 +15,6 @@ export const colors = {
   accentDeep: '#C2390F',
   /** Row press state. */
   rowPress: '#E9E3D4',
-  /** Surround behind the ad banner. */
-  adStrip: '#E4DECF',
   /** Text and icons on ink or accent surfaces. */
   onInk: '#F2EEE3',
   /** Hairline divider on an ink surface. */
@@ -99,7 +97,6 @@ export const band = {
   statusBar: 44,
   cta: 58,
   tabBar: 54,
-  adStrip: 58,
   transport: 88,
   control: 44,
   actionHeight: 48,
