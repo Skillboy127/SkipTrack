@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, BackHandler, PanResponder } from 'react-native';
+import { View, StyleSheet, Pressable, TextInput, BackHandler, PanResponder, StatusBar, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
 import { useInterstitialAd } from 'react-native-google-mobile-ads';
@@ -10,9 +11,11 @@ import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
 import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, loadAdFreeStatus } from '../storage';
-import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon } from '../components/WorkoutIcons';
+import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { UpNextDrawer } from '../components/UpNextDrawer';
+import { Display, Label, Body } from '../components/PosterText';
+import { band, colors, display, font, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveSession'>;
 type QuitStep = 'closed' | 'confirmQuit' | 'confirmSaveHistory';
@@ -34,6 +37,15 @@ const SOUND_MODE_LABELS: Record<CountdownSoundMode, string> = {
 export function ActiveSessionScreen({ route, navigation }: Props) {
   const { workout } = route.params;
   const phases = useMemo(() => expandWorkout(workout), [workout]);
+
+  // Display sizes scale with the screen so the countdown stays readable across
+  // the room; adjustsFontSizeToFit then guarantees they never clip.
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const timerSize = Math.round(Math.min(width * 0.92, 400));
+  const repSize = timerSize;
+  const countSize = Math.round(Math.min(width * 0.74, 320));
+  const nameSize = Math.round(Math.min(width * 0.26, display.exercise));
 
   const { playBeep, playGoBeep } = useAudio();
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
@@ -294,28 +306,40 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
 
   if (!engine.currentPhase) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.emptySessionTitle}>No exercises</Text>
-        <Text style={styles.emptySessionText}>Add a timed or rep-based exercise and at least one set before starting.</Text>
-        <TouchableOpacity
-          style={styles.emptySessionButton}
+      <View style={styles.blankScreen}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
+        <Display style={styles.blankTitle}>No{'\n'}exercises</Display>
+        <Body style={styles.blankBody}>
+          Add a timed or rep-based exercise, and at least one set, before starting.
+        </Body>
+        <Pressable
+          style={({ pressed }) => [styles.blankAction, pressed && styles.blankActionPressed]}
           onPress={() => navigation.goBack()}
+          accessibilityRole="button"
         >
-          <Text style={styles.emptySessionButtonText}>GO BACK</Text>
-        </TouchableOpacity>
+          <Label style={styles.blankActionLabel}>Go back</Label>
+        </Pressable>
       </View>
     );
   }
 
   if (preStartSeconds !== null) {
     return (
-      <View style={styles.container}>
-        <View style={styles.getReadyContainer}>
-          <Text style={styles.getReadyLabel}>GET READY</Text>
-          <Text style={styles.getReadyCount}>{preStartSeconds}</Text>
-          <Text style={styles.getReadyHint} numberOfLines={2}>
-            {engine.currentPhase.exerciseName} starts in...
-          </Text>
+      <View style={[styles.field, { backgroundColor: colors.accent }]}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.accent} />
+        <View style={styles.statusBarSpacer} />
+        <View style={styles.readyBody}>
+          <Label style={styles.readyLabel}>Get ready</Label>
+          <Display
+            style={[styles.readyCount, { fontSize: countSize, lineHeight: Math.round(countSize * leading.tight) }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {preStartSeconds}
+          </Display>
+          <Display style={styles.readyNext} numberOfLines={2}>
+            {engine.currentPhase.exerciseName}
+          </Display>
         </View>
       </View>
     );
@@ -328,6 +352,9 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         .slice(0, engine.currentPhaseIndex + 1)
         .filter(phase => phase.mode === 'reps' && phase.exerciseName === engine.currentPhase.exerciseName)
         .length
+    : 0;
+  const totalSetsForExercise = isRepPhase
+    ? phases.filter(phase => phase.mode === 'reps' && phase.exerciseName === engine.currentPhase.exerciseName).length
     : 0;
   const totalExerciseCount = phases.filter(phase => phase.type === 'work').length;
   const completedExerciseCount = phases
@@ -348,10 +375,26 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
       phase,
       exerciseNumber: 1 + phases.slice(0, index).filter(p => p.type === 'work').length,
     }));
-  const phaseAccent = isRest ? '#6B9EFA' : '#CCFF00';
-  const phaseProgress = engine.currentPhaseDuration > 0
-     ? Math.min(1, Math.max(0, (engine.currentPhaseDuration - engine.remainingSeconds) / engine.currentPhaseDuration))
-    : 0;
+
+  // Work phases run on an orange field with ink type; rest inverts to ink with
+  // paper type, so a glance tells you which you are in.
+  const field = isRest
+    ? { bg: colors.ink, fg: colors.onInk, squareBg: colors.accent, squareFg: colors.ink }
+    : { bg: colors.accent, fg: colors.ink, squareBg: colors.ink, squareFg: colors.accent };
+
+  const totalRounds = Math.max(1, workout.rounds ?? 1);
+  const perRound = Math.max(1, Math.ceil(totalExerciseCount / totalRounds));
+  const currentRound = Math.min(totalRounds, Math.floor(completedExerciseCount / perRound) + 1);
+  const exerciseInRound = Math.min(perRound, completedExerciseCount - (currentRound - 1) * perRound + 1);
+  const positionLabel = totalRounds > 1
+    ? `Rd ${currentRound}/${totalRounds} — Ex ${exerciseInRound}/${perRound}`
+    : `Ex ${Math.min(activeExerciseNumber, totalExerciseCount)}/${totalExerciseCount}`;
+
+  const nextMeta = nextPhase
+    ? nextPhase.mode === 'reps'
+      ? `×${nextPhase.reps}`
+      : `${Math.ceil(nextPhase.duration)}s`
+    : '';
 
   const handleSaveWeight = () => {
     const parsed = parseFloat(weightInputValue);
@@ -365,160 +408,240 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     const weight = pendingWeight;
 
     setRepLogs(prev => [...prev, { exerciseName: engine.currentPhase.exerciseName, setNumber: currentSetNumber, reps, weight }]);
-    setToastMessage(`Nice work – ${reps} reps${weight != null ? ` at ${weight} ${weightUnit}` : ''} logged!`);
+    setToastMessage(`${reps} reps${weight != null ? ` at ${weight} ${weightUnit}` : ''} logged`);
     setTimeout(() => setToastMessage(null), 2500);
     engine.completeRepPhase();
   };
 
   return (
-    <View style={styles.container} {...swipeBackResponder.panHandlers}>
+    <View style={[styles.field, { backgroundColor: field.bg }]} {...swipeBackResponder.panHandlers}>
+      <StatusBar barStyle={isRest ? 'light-content' : 'dark-content'} backgroundColor={field.bg} />
+      <View style={styles.statusBarSpacer} />
+
       {toastMessage && (
         <View style={styles.toast} pointerEvents="none">
-          <Text style={styles.toastText}>{toastMessage}</Text>
+          <Label style={styles.toastText} numberOfLines={2}>{toastMessage}</Label>
         </View>
       )}
-      <View style={styles.statusBarSpacer} />
-      <View style={styles.progressTracker}>
-        <View style={styles.progressLabels}>
-          <Text style={styles.workoutTag} numberOfLines={1}>{workout.name || 'WORKOUT'}</Text>
-          <View style={styles.progressRightGroup}>
-            <Text style={styles.progressPercentage}>
-              EXERCISE {Math.min(activeExerciseNumber, totalExerciseCount)} OF {totalExerciseCount}
-            </Text>
-            <TouchableOpacity onPress={cycleSoundMode} hitSlop={8} accessibilityLabel="Change countdown sound">
-              <SpeakerIcon color="#94A3B8" size={22} muted={soundMode === 'silent'} />
-            </TouchableOpacity>
-          </View>
-        </View>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${Math.min(100, progressPercent)}%` }]} />
-        </View>
+
+      {/* Top bar: quit, position, sound mode */}
+      <View style={styles.topBar}>
+        <Pressable
+          style={[styles.square, { backgroundColor: field.squareBg }]}
+          onPress={promptQuit}
+          accessibilityRole="button"
+          accessibilityLabel="Quit workout"
+        >
+          <CloseIcon color={field.squareFg} size={18} />
+        </Pressable>
+        <Label style={[styles.position, { color: field.fg }]} numberOfLines={1}>{positionLabel}</Label>
+        <Pressable
+          style={[styles.squareOutline, { borderColor: field.fg }]}
+          onPress={cycleSoundMode}
+          accessibilityRole="button"
+          accessibilityLabel="Change countdown sound"
+        >
+          <SpeakerIcon color={field.fg} size={20} muted={soundMode === 'silent'} />
+        </Pressable>
       </View>
 
-      <View style={styles.currentExerciseBox}>
-        <Text style={styles.exerciseName} numberOfLines={2}>
-          {isRest ? 'Rest' : engine.currentPhase.exerciseName}
-        </Text>
+      <View style={[styles.progressTrack, { borderColor: field.fg }]}>
+        <View style={[styles.progressFill, { width: `${Math.min(100, progressPercent)}%`, backgroundColor: field.fg }]} />
       </View>
 
-      <View style={[styles.countdownContainer, isRepPhase && styles.repContainer]}>
-        {isRepPhase ? (
-          <View style={styles.repContent}>
-            <Text style={styles.repCount}>{engine.currentPhase.reps}</Text>
-            <Text style={styles.secondsUnit}>REPS</Text>
-          </View>
-        ) : (
-          <View style={styles.timerRing}>
-            <View style={[styles.timerRingBackground, { borderColor: isRest ? 'rgba(107, 158, 250, 0.15)' : 'rgba(204, 255, 0, 0.15)' }]} />
-            <View
-              style={[
-                styles.timerRingProgress,
-                {
-                  borderColor: phaseAccent,
-                  opacity: 0.3 + (phaseProgress * 0.7),
-                },
-              ]}
-            />
-            <View style={styles.digitsGroup}>
-              <Text style={[styles.timer, isRest && styles.timerRest]}>{Math.ceil(engine.remainingSeconds)}</Text>
-              <Text style={styles.secondsUnit}>{isRest ? 'SECONDS REST' : 'SECONDS LEFT'}</Text>
-            </View>
-          </View>
-        )}
-        {isRest && (
-          <View style={styles.restAdjustments}>
-            <TouchableOpacity style={styles.adjustBtn} onPress={() => engine.adjustRest(-5)} accessibilityLabel="Subtract five seconds">
-              <Text style={styles.adjustBtnText}>-5s</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.adjustBtn} onPress={() => engine.adjustRest(5)} accessibilityLabel="Add five seconds">
-              <Text style={styles.adjustBtnText}>+5s</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        {isRest && <Text style={styles.adjustmentCue}>Tweak rest time (+/- 5s) directly during rest phase</Text>}
-        {isRest && (
-          <TouchableOpacity
-            style={styles.upNextTrigger}
-            onPress={() => setUpNextVisible(true)}
-            accessibilityLabel="View upcoming exercises"
+      {isRest ? (
+        /* ── Rest ─────────────────────────────────────────────────────────── */
+        <View style={styles.body}>
+          <Label style={[styles.cue, { color: colors.accent }]}>Rest</Label>
+          <Display
+            style={[styles.timer, { color: field.fg, fontSize: timerSize, lineHeight: Math.round(timerSize * leading.tight) }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
           >
-            <Text style={styles.upNextTriggerText}>View Upcoming Exercises</Text>
-            <ChevronIcon color="#CCFF00" size={12} direction="up" />
-          </TouchableOpacity>
-        )}
-        {isRepPhase && (
-          <View style={styles.repActionsGroup}>
-            {weightInputVisible ? (
-              <View style={styles.weightInputRow}>
-                <TextInput
-                  style={styles.weightInput}
-                  value={weightInputValue}
-                  onChangeText={setWeightInputValue}
-                  keyboardType="number-pad"
-                  placeholder={weightUnit}
-                  placeholderTextColor="#475569"
-                  autoFocus
-                  selectionColor="#CCFF00"
-                />
-                <TouchableOpacity style={styles.weightSaveBtn} onPress={handleSaveWeight}>
-                  <Text style={styles.weightSaveBtnText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.addWeightButton}
-                onPress={() => {
-                  setWeightInputValue(pendingWeight != null ? String(pendingWeight) : '');
-                  setWeightInputVisible(true);
-                }}
-              >
-                <Text style={styles.addWeightButtonText}>
-                  {pendingWeight != null ? `Weight: ${pendingWeight} ${weightUnit}` : '+ Add Weight'}
-                </Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.repDoneButton} onPress={handleRepDone}>
-              <Text style={styles.repDoneButtonText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+            {Math.ceil(engine.remainingSeconds)}
+          </Display>
+          <Label style={[styles.unit, { color: field.fg }]}>Seconds</Label>
 
-      <View style={styles.sessionFooter}>
-        <View style={styles.nextContainer}>
-          <View style={styles.nextLeft}>
-            <Text style={styles.nextLabel}>UP NEXT</Text>
-            <Text style={styles.nextName} numberOfLines={1}>
-              {nextPhase?.exerciseName || 'Complete'}
-            </Text>
+          <View style={[styles.nextBlock, { borderColor: colors.accent }]}>
+            <Label style={[styles.nextBlockLabel, { color: colors.accent }]}>Next up</Label>
+            <Display style={[styles.nextBlockName, { color: field.fg }]} numberOfLines={2} adjustsFontSizeToFit>
+              {nextPhase?.exerciseName ?? 'Finish'}
+            </Display>
+            {nextMeta ? <Label style={[styles.nextBlockMeta, { color: field.fg }]}>{nextMeta}</Label> : null}
           </View>
-          <Text style={styles.nextDuration}>
-            {nextPhase
-              ? nextPhase.mode === 'reps'
-                ? `${nextPhase.reps} Reps`
-                : `${Math.ceil(nextPhase.duration)}s ${nextPhase.type === 'work' ? 'Work' : 'Rest'}`
-              : 'Done'}
-          </Text>
+
+          <View style={styles.restControls}>
+            <Pressable
+              style={[styles.adjustBtn, { borderColor: field.fg }]}
+              onPress={() => engine.adjustRest(-5)}
+              accessibilityRole="button"
+              accessibilityLabel="Subtract five seconds of rest"
+            >
+              <Label style={[styles.adjustLabel, { color: field.fg }]}>−5s</Label>
+            </Pressable>
+            <Pressable
+              style={[styles.adjustBtn, { borderColor: field.fg }]}
+              onPress={() => engine.adjustRest(5)}
+              accessibilityRole="button"
+              accessibilityLabel="Add five seconds of rest"
+            >
+              <Label style={[styles.adjustLabel, { color: field.fg }]}>+5s</Label>
+            </Pressable>
+            <Pressable
+              style={[styles.upNextBtn, { borderColor: field.fg }]}
+              onPress={() => setUpNextVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="View upcoming exercises"
+            >
+              <Label style={[styles.adjustLabel, { color: field.fg }]}>All</Label>
+              <ChevronIcon color={field.fg} size={12} direction="up" />
+            </Pressable>
+          </View>
         </View>
+      ) : isRepPhase ? (
+        /* ── Rep-based work ───────────────────────────────────────────────── */
+        <View style={styles.body}>
+          <Display
+            style={[styles.exerciseName, { color: field.fg, fontSize: nameSize, lineHeight: Math.round(nameSize * leading.display) }]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+          >
+            {engine.currentPhase.exerciseName}
+          </Display>
+          <Label style={[styles.cue, { color: field.fg }]}>
+            Set {currentSetNumber} of {totalSetsForExercise}
+          </Label>
+          <View style={styles.repRow}>
+            <Display
+              style={[styles.timer, { color: field.fg, fontSize: repSize, lineHeight: Math.round(repSize * leading.tight) }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {engine.currentPhase.reps}
+            </Display>
+            <Display style={[styles.repsUnit, { color: field.fg }]}>Reps</Display>
+          </View>
 
-        <View style={styles.controls}>
-          <TouchableOpacity style={styles.secondaryControl} onPress={engine.skipToPreviousPhase} accessibilityLabel="Previous phase">
-            <SkipIcon color="#FFFFFF" size={18} direction="left" />
-          </TouchableOpacity>
+          {weightInputVisible ? (
+            <View style={styles.weightRow}>
+              <TextInput
+                style={[styles.weightInput, { borderColor: field.fg, color: field.fg }]}
+                value={weightInputValue}
+                onChangeText={setWeightInputValue}
+                keyboardType="number-pad"
+                placeholder={weightUnit.toUpperCase()}
+                placeholderTextColor={colors.inkMuted}
+                autoFocus
+                selectionColor={field.fg}
+              />
+              <Pressable
+                style={[styles.weightSave, { backgroundColor: field.squareBg }]}
+                onPress={handleSaveWeight}
+                accessibilityRole="button"
+              >
+                <Label style={[styles.weightSaveLabel, { color: field.squareFg }]}>Save</Label>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={[styles.weightBtn, { borderColor: field.fg }]}
+              onPress={() => {
+                setWeightInputValue(pendingWeight != null ? String(pendingWeight) : '');
+                setWeightInputVisible(true);
+              }}
+              accessibilityRole="button"
+            >
+              <Label style={[styles.weightBtnLabel, { color: field.fg }]}>
+                {pendingWeight != null ? `Weight ${pendingWeight} ${weightUnit}` : '+ Add weight'}
+              </Label>
+            </Pressable>
+          )}
+
+          <Pressable
+            style={({ pressed }) => [styles.doneBtn, pressed && styles.doneBtnPressed]}
+            onPress={handleRepDone}
+            accessibilityRole="button"
+            accessibilityLabel="Mark set done"
+          >
+            <Display style={styles.doneLabel}>Done</Display>
+          </Pressable>
+        </View>
+      ) : (
+        /* ── Timed work ───────────────────────────────────────────────────── */
+        <View style={styles.body}>
+          <Display
+            style={[styles.exerciseName, { color: field.fg, fontSize: nameSize, lineHeight: Math.round(nameSize * leading.display) }]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+          >
+            {engine.currentPhase.exerciseName}
+          </Display>
+          <Label style={[styles.cue, { color: field.fg }]}>
+            Hold — {Math.round(engine.currentPhaseDuration)} sec
+          </Label>
+          <View style={styles.timerRow}>
+            <Display
+              style={[styles.timer, { color: field.fg, fontSize: timerSize, lineHeight: Math.round(timerSize * leading.tight) }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {Math.ceil(engine.remainingSeconds)}
+            </Display>
+            <Display style={[styles.timerUnit, { color: field.fg }]}>Sec{'\n'}Left</Display>
+          </View>
+        </View>
+      )}
+
+      {/* Footer: what's next, then the transport controls */}
+      <View style={[styles.footer, { borderTopColor: field.fg, paddingBottom: insets.bottom }]}>
+        {!isRest && (
+          <View style={styles.nextRow}>
+            <Label style={styles.nextLabel}>Next</Label>
+            <Display style={styles.nextName} numberOfLines={1}>
+              {nextPhase?.exerciseName ?? 'Finish'}
+            </Display>
+            {nextMeta ? <Display style={styles.nextMeta}>{nextMeta}</Display> : null}
+          </View>
+        )}
+        <View style={styles.transport}>
+          <Pressable
+            style={({ pressed }) => [styles.transportSide, pressed && styles.transportPressed]}
+            onPress={engine.skipToPreviousPhase}
+            accessibilityRole="button"
+            accessibilityLabel="Previous phase"
+          >
+            <SkipIcon color={colors.onInk} size={24} direction="left" />
+          </Pressable>
           {!isRepPhase && (
-            <TouchableOpacity
-              style={styles.primaryControl}
+            <Pressable
+              style={({ pressed }) => [styles.transportMain, pressed && styles.transportPressed]}
               onPress={engine.timerState === 'paused' ? engine.resume : engine.pause}
+              accessibilityRole="button"
               accessibilityLabel={engine.timerState === 'paused' ? 'Resume workout' : 'Pause workout'}
             >
-              {engine.timerState === 'paused' ? <PlayIcon color="#09090A" size={26} /> : <PauseIcon color="#09090A" size={26} />}
-            </TouchableOpacity>
+              {engine.timerState === 'paused'
+                ? <PlayIcon color={colors.accent} size={24} />
+                : <PauseIcon color={colors.accent} size={24} />}
+              <Display style={styles.transportLabel}>
+                {engine.timerState === 'paused' ? 'Resume' : 'Pause'}
+              </Display>
+            </Pressable>
           )}
-          <TouchableOpacity style={styles.secondaryControl} onPress={engine.skipToNextPhase} accessibilityLabel="Skip to next phase">
-            <SkipIcon color="#FFFFFF" size={18} direction="right" />
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [
+              styles.transportSide,
+              isRepPhase && styles.transportWide,
+              pressed && styles.transportPressed,
+            ]}
+            onPress={engine.skipToNextPhase}
+            accessibilityRole="button"
+            accessibilityLabel="Skip to next phase"
+          >
+            <SkipIcon color={colors.onInk} size={24} direction="right" />
+          </Pressable>
         </View>
       </View>
+
       <ConfirmDialog
         visible={quitStep === 'confirmQuit'}
         title="Quit workout?"
@@ -550,380 +673,325 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  field: {
     flex: 1,
-    backgroundColor: '#09090A',
   },
   statusBarSpacer: {
-    height: 44,
+    height: band.statusBar,
   },
-  progressTracker: {
-    height: 55,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    gap: 4,
-  },
-  progressLabels: {
+  // ── Top bar ───────────────────────────────────────────────────────────────
+  topBar: {
+    height: band.control + space.tight,
+    paddingHorizontal: space.gutter,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: space.row,
+  },
+  square: {
+    width: band.control,
+    height: band.control,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  progressRightGroup: {
-    flexDirection: 'row',
+  squareOutline: {
+    width: band.control,
+    height: band.control,
+    borderWidth: rule.heavy,
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
   },
-  workoutTag: {
-    flexShrink: 1,
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-    textTransform: 'uppercase',
-    maxWidth: '45%',
-  },
-  progressPercentage: {
-    color: '#CCFF00',
-    fontFamily: 'monospace',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 15,
+  position: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: label.base,
+    letterSpacing: tracking.label,
   },
   progressTrack: {
-    height: 4,
-    backgroundColor: '#1A1A1E',
-    borderRadius: 2,
-    overflow: 'hidden',
+    marginHorizontal: space.gutter,
+    height: space.tight,
+    borderWidth: rule.heavy,
   },
   progressFill: {
-    height: 4,
-    backgroundColor: '#CCFF00',
+    height: '100%',
   },
-  currentExerciseBox: {
-    minHeight: 92,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  // ── Body ──────────────────────────────────────────────────────────────────
+  body: {
+    flex: 1,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.row,
+    minHeight: 0,
   },
   exerciseName: {
-    width: '100%',
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '800',
-    lineHeight: 36,
-    textAlign: 'center',
+    letterSpacing: tracking.display,
   },
-  countdownContainer: {
+  cue: {
+    marginTop: space.tight,
+    fontSize: label.cue,
+    letterSpacing: tracking.wide,
+  },
+  timerRow: {
     flex: 1,
-    minHeight: 433,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  repContainer: {
-    gap: 28,
-  },
-  repContent: {
-    alignItems: 'center',
-  },
-  repCount: {
-    color: '#CCFF00',
-    fontFamily: 'monospace',
-    fontSize: 100,
-    fontWeight: '800',
-    lineHeight: 100,
-    fontVariant: ['tabular-nums'],
-  },
-  repActionsGroup: {
-    width: '82%',
-    alignItems: 'center',
-    gap: 14,
-  },
-  addWeightButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
-  },
-  addWeightButtonText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  weightInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  weightInput: {
-    width: 90,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
-    color: '#FFFFFF',
-    fontFamily: 'monospace',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  weightSaveBtn: {
-    height: 40,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: '#1F1F24',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weightSaveBtnText: {
-    color: '#CCFF00',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  repDoneButton: {
-    width: '100%',
-    height: 68,
-    borderRadius: 14,
-    backgroundColor: '#CCFF00',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  repDoneButtonText: {
-    color: '#09090A',
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  toast: {
-    position: 'absolute',
-    top: 100,
-    left: 24,
-    right: 24,
-    zIndex: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: 'rgba(204, 255, 0, 0.95)',
-    alignItems: 'center',
-  },
-  toastText: {
-    color: '#09090A',
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  timerRing: {
-    width: 240,
-    height: 240,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timerRingBackground: {
-    ...StyleSheet.absoluteFill,
-    borderWidth: 8,
-    borderColor: '#1A1A1E',
-    borderRadius: 120,
-  },
-  timerRingProgress: {
-    ...StyleSheet.absoluteFill,
-    borderWidth: 8,
-    borderColor: 'transparent',
-    borderRadius: 120,
-  },
-  digitsGroup: {
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 0,
   },
   timer: {
-    color: '#CCFF00',
-    fontFamily: 'monospace',
-    fontSize: 100,
-    fontWeight: '800',
-    lineHeight: 100,
+    flexShrink: 1,
     fontVariant: ['tabular-nums'],
   },
-  timerRest: {
-    color: '#6B9EFA',
+  timerUnit: {
+    fontSize: display.control,
+    lineHeight: display.control,
+    textAlign: 'right',
+    alignSelf: 'flex-end',
+    paddingBottom: space.block,
   },
-  secondsUnit: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 18,
-    textTransform: 'uppercase',
+  unit: {
+    fontSize: label.cue,
+    letterSpacing: tracking.wide,
   },
-  restAdjustments: {
-    position: 'absolute',
-    left: 24,
-    right: 24,
-    top: '50%',
+  // ── Rest ──────────────────────────────────────────────────────────────────
+  nextBlock: {
+    marginTop: space.block,
+    borderWidth: rule.heavy,
+    padding: space.row,
+  },
+  nextBlockLabel: {
+    fontSize: label.micro,
+    letterSpacing: tracking.wide,
+  },
+  nextBlockName: {
+    marginTop: space.hair,
+    fontSize: display.numeral,
+    lineHeight: display.numeral * leading.snug,
+  },
+  nextBlockMeta: {
+    marginTop: space.hair,
+    fontSize: label.base,
+    letterSpacing: tracking.label,
+  },
+  restControls: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  adjustmentCue: {
-    position: 'absolute',
-    bottom: 8,
-    width: '100%',
-    color: '#94A3B8',
-    fontSize: 11,
-    lineHeight: 14,
-    textAlign: 'center',
-  },
-  upNextTrigger: {
-    position: 'absolute',
-    bottom: 32,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
-  },
-  upNextTriggerText: {
-    color: '#CCFF00',
-    fontSize: 12,
-    fontWeight: '700',
+    gap: space.tight,
+    marginTop: space.block,
+    marginBottom: space.block,
   },
   adjustBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
+    width: 72,
+    height: band.control + 8,
+    borderWidth: rule.heavy,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  adjustBtnText: {
-    color: '#94A3B8',
-    fontFamily: 'monospace',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  sessionFooter: {
-    height: 204,
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    gap: 16,
-    backgroundColor: '#09090A',
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
-  },
-  nextContainer: {
-    height: 42,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#121214',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  nextLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  upNextBtn: {
     flex: 1,
-    minWidth: 0,
+    height: band.control + 8,
+    borderWidth: rule.heavy,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.tight,
+  },
+  adjustLabel: {
+    fontSize: label.base,
+    letterSpacing: tracking.label,
+  },
+  // ── Reps ──────────────────────────────────────────────────────────────────
+  repRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 0,
+  },
+  repsUnit: {
+    fontSize: display.control,
+    lineHeight: display.control,
+    alignSelf: 'flex-end',
+    paddingBottom: space.block,
+  },
+  weightBtn: {
+    alignSelf: 'flex-start',
+    minHeight: band.control,
+    paddingHorizontal: space.block,
+    justifyContent: 'center',
+    borderWidth: rule.heavy,
+    marginBottom: space.row,
+  },
+  weightBtnLabel: {
+    fontSize: label.base,
+    letterSpacing: tracking.label,
+  },
+  weightRow: {
+    flexDirection: 'row',
+    gap: space.tight,
+    marginBottom: space.row,
+  },
+  weightInput: {
+    width: 120,
+    height: band.control,
+    borderWidth: rule.heavy,
+    textAlign: 'center',
+    fontFamily: font.bold,
+    fontSize: label.cue,
+    padding: 0,
+  },
+  weightSave: {
+    height: band.control,
+    paddingHorizontal: space.block,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightSaveLabel: {
+    fontSize: label.base,
+    letterSpacing: tracking.label,
+  },
+  doneBtn: {
+    height: 76,
+    marginBottom: space.block,
+    backgroundColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneBtnPressed: {
+    backgroundColor: colors.inkPress,
+  },
+  doneLabel: {
+    color: colors.onInk,
+    fontSize: display.control,
+    lineHeight: display.control * leading.snug,
+    letterSpacing: tracking.label,
+  },
+  // ── Footer ────────────────────────────────────────────────────────────────
+  footer: {
+    backgroundColor: colors.ink,
+    borderTopWidth: rule.heavy,
+  },
+  nextRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.tight,
+    paddingHorizontal: space.gutter,
+    paddingVertical: space.row,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.inkDivider,
   },
   nextLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
+    color: colors.accent,
+    fontSize: label.micro,
+    letterSpacing: tracking.wide,
   },
   nextName: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    flexShrink: 1,
-  },
-  nextDuration: {
-    color: '#94A3B8',
-    fontFamily: 'monospace',
-    fontSize: 13,
-  },
-  controls: {
-    flexDirection: 'row',
-    height: 72,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 24,
-  },
-  secondaryControl: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#121214',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryControl: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#CCFF00',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptySessionTitle: {
-    marginTop: 180,
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  emptySessionText: {
-    marginTop: 12,
-    paddingHorizontal: 32,
-    color: '#94A3B8',
-    fontSize: 15,
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-  emptySessionButton: {
-    alignSelf: 'center',
-    marginTop: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#CCFF00',
-  },
-  emptySessionButtonText: {
-    color: '#09090A',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  getReadyContainer: {
     flex: 1,
+    color: colors.onInk,
+    fontSize: display.wordmark,
+    lineHeight: display.wordmark * leading.snug,
+  },
+  nextMeta: {
+    color: colors.onInk,
+    fontSize: display.wordmark,
+    lineHeight: display.wordmark * leading.snug,
+  },
+  transport: {
+    flexDirection: 'row',
+    height: band.transport,
+  },
+  transportSide: {
+    width: 96,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 20,
   },
-  getReadyLabel: {
-    color: '#94A3B8',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+  transportWide: {
+    flex: 1,
   },
-  getReadyCount: {
-    color: '#CCFF00',
-    fontFamily: 'monospace',
-    fontSize: 140,
-    fontWeight: '800',
-    lineHeight: 140,
+  transportMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.row,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.inkDivider,
+  },
+  transportPressed: {
+    backgroundColor: colors.inkPress,
+  },
+  transportLabel: {
+    color: colors.onInk,
+    fontSize: display.control,
+    lineHeight: display.control * leading.snug,
+    letterSpacing: tracking.label,
+  },
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  toast: {
+    position: 'absolute',
+    top: band.statusBar + space.tight,
+    left: space.gutter,
+    right: space.gutter,
+    zIndex: 10,
+    backgroundColor: colors.ink,
+    paddingVertical: space.row,
+    paddingHorizontal: space.block,
+  },
+  toastText: {
+    color: colors.accent,
+    fontSize: label.small,
+    letterSpacing: tracking.label,
+    textAlign: 'center',
+  },
+  // ── Get ready ─────────────────────────────────────────────────────────────
+  readyBody: {
+    flex: 1,
+    paddingHorizontal: space.gutter,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  readyLabel: {
+    fontSize: label.cue,
+    letterSpacing: tracking.wide,
+  },
+  readyCount: {
     fontVariant: ['tabular-nums'],
   },
-  getReadyHint: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
+  readyNext: {
+    fontSize: display.numeral,
+    lineHeight: display.numeral * leading.snug,
     textAlign: 'center',
+  },
+  // ── No exercises ──────────────────────────────────────────────────────────
+  blankScreen: {
+    flex: 1,
+    backgroundColor: colors.paper,
+    paddingHorizontal: space.gutter,
+    justifyContent: 'center',
+    gap: space.block,
+  },
+  blankTitle: {
+    fontSize: 56,
+    lineHeight: 56 * leading.display,
+    letterSpacing: tracking.display,
+  },
+  blankBody: {
+    fontSize: label.base,
+    lineHeight: label.base * 1.5,
+    color: colors.inkMuted,
+  },
+  blankAction: {
+    alignSelf: 'flex-start',
+    minHeight: band.control,
+    paddingHorizontal: space.block,
+    justifyContent: 'center',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  blankActionPressed: {
+    backgroundColor: colors.rowPress,
+  },
+  blankActionLabel: {
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
   },
 });
