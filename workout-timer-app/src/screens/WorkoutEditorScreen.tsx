@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert, StatusBar, PanResponder, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList, Workout, Exercise } from '../types';
 import { loadWorkouts, saveWorkout } from '../storage';
 import { PencilIcon, TrashIcon, DragHandleIcon, ChevronIcon, CheckIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { band, colors, display, font, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutEditor'>;
 
@@ -82,7 +84,7 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
   return (
     <View style={styles.exerciseRowWrapper}>
       <View style={styles.deleteBackdrop}>
-        <TrashIcon color="#FFFFFF" size={20} />
+        <TrashIcon color={colors.onInk} size={20} />
       </View>
       <Animated.View style={[styles.exerciseRow, { transform: [{ translateX: swipeX }] }]} {...rowResponder.panHandlers}>
       <View style={styles.exerciseLeft}>
@@ -96,8 +98,8 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
           value={exercise.name}
           onChangeText={text => onUpdate(exercise.id, 'name', text)}
           placeholder="Exercise Name"
-          placeholderTextColor="#64748B"
-          selectionColor="#CCFF00"
+          placeholderTextColor={colors.placeholder}
+          selectionColor={colors.accentDeep}
           multiline
         />
       </View>
@@ -119,7 +121,7 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
               value={(repBased ? exercise.reps : exercise.workSeconds)?.toString() ?? '0'}
               onChangeText={text => onUpdate(exercise.id, repBased ? 'reps' : 'workSeconds', parseInt(text, 10) || 0)}
               keyboardType="number-pad"
-              selectionColor="#CCFF00"
+              selectionColor={colors.accentDeep}
             />
             <TouchableOpacity
               style={styles.stepButton}
@@ -145,7 +147,7 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
               value={exercise.restSeconds.toString()}
               onChangeText={text => onUpdate(exercise.id, 'restSeconds', parseInt(text, 10) || 0)}
               keyboardType="number-pad"
-              selectionColor="#CCFF00"
+              selectionColor={colors.accentDeep}
             />
             <TouchableOpacity
               style={styles.stepButton}
@@ -170,7 +172,7 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
               value={exercise.sets.toString()}
               onChangeText={text => onUpdate(exercise.id, 'sets', parseInt(text, 10) || 0)}
               keyboardType="number-pad"
-              selectionColor="#CCFF00"
+              selectionColor={colors.accentDeep}
             />
             <TouchableOpacity
               style={styles.stepButton}
@@ -192,6 +194,7 @@ function ExerciseRow({ exercise, index, total, onUpdate, onDelete, onMove, nameI
 
 export function WorkoutEditorScreen({ route, navigation }: Props) {
   const { workoutId, draftWorkout } = route.params;
+  const insets = useSafeAreaInsets();
 
   const [name, setName] = useState('');
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -383,7 +386,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   if (loading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <RotatingDumbbellIcon color="#CCFF00" size={48} />
+        <RotatingDumbbellIcon color={colors.ink} size={48} />
       </View>
     );
   }
@@ -394,13 +397,13 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -100}
     >
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.statusBarSpacer} />
         <View style={styles.topNavigation}>
           <View style={styles.headerRow}>
             <TouchableOpacity style={styles.backAction} onPress={() => navigation.goBack()}>
-              <ChevronIcon color="#94A3B8" size={18} direction="left" />
+              <ChevronIcon color={colors.ink} size={18} direction="left" />
               <Text style={styles.backLabel}>Back</Text>
             </TouchableOpacity>
             <Text style={styles.modeLabel}>{workoutId ? 'EDITING' : 'ADDING'}</Text>
@@ -411,8 +414,8 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
               value={name}
               onChangeText={setName}
               placeholder="Add Workout"
-              placeholderTextColor="#64748B"
-              selectionColor="#CCFF00"
+              placeholderTextColor={colors.placeholder}
+              selectionColor={colors.accentDeep}
             />
             <PencilIcon />
           </View>
@@ -434,7 +437,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
                 value={rounds.toString()}
                 onChangeText={text => setRounds(Math.max(1, parseInt(text, 10) || 1))}
                 keyboardType="number-pad"
-                selectionColor="#CCFF00"
+                selectionColor={colors.accentDeep}
               />
               <TouchableOpacity style={styles.roundsStepBtn} onPress={() => stepRounds(1)}>
                 <Text style={styles.roundsStepText}>+</Text>
@@ -458,7 +461,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
                     value={(restBetweenRoundsSeconds ?? DEFAULT_REST_BETWEEN_ROUNDS).toString()}
                     onChangeText={text => setRestBetweenRoundsSeconds(Math.max(0, parseInt(text, 10) || 0))}
                     keyboardType="number-pad"
-                    selectionColor="#CCFF00"
+                    selectionColor={colors.accentDeep}
                   />
                   <Text style={styles.restSuffix}>s</Text>
                 </View>
@@ -486,7 +489,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
                 value={bulkWorkSeconds.toString()}
                 onChangeText={text => setBulkWorkSeconds(Math.max(0, parseInt(text, 10) || 0))}
                 keyboardType="number-pad"
-                selectionColor="#CCFF00"
+                selectionColor={colors.accentDeep}
               />
               <TouchableOpacity style={styles.roundsStepBtn} onPress={() => setBulkWorkSeconds(v => v + 5)}>
                 <Text style={styles.roundsStepText}>+</Text>
@@ -515,7 +518,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
                   value={bulkRestSeconds.toString()}
                   onChangeText={text => setBulkRestSeconds(Math.max(0, parseInt(text, 10) || 0))}
                   keyboardType="number-pad"
-                  selectionColor="#CCFF00"
+                  selectionColor={colors.accentDeep}
                 />
                 <Text style={styles.restSuffix}>s</Text>
               </View>
@@ -560,9 +563,9 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
         <TouchableOpacity style={styles.addExerciseButton} onPress={handleAddExercise}>
           <Text style={styles.addExerciseText}>+ Add Exercise</Text>
         </TouchableOpacity>
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: space.row + insets.bottom }]}>
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <CheckIcon color="#09090A" size={18} />
+          <CheckIcon color={colors.onInk} size={18} />
           <Text style={styles.saveLabel}>SAVE CHANGES</Text>
         </TouchableOpacity>
       </View>
@@ -605,207 +608,204 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B0B',
+    backgroundColor: colors.paper,
   },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  scrollView: {
+    flex: 1,
   },
   scrollContent: {
     // Extra bottom padding guarantees there's room to scroll the last
     // exercise row's inputs above the keyboard even once it's showing.
     paddingBottom: 280,
   },
-  scrollView: {
-    flex: 1,
-  },
   statusBarSpacer: {
-    height: 44,
+    height: band.statusBar,
   },
+  // ── Header ────────────────────────────────────────────────────────────────
   topNavigation: {
-    height: 99,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 16,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
+    paddingBottom: space.row,
+    gap: space.row,
   },
   headerRow: {
-    height: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   backAction: {
-    height: 20,
+    minHeight: band.control,
+    paddingRight: space.row,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: space.hair + 2,
   },
   backLabel: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    lineHeight: 20,
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+    textTransform: 'uppercase',
   },
   modeLabel: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 18,
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.micro,
+    letterSpacing: tracking.wide,
+    textTransform: 'uppercase',
+    backgroundColor: colors.accent,
+    paddingHorizontal: space.tight,
+    paddingVertical: 3,
+    overflow: 'hidden',
   },
   titleField: {
-    height: 39,
-    borderBottomWidth: 2,
-    borderBottomColor: '#1F1F24',
+    borderBottomWidth: rule.heavy,
+    borderBottomColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 8,
+    paddingBottom: space.tight,
   },
   titleInput: {
     flex: 1,
-    height: 31,
     padding: 0,
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 31,
+    color: colors.ink,
+    fontFamily: font.display,
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
+    textTransform: 'uppercase',
   },
-  // ── Structure Card ────────────────────────────────────────────────────────
+  // ── Structure cards ───────────────────────────────────────────────────────
   structureCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    overflow: 'hidden',
+    marginHorizontal: space.gutter,
+    marginBottom: space.block,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
   },
   structureRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
+    minHeight: band.control,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   structureRowBorder: {
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
   },
   structureLabelGroup: {
     flex: 1,
-    marginRight: 12,
+    marginRight: space.row,
   },
   structureTitle: {
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.base,
+    letterSpacing: tracking.label,
+    textTransform: 'uppercase',
   },
   structureSubtitle: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 12,
-    lineHeight: 16,
+    fontFamily: font.medium,
+    color: colors.inkMuted,
+    fontSize: label.micro,
+    lineHeight: label.micro * 1.4,
     marginTop: 2,
   },
   roundsStepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: space.hair,
   },
   roundsStepBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#1F1F24',
+    width: band.control,
+    height: band.control,
+    borderWidth: rule.thin,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   roundsStepText: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 20,
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.cue,
   },
   roundsValueInput: {
-    width: 42,
-    height: 32,
-    backgroundColor: '#09090A',
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 8,
-    color: '#CCFF00',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 15,
-    fontWeight: '700',
+    width: 48,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    color: colors.ink,
+    fontFamily: font.bold,
+    fontSize: label.cue,
     textAlign: 'center',
     paddingVertical: 0,
+    fontVariant: ['tabular-nums'],
   },
-  restValueInput: {
-    color: '#6B9EFA',
-  },
+  restValueInput: {},
   restInputWithSuffix: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: space.hair,
   },
   restSuffix: {
-    color: '#6B9EFA',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.small,
   },
   applyAllRow: {
     justifyContent: 'center',
-    backgroundColor: 'rgba(204, 255, 0, 0.08)',
+    minHeight: band.control,
+    backgroundColor: colors.accent,
   },
   applyAllText: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+    textTransform: 'uppercase',
   },
-  // ── List Header ────────────────────────────────────────────────────────────
+  // ── List header ───────────────────────────────────────────────────────────
   listHeader: {
-    minHeight: 32,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    backgroundColor: '#121214',
+    paddingHorizontal: space.gutter,
+    paddingVertical: space.tight,
+    backgroundColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   listTitle: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
+    fontFamily: font.black,
+    color: colors.onInk,
+    fontSize: label.micro,
+    letterSpacing: tracking.label,
+    textTransform: 'uppercase',
   },
   columnHeaders: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginRight: 32,
+    gap: space.hair,
+    marginRight: 30,
   },
   columnHeaderLabel: {
     width: 52,
-    color: '#64748B',
-    fontFamily: 'Geist',
+    fontFamily: font.black,
+    color: colors.onInk,
     fontSize: 10,
-    fontWeight: '700',
+    letterSpacing: tracking.label,
     textAlign: 'center',
+    textTransform: 'uppercase',
   },
+  // ── Exercise rows ─────────────────────────────────────────────────────────
   exerciseList: {
-    backgroundColor: '#09090A',
+    backgroundColor: colors.paper,
   },
   exerciseRowWrapper: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#1F1F24',
+    borderBottomWidth: rule.heavy,
+    borderBottomColor: colors.ink,
     overflow: 'hidden',
   },
   deleteBackdrop: {
@@ -814,17 +814,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#DC2626',
+    backgroundColor: colors.danger,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingRight: 24,
+    paddingRight: space.gutter,
   },
   exerciseRow: {
     minHeight: 56,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#09090A',
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
+    backgroundColor: colors.paper,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -834,53 +834,44 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: space.tight,
   },
   dragHandle: {
     width: 24,
-    height: 40,
+    height: band.control,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: -4,
-    marginRight: -4,
+    marginLeft: -space.hair,
+    marginRight: -space.hair,
   },
   exerciseIndex: {
-    width: 18,
-    color: '#94A3B8',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 18,
+    width: 22,
+    fontFamily: font.display,
+    color: colors.inkMuted,
+    fontSize: display.entryTitle,
+    lineHeight: display.entryTitle,
   },
   exerciseName: {
     flex: 1,
     minHeight: 20,
     maxHeight: 80,
     padding: 0,
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
+    color: colors.ink,
+    fontFamily: font.bold,
+    fontSize: label.cue,
+    lineHeight: label.cue * 1.3,
   },
   // Width = 3 metricColumns (44 each) + 3 gaps (4 each) between all 4 row
   // children (the columns plus the trailing delete button) + the delete
   // button itself (26) — recompute this if any of those sizes change.
-  // Stacking the +/- buttons above/below the number (rather than beside it)
-  // keeps each column narrow, leaving much more room for the exercise name.
   metricsInputs: {
     width: 170,
     height: 96,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: space.hair,
     flexShrink: 0,
   },
-  // Fixed height + bottom alignment means the rest/sets steppers always line
-  // up with the work-time one, whether or not that column also has the
-  // SEC/REPS toggle above it — previously only the work column had that
-  // extra element, and without an explicit shared height + baseline, the
-  // row's default center-alignment pushed it down relative to the other two.
   metricColumn: {
     width: 44,
     height: 96,
@@ -888,165 +879,139 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modeToggle: {
-    height: 16,
-    minWidth: 38,
-    paddingHorizontal: 4,
-    marginBottom: 4,
-    borderRadius: 4,
-    backgroundColor: '#1F1F24',
+    height: 18,
+    minWidth: 40,
+    paddingHorizontal: space.hair,
+    marginBottom: space.hair,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modeToggleText: {
-    color: '#94A3B8',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 8,
-    fontWeight: '700',
+    fontFamily: font.black,
+    color: colors.onInk,
+    fontSize: 9,
+    letterSpacing: tracking.label,
   },
-  // A vertical stepper (+ above, − below the number) instead of side-by-side
-  // buttons — this is what actually saves the horizontal space that used to
-  // get eaten by wide left/right buttons flanking the input.
   stepper: {
-    width: 36,
+    width: 40,
     flexDirection: 'column',
     alignItems: 'center',
     gap: 3,
   },
-  // Filled so they read as real buttons even at this size — the generous
-  // hitSlop on the TouchableOpacity itself (see JSX) extends the real touch
-  // target well beyond the visible box on top of that.
   stepButton: {
-    width: 36,
-    height: 22,
-    borderRadius: 6,
-    backgroundColor: '#1F1F24',
+    width: 40,
+    height: 24,
+    borderWidth: rule.thin,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepText: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 17,
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.cue,
+    lineHeight: label.cue + 2,
   },
   inlineWarning: {
     position: 'absolute',
     top: 98,
-    color: '#F59E0B',
-    fontFamily: 'JetBrains Mono',
-    fontSize: 10,
-    fontWeight: '700',
+    fontFamily: font.black,
+    color: colors.danger,
+    fontSize: label.micro,
   },
   metricInput: {
-    width: 36,
-    height: 26,
-    paddingVertical: 3,
+    width: 40,
+    height: 28,
+    paddingVertical: 2,
     paddingHorizontal: 1,
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 6,
-    fontFamily: 'JetBrains Mono',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    color: colors.ink,
+    fontFamily: font.bold,
+    fontSize: label.base,
     textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
-  workInput: {
-    color: '#CCFF00',
-  },
-  restInput: {
-    color: '#6B9EFA',
-  },
-  setsInput: {
-    color: '#FFFFFF',
-  },
+  workInput: {},
+  restInput: {},
+  setsInput: {},
   deleteButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
+    width: 30,
+    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    // Bottom-align with the steppers (which sit at the bottom of their own
-    // taller, fixed-height columns) instead of the row's default center.
     alignSelf: 'flex-end',
+    marginBottom: 2,
   },
+  // ── Add / save ────────────────────────────────────────────────────────────
   addExerciseButton: {
-    height: 68,
+    minHeight: band.cta,
     flexShrink: 0,
-    paddingTop: 16,
-    paddingBottom: 32,
-    backgroundColor: '#0B0B0B',
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
+    backgroundColor: colors.paper,
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
     elevation: 5,
   },
   addExerciseText: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
+    fontFamily: font.black,
+    color: colors.ink,
+    fontSize: label.base,
+    letterSpacing: tracking.wide,
+    textTransform: 'uppercase',
   },
   snackbar: {
     position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 192,
-    minHeight: 48,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: '#1F1F24',
+    left: space.gutter,
+    right: space.gutter,
+    bottom: 140,
+    minHeight: band.actionHeight,
+    paddingHorizontal: space.block,
+    backgroundColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   snackbarText: {
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 14,
-    lineHeight: 18,
+    fontFamily: font.black,
+    color: colors.onInk,
+    fontSize: label.small,
+    letterSpacing: tracking.label,
+    textTransform: 'uppercase',
   },
   undoText: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
+    fontFamily: font.black,
+    color: colors.accent,
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+    textTransform: 'uppercase',
   },
   footer: {
-    height: 112,
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    backgroundColor: '#09090A',
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
+    paddingTop: space.row,
+    paddingHorizontal: space.gutter,
+    paddingBottom: space.row,
+    backgroundColor: colors.paper,
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
   },
   saveButton: {
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#CCFF00',
+    height: band.cta,
+    backgroundColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.tight,
   },
   saveLabel: {
-    color: '#09090A',
-    fontFamily: 'Geist',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 23,
+    fontFamily: font.display,
+    color: colors.onInk,
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 });
