@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { Label } from './PosterText';
@@ -21,9 +22,11 @@ const TABS: { key: TabKey; route: keyof RootStackParamList; title: string }[] = 
  */
 export function BottomTabBar({ active }: { active: TabKey }) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // The Android gesture bar sits over the labels without this.
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { paddingBottom: insets.bottom }]}>
       {TABS.map(tab => {
         const selected = tab.key === active;
         return (
@@ -53,11 +56,11 @@ export function BottomTabBar({ active }: { active: TabKey }) {
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    height: band.tabBar,
     backgroundColor: colors.ink,
   },
   tab: {
     flex: 1,
+    height: band.tabBar,
     alignItems: 'center',
     justifyContent: 'center',
   },

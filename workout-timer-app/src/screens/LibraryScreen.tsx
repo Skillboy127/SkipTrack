@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image } from 'react-native';
+import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image, Animated, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerUsage, Workout } from '../types';
 import { loadWorkouts, deleteWorkout, saveWorkout } from '../storage';
@@ -8,6 +8,7 @@ import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { getLastKnownUsage } from '../api';
 import { PlayIcon, PlusIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { AdBanner } from '../components/AdBanner';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { Display, Label, Body } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
@@ -47,6 +48,25 @@ export function LibraryScreen({ navigation }: Props) {
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
+
+  // The hero is sized to fill the line, then collapses as the list scrolls so
+  // only the wordmark row stays pinned.
+  const { width } = useWindowDimensions();
+  const heroSize = Math.min(104, Math.round((width - space.gutter * 2) / 3.75));
+  const heroHeight = Math.round(heroSize * leading.display) + space.tight;
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const heroCollapse = {
+    height: scrollY.interpolate({
+      inputRange: [0, heroHeight],
+      outputRange: [heroHeight, 0],
+      extrapolate: 'clamp' as const,
+    }),
+    opacity: scrollY.interpolate({
+      inputRange: [0, heroHeight * 0.6],
+      outputRange: [1, 0],
+      extrapolate: 'clamp' as const,
+    }),
+  };
 
   useEffect(() => {
     if (isFocused) {
@@ -187,8 +207,8 @@ export function LibraryScreen({ navigation }: Props) {
           <Display style={styles.numeral}>{String(index + 1).padStart(2, '0')}</Display>
         </View>
         <View style={styles.rowBody}>
-          <Display style={styles.rowTitle} numberOfLines={2}>{item.name}</Display>
-          <Label style={styles.rowMeta}>
+          <Display style={styles.rowTitle} numberOfLines={1}>{item.name}</Display>
+          <Label style={styles.rowMeta} numberOfLines={1}>
             {exerciseCount} Exercise{exerciseCount !== 1 ? 's' : ''}{rounds}{reps}
           </Label>
         </View>
@@ -245,7 +265,15 @@ export function LibraryScreen({ navigation }: Props) {
         )}
       </View>
 
-      <Display style={styles.hero}>Your{'\n'}Work-{'\n'}outs</Display>
+      <Animated.View style={[styles.heroWrap, heroCollapse]}>
+        <Display
+          style={[styles.hero, { fontSize: heroSize, lineHeight: Math.round(heroSize * leading.display) }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          Workouts
+        </Display>
+      </Animated.View>
 
       <View style={styles.filterBar}>
         {FILTERS.map((filter, index) => {
@@ -310,6 +338,8 @@ export function LibraryScreen({ navigation }: Props) {
         contentContainerStyle={displayedWorkouts.length === 0 ? styles.emptyListContainer : styles.listContainer}
         ListEmptyComponent={emptyState}
         keyboardShouldPersistTaps="handled"
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+        scrollEventThrottle={16}
       />
 
       <Pressable
@@ -337,6 +367,9 @@ export function LibraryScreen({ navigation }: Props) {
           </Pressable>
         </View>
       )}
+
+      {/* Its own strip, separated from the CTA above and the tab bar below. */}
+      <AdBanner />
 
       <BottomTabBar active="workouts" />
 
@@ -408,11 +441,12 @@ const styles = StyleSheet.create({
     fontSize: label.small,
   },
   // ── Hero ──────────────────────────────────────────────────────────────────
+  heroWrap: {
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
   hero: {
     paddingHorizontal: space.gutter,
-    paddingTop: space.tight,
-    fontSize: display.hero,
-    lineHeight: display.hero * leading.display,
     letterSpacing: tracking.display,
   },
   // ── Filter bar ────────────────────────────────────────────────────────────
@@ -499,7 +533,7 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     borderTopWidth: rule.heavy,
     borderTopColor: colors.ink,
-    minHeight: band.play,
+    height: band.row,
   },
   rowPressed: {
     backgroundColor: colors.rowPress,
@@ -510,21 +544,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   numeral: {
-    fontSize: display.numeral,
-    lineHeight: display.numeral * leading.snug,
+    fontSize: display.rowNumeral,
+    lineHeight: display.rowNumeral * leading.snug,
   },
   rowBody: {
     flex: 1,
-    paddingVertical: space.row,
+    paddingVertical: space.tight,
+    paddingRight: space.row,
     justifyContent: 'center',
     minWidth: 0,
   },
   rowTitle: {
-    fontSize: display.rowTitle,
-    lineHeight: display.rowTitle * leading.snug,
+    fontSize: display.entryTitle,
+    lineHeight: display.entryTitle * leading.snug,
   },
   rowMeta: {
-    fontSize: label.base,
+    fontSize: label.small,
     marginTop: space.hair,
   },
   playSquare: {

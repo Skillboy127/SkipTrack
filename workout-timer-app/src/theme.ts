@@ -48,6 +48,8 @@ export const display = {
   stat: 40,
   chip: 36,
   numeral: 34,
+  /** Row index numeral on list rows. */
+  rowNumeral: 44,
   control: 30,
   rowTitle: 26,
   cta: 24,
@@ -104,6 +106,8 @@ export const band = {
   search: 46,
   play: 60,
   numeralCol: 64,
+  /** List row height. */
+  row: 72,
 } as const;
 
 /**
