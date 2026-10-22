@@ -1,18 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   Alert,
   ScrollView,
   Image,
   Platform,
+  StatusBar,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList, ServerUsage } from '../types';
 import {
   extractWorkoutFromImage,
@@ -21,8 +22,10 @@ import {
   getLastKnownUsage,
   ImportLimitError,
 } from '../api';
-import { CloseIcon, InfoIcon, CameraIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
+import { CloseIcon, CameraIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { Display, Label, Body } from '../components/PosterText';
+import { band, colors, display, font, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Import'>;
 type Tab = 'image' | 'text';
@@ -42,6 +45,11 @@ const ERROR_ALT_ACTION: Record<Tab, string | null> = {
   text: null,
 };
 
+const TABS: { key: Tab; title: string }[] = [
+  { key: 'image', title: 'Image' },
+  { key: 'text', title: 'Text' },
+];
+
 type ImportError = { tab: Tab; message: string };
 
 export function ImportScreen({ navigation }: Props) {
@@ -49,6 +57,7 @@ export function ImportScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [importError, setImportError] = useState<ImportError | null>(null);
+  const insets = useSafeAreaInsets();
 
   // The import allowance lives on the server. Start from the last value we heard
   // (if any) and refresh it each time this screen opens; if that request fails we
@@ -198,173 +207,169 @@ export function ImportScreen({ navigation }: Props) {
     setActiveTab('text');
   };
 
-  // ─── Tab content ─────────────────────────────────────────────────────────────
+  // ─── Derived ────────────────────────────────────────────────────────────────
 
-  const renderImageTab = () => (
-    <View style={styles.imageInputSection}>
-      <TouchableOpacity style={styles.imagePicker} onPress={handlePickImage}>
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
-        ) : (
-          <View style={styles.imagePickerPlaceholder}>
-            <View style={styles.cameraCircle}>
-              <CameraIcon color="#CCFF00" size={20} />
-            </View>
-            <Text style={styles.imagePickerHint}>Tap to upload photo</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-      <Text style={styles.imageInputHint}>Snap a photo of a workout plan or card</Text>
-    </View>
-  );
-
-  const renderTextTab = () => (
-    <View style={styles.textInputSection}>
-      <TextInput
-        style={styles.textArea}
-        placeholder="Paste your workout plan here..."
-        placeholderTextColor="#475569"
-        value={workoutText}
-        onChangeText={setWorkoutText}
-        multiline
-        numberOfLines={8}
-        textAlignVertical="top"
-      />
-      <Text style={styles.textInputHint}>Paste exercise names and timing as text</Text>
-    </View>
-  );
-
-  // ─── Render ──────────────────────────────────────────────────────────────────
-
-  const TABS: { id: Tab; label: string; emoji: string }[] = [
-    { id: 'image', label: 'Image', emoji: '' },
-    { id: 'text',  label: 'Text',  emoji: '' },
-  ];
-
-  const processingSource = activeTab === 'image'
-    ? 'Workout image'
-    : 'Workout description';
   const limitReached = usage !== null && usage.remaining <= 0;
   const resetDate = usage?.resets_at
-    ? new Date(usage.resets_at.replace(/(.d{3})d+/, '$1')).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+    ? new Date(usage.resets_at.replace(/(\.\d{3})\d+/, '$1')).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
   const limitMessage = usage
     ? `You've used all ${usage.limit} imports for this month.${resetDate ? ` Your imports reset on ${resetDate}.` : ''}`
     : "You've used all your imports for this month.";
   const canImportText = workoutText.trim().length > 0 && !limitReached;
   const canImportImage = imageBase64 !== null && !limitReached;
+  const canImport = activeTab === 'image' ? canImportImage : canImportText;
   const activeLoadingMessages = LOADING_MESSAGES[activeTab];
   const loadingMessage = activeLoadingMessages[loadingMessageIndex % activeLoadingMessages.length];
+  const processingSource = activeTab === 'image' ? 'Workout image' : 'Workout description';
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerAndForm}>
-        <View style={styles.statusBarSpacer} />
-        <View style={styles.screenHeader}>
-          <Text style={styles.screenTitle}>Import Workout</Text>
-          <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()} accessibilityLabel="Close import">
-            <CloseIcon color="#94A3B8" size={16} />
-          </TouchableOpacity>
-        </View>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
+      <View style={styles.statusBarSpacer} />
 
+      <View style={styles.topBar}>
+        <Pressable
+          style={({ pressed }) => [styles.square, pressed && styles.squarePressed]}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Close import"
+        >
+          <CloseIcon color={colors.ink} size={16} />
+        </Pressable>
         {usage !== null && (
-          <View style={styles.importsRemainingRow}>
-            <Text style={[styles.importsRemainingText, limitReached && styles.importsRemainingTextZero]}>
-              {limitReached
-                ? 'No imports left this month'
-                : `${usage.remaining} import${usage.remaining === 1 ? '' : 's'} left this month`}
-            </Text>
+          <View style={styles.usageChip}>
+            <View style={[styles.usageDot, limitReached && styles.usageDotEmpty]} />
+            <Label style={styles.usageLabel}>
+              {limitReached ? 'No imports left' : `${usage.remaining} Imports left`}
+            </Label>
           </View>
-        )}
-
-        <View style={styles.tabBarContainer}>
-          <View style={styles.tabBar}>
-            {TABS.map(tab => (
-              <TouchableOpacity
-                key={tab.id}
-                style={[styles.tabBtn, activeTab === tab.id && styles.tabBtnActive]}
-                onPress={() => {
-                  if (loading) return;
-                  setImportError(null);
-                  setActiveTab(tab.id);
-                }}
-                disabled={loading}
-              >
-                <Text style={[styles.tabLabel, activeTab === tab.id && styles.tabLabelActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <RotatingDumbbellIcon color="#CCFF00" size={56} />
-            <View style={styles.statusTextBlock}>
-              <Text style={styles.loadingTitle}>{loadingMessage}</Text>
-              <Text style={styles.loadingSource} numberOfLines={1}>{processingSource}</Text>
-            </View>
-            <View style={styles.annotationBox}>
-              <InfoIcon color="#CCFF00" size={16} />
-              <Text style={styles.annotationText}>Flows into Edit Workout screen for review</Text>
-            </View>
-          </View>
-        ) : importError ? (
-          <View style={styles.errorContainer}>
-            <View style={styles.errorIconCircle}>
-              <CloseIcon color="#F87171" size={20} />
-            </View>
-            <Text style={styles.errorTitle}>{ERROR_TITLES[importError.tab]}</Text>
-            <Text style={styles.errorMessage}>{importError.message}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={handleRetryImport}>
-              <Text style={styles.retryButtonText}>Try Again</Text>
-            </TouchableOpacity>
-            {ERROR_ALT_ACTION[importError.tab] && (
-              <TouchableOpacity onPress={handleSwitchToTextFromError} hitSlop={8}>
-                <Text style={styles.errorAltAction}>{ERROR_ALT_ACTION[importError.tab]} →</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <ScrollView
-            style={styles.formScroll}
-            contentContainerStyle={styles.formReferenceContentContainer}
-            keyboardShouldPersistTaps="handled"
-          >
-            {activeTab === 'image' && renderImageTab()}
-            {activeTab === 'text'  && renderTextTab()}
-          </ScrollView>
         )}
       </View>
 
+      <Display style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>Import</Display>
+
       {loading ? (
-        <View style={styles.stickyFooter}>
-          <View style={styles.processingButton}>
-            <Text style={styles.processingLabel}>PROCESSING</Text>
+        /* ── Loading ────────────────────────────────────────────────────────── */
+        <View style={styles.statusBody}>
+          <RotatingDumbbellIcon color={colors.ink} size={64} />
+          <Display style={styles.statusTitle} numberOfLines={2}>{loadingMessage}</Display>
+          <Label style={styles.statusMeta}>{processingSource}</Label>
+          <View style={styles.note}>
+            <Label style={styles.noteText}>You'll review and edit it next</Label>
           </View>
         </View>
-      ) : importError ? null : activeTab === 'text' ? (
-        <View style={styles.stickyFooter}>
-          <TouchableOpacity
-            style={[styles.importButton, canImportText && styles.importButtonEnabled]}
-            onPress={handleTextExtract}
-            disabled={!canImportText}
+      ) : importError ? (
+        /* ── Error ──────────────────────────────────────────────────────────── */
+        <View style={styles.statusBody}>
+          <Display style={styles.errorTitle} numberOfLines={3}>{ERROR_TITLES[importError.tab]}</Display>
+          <Body style={styles.errorMessage}>{importError.message}</Body>
+          <Pressable
+            style={({ pressed }) => [styles.primaryBar, pressed && styles.primaryBarPressed]}
+            onPress={handleRetryImport}
+            accessibilityRole="button"
           >
-            <Text style={[styles.importLabel, canImportText && styles.importLabelEnabled]}>IMPORT</Text>
-          </TouchableOpacity>
+            <Display style={styles.primaryBarLabel}>Try again</Display>
+          </Pressable>
+          {ERROR_ALT_ACTION[importError.tab] && (
+            <Pressable
+              style={({ pressed }) => [styles.ghostBar, pressed && styles.squarePressed]}
+              onPress={handleSwitchToTextFromError}
+              accessibilityRole="button"
+            >
+              <Label style={styles.ghostBarLabel}>{ERROR_ALT_ACTION[importError.tab]}</Label>
+            </Pressable>
+          )}
         </View>
-      ) : activeTab === 'image' ? (
-        <View style={styles.stickyFooter}>
-          <TouchableOpacity
-            style={[styles.importButton, canImportImage && styles.importButtonEnabled]}
-            onPress={handleImageExtract}
-            disabled={!canImportImage}
+      ) : (
+        /* ── Picker ─────────────────────────────────────────────────────────── */
+        <>
+          <View style={styles.tabBar}>
+            {TABS.map((tab, index) => {
+              const selected = tab.key === activeTab;
+              return (
+                <Pressable
+                  key={tab.key}
+                  style={[styles.tab, index > 0 && styles.tabDivider, selected && styles.tabActive]}
+                  onPress={() => {
+                    setImportError(null);
+                    setActiveTab(tab.key);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <Label style={[styles.tabLabel, selected && styles.tabLabelActive]}>{tab.title}</Label>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+            {activeTab === 'image' ? (
+              <>
+                <Pressable
+                  style={({ pressed }) => [styles.dropZone, pressed && styles.squarePressed]}
+                  onPress={handlePickImage}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose a workout photo"
+                >
+                  {imageUri ? (
+                    <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="contain" />
+                  ) : (
+                    <View style={styles.dropInner}>
+                      <CameraIcon color={colors.ink} size={28} />
+                      <Display style={styles.dropTitle}>Tap to choose{'\n'}a photo</Display>
+                    </View>
+                  )}
+                </Pressable>
+                <Label style={styles.hint}>A workout plan, a class card, a whiteboard</Label>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.textArea}
+                  placeholder="Paste your workout here..."
+                  placeholderTextColor={colors.placeholder}
+                  value={workoutText}
+                  onChangeText={setWorkoutText}
+                  multiline
+                  numberOfLines={8}
+                  textAlignVertical="top"
+                />
+                <Label style={styles.hint}>Exercise names, times, reps and rest</Label>
+              </>
+            )}
+
+            <View style={styles.divider} />
+            <Label style={styles.orLabel}>Or start from scratch</Label>
+            <Pressable
+              style={({ pressed }) => [styles.ghostBar, pressed && styles.squarePressed]}
+              onPress={() => navigation.replace('WorkoutEditor', {})}
+              accessibilityRole="button"
+              accessibilityLabel="Build a workout by hand"
+            >
+              <Label style={styles.ghostBarLabel}>+ Build it by hand</Label>
+            </Pressable>
+          </ScrollView>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryBar,
+              styles.footerBar,
+              { marginBottom: space.row + insets.bottom },
+              !canImport && styles.primaryBarDisabled,
+              pressed && canImport && styles.primaryBarPressed,
+            ]}
+            onPress={activeTab === 'image' ? handleImageExtract : handleTextExtract}
+            disabled={!canImport}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canImport }}
           >
-            <Text style={[styles.importLabel, canImportImage && styles.importLabelEnabled]}>IMPORT</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+            <Display style={[styles.primaryBarLabel, !canImport && styles.primaryBarLabelDisabled]}>Import</Display>
+          </Pressable>
+        </>
+      )}
+
       <ConfirmDialog
         visible={limitModalVisible}
         title="Import limit reached"
@@ -381,350 +386,206 @@ export function ImportScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#09090A',
-  },
-  headerAndForm: {
-    flex: 1,
+    backgroundColor: colors.paper,
   },
   statusBarSpacer: {
-    height: 44,
+    height: band.statusBar,
   },
-  screenHeader: {
-    height: 48,
-    paddingTop: 12,
-    paddingHorizontal: 20,
-    paddingBottom: 4,
+  topBar: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: space.row,
   },
-  screenTitle: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 31,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
+  square: {
+    width: band.control,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  importsRemainingRow: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
+  squarePressed: {
+    backgroundColor: colors.rowPress,
   },
-  importsRemainingText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  importsRemainingTextZero: {
-    color: '#F87171',
-  },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  textContentContainer: {
-    paddingTop: 16,
-    paddingHorizontal: 20,
-  },
-  formReferenceContentContainer: {
-    paddingTop: 16,
-    paddingHorizontal: 20,
-  },
-  formScroll: {
-    flex: 1,
-  },
-  // ── Tab bar ────────────────────────────────────────────────────────────────
-  tabBarContainer: {
-    height: 70,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
-  tabBar: {
+  usageChip: {
     flexDirection: 'row',
-    height: 46,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    opacity: 0.9,
+    alignItems: 'center',
+    gap: space.hair + 2,
   },
-  tabBtn: {
+  usageDot: {
+    width: 10,
+    height: 10,
+    backgroundColor: colors.accent,
+  },
+  usageDotEmpty: {
+    backgroundColor: colors.danger,
+  },
+  usageLabel: {
+    fontSize: label.small,
+  },
+  hero: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
+    fontSize: display.hero,
+    lineHeight: Math.round(display.hero * leading.display),
+    letterSpacing: tracking.display,
+  },
+  // ── Mode tabs ─────────────────────────────────────────────────────────────
+  tabBar: {
+    marginHorizontal: space.gutter,
+    marginTop: space.block,
+    flexDirection: 'row',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  tab: {
     flex: 1,
+    minHeight: band.control,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 9,
   },
-  tabBtnActive: {
-    backgroundColor: '#CCFF00',
+  tabDivider: {
+    borderLeftWidth: rule.heavy,
+    borderLeftColor: colors.ink,
+  },
+  tabActive: {
+    backgroundColor: colors.ink,
   },
   tabLabel: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '500',
-    lineHeight: 18,
+    fontSize: label.base,
+    letterSpacing: tracking.label,
   },
   tabLabelActive: {
-    color: '#09090A',
-    fontWeight: '700',
+    color: colors.onInk,
   },
-  // ── Tab content ────────────────────────────────────────────────────────────
-  tabContent: {
-    gap: 16,
+  // ── Body ──────────────────────────────────────────────────────────────────
+  scroll: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.block,
+    paddingBottom: space.block,
   },
-  tabDescription: {
-    fontSize: 14,
-    color: '#94A3B8',
-    lineHeight: 20,
+  dropZone: {
+    height: 200,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  // ── Inputs ─────────────────────────────────────────────────────────────────
-  input: {
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 15,
-    backgroundColor: '#121214',
-    color: '#FFFFFF',
+  dropInner: {
+    alignItems: 'center',
+    gap: space.row,
+  },
+  dropTitle: {
+    fontSize: display.entryTitle,
+    lineHeight: display.entryTitle * leading.snug,
+    textAlign: 'center',
+  },
+  preview: {
+    width: '100%',
+    height: '100%',
   },
   textArea: {
-    height: 180,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 20,
+    height: 200,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    padding: space.row,
+    color: colors.ink,
+    fontFamily: font.medium,
+    fontSize: label.cue,
+    lineHeight: label.cue * 1.4,
   },
-  textInputSection: {
-    gap: 12,
+  hint: {
+    marginTop: space.tight,
+    fontSize: label.micro,
+    color: colors.inkMuted,
   },
-  textInputHint: {
-    color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 18,
+  divider: {
+    height: rule.heavy,
+    backgroundColor: colors.ink,
+    marginTop: space.block,
   },
-  // ── Image picker ───────────────────────────────────────────────────────────
-  imagePicker: {
-    height: 180,
-    borderWidth: 1,
-    borderColor: '#475569',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#121214',
-    alignSelf: 'stretch',
+  orLabel: {
+    marginTop: space.row,
+    marginBottom: space.tight,
+    fontSize: label.micro,
+    color: colors.inkMuted,
   },
-  imagePickerPlaceholder: {
+  // ── Bars ──────────────────────────────────────────────────────────────────
+  primaryBar: {
+    height: band.cta,
+    backgroundColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerBar: {
+    marginHorizontal: space.gutter,
+  },
+  primaryBarPressed: {
+    backgroundColor: colors.inkPress,
+  },
+  primaryBarDisabled: {
+    backgroundColor: colors.paper,
+    borderWidth: rule.heavy,
+    borderColor: colors.inkMuted,
+  },
+  primaryBarLabel: {
+    color: colors.onInk,
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
+    letterSpacing: 0.6,
+  },
+  primaryBarLabelDisabled: {
+    color: colors.inkMuted,
+  },
+  ghostBar: {
+    minHeight: band.control,
+    paddingHorizontal: space.block,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ghostBarLabel: {
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+  },
+  // ── Loading / error ───────────────────────────────────────────────────────
+  statusBody: {
     flex: 1,
-    alignItems: 'center',
+    paddingHorizontal: space.gutter,
     justifyContent: 'center',
-    gap: 16,
+    alignItems: 'flex-start',
+    gap: space.block,
   },
-  cameraCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#1F1F24',
-    alignItems: 'center',
-    justifyContent: 'center',
+  statusTitle: {
+    fontSize: display.rowTitle,
+    lineHeight: display.rowTitle * leading.snug,
   },
-  imagePickerHint: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
+  statusMeta: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
   },
-  imageInputSection: {
-    gap: 16,
+  note: {
+    borderWidth: rule.thin,
+    borderColor: colors.ink,
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
   },
-  imageInputHint: {
-    color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  imagePreview: {
-    width: '100%',
-    height: 220,
-  },
-  // ── Buttons ────────────────────────────────────────────────────────────────
-  extractBtn: {
-    backgroundColor: '#CCFF00',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  extractBtnText: {
-    color: '#09090A',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  extractBtnOutline: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: '#CCFF00',
-  },
-  extractBtnOutlineText: {
-    color: '#CCFF00',
-  },
-  // ── Loading ────────────────────────────────────────────────────────────────
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 40,
-    gap: 32,
-  },
-  statusTextBlock: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  loadingTitle: {
-    maxWidth: 260,
-    color: '#CCFF00',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 23,
-    textAlign: 'center',
-  },
-  loadingSource: {
-    maxWidth: 242,
-    color: '#94A3B8',
-    fontFamily: 'monospace',
-    fontSize: 13,
-    lineHeight: 17,
-  },
-  annotationBox: {
-    width: '100%',
-    minHeight: 41,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(204, 255, 0, 0.2)',
-    borderRadius: 8,
-    backgroundColor: 'rgba(204, 255, 0, 0.07)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  annotationText: {
-    flex: 1,
-    color: '#94A3B8',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  // ── Error ──────────────────────────────────────────────────────────────────
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 40,
-    gap: 16,
-  },
-  errorIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
-    borderColor: 'rgba(248, 113, 113, 0.35)',
-    backgroundColor: 'rgba(248, 113, 113, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  noteText: {
+    fontSize: label.micro,
   },
   errorTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontSize: 48,
+    lineHeight: 48 * leading.display,
+    letterSpacing: tracking.display,
   },
   errorMessage: {
-    color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 8,
-    height: 48,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    backgroundColor: '#CCFF00',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  retryButtonText: {
-    color: '#09090A',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  errorAltAction: {
-    color: '#CCFF00',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  stickyFooter: {
-    height: 112,
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
-    backgroundColor: '#09090A',
-  },
-  importButton: {
-    height: 54,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.5,
-  },
-  importButtonEnabled: {
-    borderColor: '#CCFF00',
-    backgroundColor: '#CCFF00',
-    opacity: 1,
-  },
-  importLabel: {
-    color: '#475569',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 23,
-  },
-  importLabelEnabled: {
-    color: '#09090A',
-  },
-  processingButton: {
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#CCFF00',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  processingLabel: {
-    color: '#09090A',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 23,
-  },
-  loadingText: {
-    color: '#94A3B8',
-    fontSize: 15,
-    textAlign: 'center',
+    fontSize: label.base,
+    lineHeight: label.base * 1.5,
+    color: colors.inkMuted,
   },
 });
