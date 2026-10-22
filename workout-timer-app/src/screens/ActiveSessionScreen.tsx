@@ -91,11 +91,12 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const playTransitionBeep = () => {
     if (soundModeRef.current !== 'silent') playBeep();
   };
-  // A distinct higher-pitched cue right as a new exercise's work phase
-  // begins, following the "3, 2, 1" countdown — a clear "go" signal separate
-  // from the countdown beeps/speech themselves.
-  const handlePhaseStart = (phase: { type: 'work' | 'rest' }) => {
-    if (phase.type === 'work' && soundModeRef.current !== 'silent') playGoBeep();
+  // A distinct higher-pitched cue the moment a new phase begins, following the
+  // "3, 2, 1" countdown — a clear "go" signal separate from the countdown
+  // beeps/speech. It marks the start of a rest as well as of an exercise, so
+  // the change of phase is audible either way.
+  const handlePhaseStart = (_phase: { type: 'work' | 'rest' }) => {
+    if (soundModeRef.current !== 'silent') playGoBeep();
   };
   const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick, handlePhaseStart);
 
