@@ -1,16 +1,17 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, StatusBar, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../types';
 import { saveHasSeenOnboarding } from '../storage';
-import { CameraIcon, SpeakerIcon, PencilIcon, PlusIcon, DumbbellIcon, DownloadIcon } from '../components/WorkoutIcons';
+import { Display, Label, Body } from '../components/PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
 type Slide = {
   title: string;
   body: string;
-  icon: React.ReactNode;
   // Display-only info cards shown under the body text. Not tappable.
   options?: { title: string; description: string }[];
 };
@@ -19,22 +20,18 @@ const SLIDES: Slide[] = [
   {
     title: 'Welcome to Flex',
     body: 'Your workout companion.',
-    icon: <DumbbellIcon color="#CCFF00" size={36} />,
   },
   {
-    title: 'Import Any Workout',
+    title: 'Import any workout',
     body: 'Snap a photo of a workout plan or card, or paste the exercises as text. Flex turns it into a timed routine you can start right away.',
-    icon: <CameraIcon color="#CCFF00" size={36} />,
   },
   {
-    title: 'Build Your Own',
+    title: 'Build your own',
     body: 'Create a workout from scratch. Add exercises, set work and rest times, or use reps instead of a timer. Reorder and edit anytime.',
-    icon: <PlusIcon color="#CCFF00" size={36} />,
   },
   {
-    title: 'Choose Your Countdown',
+    title: 'Choose your countdown',
     body: 'Pick how Flex guides you. You can switch any time from Settings or the speaker icon during a workout.',
-    icon: <SpeakerIcon color="#CCFF00" size={36} />,
     options: [
       { title: 'Spoken', description: 'Counts down out loud and announces your next exercise.' },
       { title: 'Beep', description: 'A short beep for the countdown and phase changes.' },
@@ -42,19 +39,18 @@ const SLIDES: Slide[] = [
     ],
   },
   {
-    title: 'Adjust On The Fly',
+    title: 'Adjust on the fly',
     body: 'Edit any exercise, and drag its handle to reorder. During a rest, nudge the timer up or down by 5 seconds.',
-    icon: <PencilIcon color="#6B9EFA" size={36} />,
   },
   {
-    title: 'Free, With Ads',
+    title: 'Free, with ads',
     body: 'Flex is free to use and supported by ads. Free users get 10 imports each month. Building your own workouts and running sessions is always unlimited.',
-    icon: <DownloadIcon color="#CCFF00" size={36} />,
   },
 ];
 
 export function OnboardingScreen({ navigation }: Props) {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
   const isLast = index === SLIDES.length - 1;
@@ -75,14 +71,19 @@ export function OnboardingScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
       <View style={styles.statusBarSpacer} />
 
       <View style={styles.topBar}>
         {!isLast ? (
-          <TouchableOpacity onPress={finish} hitSlop={12} accessibilityLabel="Skip introduction">
-            <Text style={styles.skipLabel}>Skip</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
+            onPress={finish}
+            accessibilityRole="button"
+            accessibilityLabel="Skip introduction"
+          >
+            <Label style={styles.skipLabel}>Skip</Label>
+          </Pressable>
         ) : null}
       </View>
 
@@ -95,45 +96,46 @@ export function OnboardingScreen({ navigation }: Props) {
         onMomentumScrollEnd={e => handleMomentumEnd(e.nativeEvent.contentOffset.x)}
         style={styles.pager}
       >
-        {SLIDES.map(slide => (
+        {SLIDES.map((slide, slideIndex) => (
           <ScrollView
             key={slide.title}
             style={{ width }}
             contentContainerStyle={styles.slide}
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.card}>
-              <View style={styles.iconCircle}>{slide.icon}</View>
-              <Text style={styles.title}>{slide.title}</Text>
-              <Text style={styles.body}>{slide.body}</Text>
-              {slide.options && (
-                <View style={styles.options}>
-                  {slide.options.map(option => (
-                    <View key={option.title} style={styles.optionCard}>
-                      <Text style={styles.optionTitle}>{option.title}</Text>
-                      <Text style={styles.optionDescription}>{option.description}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
+            <Label style={styles.slideNumber}>
+              {String(slideIndex + 1).padStart(2, '0')} / {String(SLIDES.length).padStart(2, '0')}
+            </Label>
+            <Display style={styles.title} numberOfLines={3} adjustsFontSizeToFit>{slide.title}</Display>
+            <Body style={styles.body}>{slide.body}</Body>
+            {slide.options && (
+              <View style={styles.options}>
+                {slide.options.map(option => (
+                  <View key={option.title} style={styles.optionCard}>
+                    <Label style={styles.optionTitle}>{option.title}</Label>
+                    <Body style={styles.optionDescription}>{option.description}</Body>
+                  </View>
+                ))}
+              </View>
+            )}
           </ScrollView>
         ))}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: space.block + insets.bottom }]}>
         <View style={styles.dots}>
           {SLIDES.map((slide, i) => (
             <View key={slide.title} style={[styles.dot, i === index && styles.dotActive]} />
           ))}
         </View>
-        <TouchableOpacity
-          style={styles.primaryButton}
+        <Pressable
+          style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
           onPress={isLast ? finish : () => goToSlide(index + 1)}
+          accessibilityRole="button"
           accessibilityLabel={isLast ? 'Get started' : 'Next'}
         >
-          <Text style={styles.primaryLabel}>{isLast ? 'Get Started' : 'Next'}</Text>
-        </TouchableOpacity>
+          <Display style={styles.ctaLabel}>{isLast ? 'Get started' : 'Next'}</Display>
+        </Pressable>
       </View>
     </View>
   );
@@ -142,130 +144,111 @@ export function OnboardingScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B0B',
+    backgroundColor: colors.paper,
   },
   statusBarSpacer: {
-    height: 44,
+    height: band.statusBar,
   },
   topBar: {
-    height: 44,
-    paddingHorizontal: 20,
+    height: band.control,
+    paddingHorizontal: space.gutter,
     alignItems: 'flex-end',
     justifyContent: 'center',
   },
+  skip: {
+    minHeight: band.control,
+    paddingHorizontal: space.row,
+    justifyContent: 'center',
+  },
+  pressed: {
+    backgroundColor: colors.rowPress,
+  },
   skipLabel: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
+    fontSize: label.small,
+    color: colors.inkMuted,
+    letterSpacing: tracking.wide,
   },
   pager: {
     flex: 1,
   },
   slide: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 8,
+    paddingHorizontal: space.gutter,
+    paddingVertical: space.block,
     justifyContent: 'center',
   },
-  card: {
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 16,
-    backgroundColor: '#121214',
-    paddingHorizontal: 24,
-    paddingTop: 36,
-    paddingBottom: 32,
-    alignItems: 'center',
-    gap: 16,
-  },
-  iconCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#09090A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
+  slideNumber: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
+    marginBottom: space.row,
   },
   title: {
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 31,
-    textAlign: 'center',
+    fontSize: 64,
+    lineHeight: Math.round(64 * leading.display),
+    letterSpacing: tracking.display,
   },
   body: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '400',
-    lineHeight: 23,
-    textAlign: 'center',
+    marginTop: space.block,
+    fontSize: label.cue,
+    lineHeight: label.cue * 1.5,
+    color: colors.inkMuted,
   },
   options: {
-    alignSelf: 'stretch',
-    gap: 8,
-    marginTop: 4,
+    marginTop: space.block,
+    gap: space.tight,
   },
   optionCard: {
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    padding: 16,
-    gap: 4,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    padding: space.row,
+    gap: space.hair,
   },
   optionTitle: {
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: label.base,
   },
   optionDescription: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: label.micro,
+    lineHeight: label.micro * 1.5,
+    color: colors.inkMuted,
   },
   footer: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    paddingTop: 16,
-    gap: 24,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.block,
+    gap: space.block,
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
   },
   dots: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    gap: space.tight,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#1F1F24',
+    width: 10,
+    height: 10,
+    backgroundColor: colors.paper,
+    borderWidth: rule.thin,
+    borderColor: colors.ink,
   },
   dotActive: {
-    width: 24,
-    backgroundColor: '#CCFF00',
+    width: 28,
+    backgroundColor: colors.accent,
+    borderColor: colors.ink,
   },
-  primaryButton: {
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#CCFF00',
+  cta: {
+    height: band.cta,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryLabel: {
-    color: '#09090A',
-    fontFamily: 'Geist',
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 21,
+  ctaPressed: {
+    backgroundColor: colors.inkPress,
+  },
+  ctaLabel: {
+    color: colors.onInk,
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
+    letterSpacing: 0.6,
   },
 });
