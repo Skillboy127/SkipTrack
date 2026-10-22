@@ -107,6 +107,30 @@ def render(size, mark=INK, accent=ACCENT, background=None, corner_ratio=None, in
 if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     assets = os.path.join(root, "assets")
-    render(192).save(os.path.join(assets, "flex-mark.png"))
-    render(192, mark=PAPER).save(os.path.join(assets, "flex-mark-paper.png"))
-    print("wrote flex-mark.png, flex-mark-paper.png")
+
+    def out(name):
+        return os.path.join(assets, name)
+
+    # In-app marks (used in the Library header)
+    render(192).save(out("flex-mark.png"))
+    render(192, mark=PAPER).save(out("flex-mark-paper.png"))
+
+    # The mark on its own at full size, alongside assets/flex-2b.svg
+    render(1024).save(out("flex-2b-1024.png"))
+
+    # App icon: opaque ink tile, paper mark. iOS rejects alpha in the icon, so
+    # this one is drawn on a filled square.
+    render(1024, mark=PAPER, background=INK, inset=0.30).save(out("icon.png"))
+
+    # Android adaptive icon. The foreground must keep its art inside the middle
+    # ~66% because the launcher masks and may animate the outer area.
+    render(1024, mark=PAPER, inset=0.42).save(out("android-icon-foreground.png"))
+    # Themed (monochrome) icons are tinted by the system, so the pivot dot is
+    # drawn in the same colour as the mark rather than the accent.
+    render(1024, mark=PAPER, accent=PAPER, inset=0.42).save(out("android-icon-monochrome.png"))
+
+    # Splash: ink mark, shown on a paper background set in app.json.
+    render(1024, inset=0.30).save(out("splash-icon.png"))
+
+    print("wrote flex-mark.png, flex-mark-paper.png, flex-2b-1024.png, icon.png, "
+          "android-icon-foreground.png, android-icon-monochrome.png, splash-icon.png")
