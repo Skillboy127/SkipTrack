@@ -18,8 +18,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 // real purchase can succeed.
 const REMOVE_ADS_SKU = 'remove_ads';
 
-// TODO: swap for the real policy URL once one is published.
-const PRIVACY_POLICY_URL = 'https://example.com/flex-privacy';
+const PRIVACY_POLICY_URL = 'https://skillboy127.github.io/flex/privacy/';
+const CONTACT_EMAIL = 'harshtalnikar@gmail.com';
 
 const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string }[] = [
   {
@@ -155,6 +155,12 @@ export function SettingsScreen({ navigation }: Props) {
     saveWeightUnit(unit);
   };
 
+  const openContactEmail = () => {
+    Linking.openURL(`mailto:${CONTACT_EMAIL}`).catch(() => {
+      Alert.alert('Could not open email', `You can reach us at ${CONTACT_EMAIL}.`);
+    });
+  };
+
   const openPrivacyPolicy = () => {
     Linking.openURL(PRIVACY_POLICY_URL).catch(() => {
       Alert.alert('Could not open link', 'The privacy policy could not be opened right now.');
@@ -283,6 +289,15 @@ export function SettingsScreen({ navigation }: Props) {
             >
               <Label style={styles.linkLabel}>Privacy policy</Label>
               <ChevronIcon color={colors.ink} size={12} direction="right" />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.linkRow, styles.optionRowBorder, pressed && styles.pressed]}
+              onPress={openContactEmail}
+              accessibilityRole="link"
+              accessibilityLabel={`Email ${CONTACT_EMAIL}`}
+            >
+              <Label style={styles.linkLabel}>Contact</Label>
+              <Label style={styles.versionValue}>{CONTACT_EMAIL}</Label>
             </Pressable>
             <View style={[styles.linkRow, styles.optionRowBorder]}>
               <Label style={styles.linkLabel}>Version</Label>
