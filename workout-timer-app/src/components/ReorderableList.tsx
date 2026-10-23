@@ -430,6 +430,18 @@ export function ReorderableList<T>({ data, keyExtractor, renderItem, onReorder, 
     }),
   );
 
+  // The same function for the same row every render (it only touches refs and
+  // stable setters), so a memoised row isn't re-rendered just because the list was.
+  const dragPropsByKey = useRef(new Map<string, ReorderItemInfo<T>['dragProps']>());
+  const dragPropsFor = (key: string) => {
+    let fn = dragPropsByKey.current.get(key);
+    if (!fn) {
+      fn = (delayMs?: number) => dragProps(key, delayMs);
+      dragPropsByKey.current.set(key, fn);
+    }
+    return fn;
+  };
+
   return (
     <View style={style} {...pan.panHandlers}>
       {data.map((item, index) => {
@@ -445,7 +457,7 @@ export function ReorderableList<T>({ data, keyExtractor, renderItem, onReorder, 
             register={register}
             setHeight={setHeight}
           >
-            {renderItem({ item, index, active, dragProps: delayMs => dragProps(key, delayMs) })}
+            {renderItem({ item, index, active, dragProps: dragPropsFor(key) })}
           </ReorderItem>
         );
       })}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, StatusBar, PanResponder, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { noteTransition, onEditorSaved } from '../ads/interstitialManager';
@@ -31,23 +31,41 @@ type ExerciseRowProps = {
   onUpdate: (id: string, field: keyof Exercise, value: string | number | null) => void;
   onDelete: (id: string) => void;
   dragProps: ReorderItemInfo<Exercise>['dragProps'];
-  nameInputRef: (input: TextInput | null) => void;
+  registerNameInput: (id: string, input: TextInput | null) => void;
 };
 
-function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, nameInputRef }: ExerciseRowProps) {
-  const swipeX = useRef(new Animated.Value(0)).current;
-  const rowResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > Math.abs(gesture.dy) && Math.abs(gesture.dx) > 8,
-    onPanResponderMove: (_, gesture) => swipeX.setValue(Math.min(0, gesture.dx)),
-    onPanResponderRelease: (_, gesture) => {
-      if (gesture.dx < -90) {
-        onDelete(exercise.id);
-        return;
-      }
-      Animated.spring(swipeX, { toValue: 0, useNativeDriver: true }).start();
-    },
-    onPanResponderTerminate: () => Animated.spring(swipeX, { toValue: 0, useNativeDriver: true }).start(),
-  })).current;
+// Memoised, so scrolling or editing one row doesn't rebuild all the others.
+const ExerciseRow = memo(function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, registerNameInput }: ExerciseRowProps) {
+  // Created once per row (not on every render).
+  const [swipeX] = useState(() => new Animated.Value(0));
+  // The red delete background only exists while the row is being swiped.
+  const [swiping, setSwiping] = useState(false);
+  const exerciseIdRef = useRef(exercise.id);
+  const onDeleteRef = useRef(onDelete);
+  useEffect(() => {
+    exerciseIdRef.current = exercise.id;
+    onDeleteRef.current = onDelete;
+  });
+  const [rowResponder] = useState(() => {
+    const springBack = () =>
+      Animated.spring(swipeX, { toValue: 0, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) setSwiping(false);
+      });
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > Math.abs(gesture.dy) && Math.abs(gesture.dx) > 8,
+      onPanResponderGrant: () => setSwiping(true),
+      onPanResponderMove: (_, gesture) => swipeX.setValue(Math.min(0, gesture.dx)),
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx < -90) {
+          onDeleteRef.current(exerciseIdRef.current);
+          return;
+        }
+        springBack();
+      },
+      onPanResponderTerminate: springBack,
+    });
+  });
+  const setNameInput = useCallback((input: TextInput | null) => registerNameInput(exercise.id, input), [registerNameInput, exercise.id]);
   const repBased = isRepBased(exercise);
 
   const step = (field: 'workSeconds' | 'restSeconds' | 'sets' | 'reps', amount: number) => {
@@ -68,9 +86,11 @@ function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, nameInput
 
   return (
     <View style={styles.exerciseRowWrapper}>
-      <View style={styles.deleteBackdrop}>
-        <TrashIcon color={colors.onInk} size={20} />
-      </View>
+      {swiping && (
+        <View style={styles.deleteBackdrop}>
+          <TrashIcon color={colors.onInk} size={20} />
+        </View>
+      )}
       <Animated.View style={[styles.exerciseRow, { transform: [{ translateX: swipeX }] }]} {...rowResponder.panHandlers}>
       <View style={styles.exerciseLeft}>
         {/* Press and hold here to lift the row, then drag it up or down. */}
@@ -79,7 +99,7 @@ function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, nameInput
           <Text style={styles.exerciseIndex}>{index + 1}</Text>
         </View>
         <TextInput
-          ref={nameInputRef}
+          ref={setNameInput}
           style={styles.exerciseName}
           value={exercise.name}
           onChangeText={text => onUpdate(exercise.id, 'name', text)}
@@ -87,6 +107,9 @@ function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, nameInput
           placeholderTextColor={colors.placeholder}
           selectionColor={colors.accentDeep}
           multiline
+          // Wraps long names but never scrolls its own text: on Android a scrolling
+          // multi-line field inside a list fights the list for vertical drags.
+          scrollEnabled={false}
         />
       </View>
       <View style={styles.metricsInputs}>
@@ -176,7 +199,7 @@ function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, nameInput
       </Animated.View>
     </View>
   );
-}
+});
 
 export function WorkoutEditorScreen({ route, navigation }: Props) {
   const { workoutId, draftWorkout } = route.params;
@@ -199,7 +222,15 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
   // change rather than a single combined confirmation for both.
   const [bulkConfirmField, setBulkConfirmField] = useState<'work' | 'rest' | null>(null);
   const nameInputs = useRef<Record<string, TextInput | null>>({});
+  const registerNameInput = useCallback((id: string, input: TextInput | null) => {
+    nameInputs.current[id] = input;
+  }, []);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The latest list, for callbacks that must stay the same function between renders.
+  const exercisesRef = useRef(exercises);
+  useEffect(() => {
+    exercisesRef.current = exercises;
+  });
   const createdAtRef = useRef<number | null>(null);
   // Snapshot of the workout as it was loaded, compared against the live state to
   // decide whether leaving should prompt about discarding unsaved edits.
@@ -291,25 +322,26 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
     setTimeout(() => nameInputs.current[newExercise.id]?.focus(), 80);
   };
 
-  const handleUpdateExercise = (id: string, field: keyof Exercise, value: string | number | null) => {
+  const handleUpdateExercise = useCallback((id: string, field: keyof Exercise, value: string | number | null) => {
     setExercises(currentExercises => currentExercises.map(ex => {
       if (ex.id === id) {
         return { ...ex, [field]: value };
       }
       return ex;
     }));
-  };
+  }, []);
 
-  const handleRemoveExercise = (id: string) => {
-    const index = exercises.findIndex(exercise => exercise.id === id);
-    const exercise = exercises[index];
+  const handleRemoveExercise = useCallback((id: string) => {
+    const current = exercisesRef.current;
+    const index = current.findIndex(exercise => exercise.id === id);
+    const exercise = current[index];
     if (!exercise) return;
 
-    setExercises(current => current.filter(item => item.id !== id));
+    setExercises(list => list.filter(item => item.id !== id));
     setRemovedExercise({ exercise, index });
     if (undoTimer.current) clearTimeout(undoTimer.current);
     undoTimer.current = setTimeout(() => setRemovedExercise(null), 4000);
-  };
+  }, []);
 
   const handleReorder = (from: number, to: number) => {
     setExercises(current => {
@@ -550,7 +582,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
               onUpdate={handleUpdateExercise}
               onDelete={handleRemoveExercise}
               dragProps={dragProps}
-              nameInputRef={input => { nameInputs.current[item.id] = input; }}
+              registerNameInput={registerNameInput}
             />
           )}
         />
