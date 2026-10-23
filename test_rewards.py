@@ -11,6 +11,7 @@ import base64
 import contextlib
 import io
 import os
+import re
 import sys
 import time
 import uuid
@@ -286,11 +287,21 @@ threads = [threading.Thread(target=fire) for _ in range(5)]
 check("5 concurrent identical callbacks -> exactly one grant", usage(d7)["bonus"] == 2)
 
 # --- rejection logging: one line, a fixed reason, the key_id, and nothing else
-def reject_line(query, reason, key_id):
+DEBUG_FIELDS = (
+    r" content_len=\d+ sig_b64_len=\d+ sig_len=-?\d+ sig_der_prefix=(true|false)"
+    r" raw_has_percent=(true|false) content_non_ascii=(true|false)"
+)
+
+
+def reject_line(query, reason, key_id, debug=False):
     response, logged = callback_logged(query)
     lines = [ln for ln in logged.splitlines() if ln.strip()]
     expected = f"[reward-callback] rejected reason={reason} key_id={key_id}"
-    return response.status_code == 400 and lines == [expected], logged
+    if debug:
+        matches = len(lines) == 1 and re.fullmatch(re.escape(expected) + DEBUG_FIELDS, lines[0]) is not None
+    else:
+        matches = lines == [expected]
+    return response.status_code == 400 and matches, logged
 
 
 dl = new_device()
@@ -300,8 +311,8 @@ secret_tx = "tx-" + uuid.uuid4().hex
 secret_user = "user-" + uuid.uuid4().hex
 base_q = signed_query(secret_token, secret_tx, extra={"user_id": secret_user})
 
-ok, logged = reject_line(signed_query(secret_token, secret_tx, key=other_key), "bad_signature", KEY_ID)
-check("bad signature -> one log line: reason=bad_signature + key_id", ok)
+ok, logged = reject_line(signed_query(secret_token, secret_tx, key=other_key), "bad_signature", KEY_ID, debug=True)
+check("bad signature -> one log line: reason=bad_signature + key_id + lengths-only debug fields", ok)
 ok, logged_unknown = reject_line(signed_query(secret_token, secret_tx, key_id="999"), "unknown_key_id", "999")
 check("unknown key -> one log line: reason=unknown_key_id + key_id", ok)
 ok, _ = reject_line(signed_query(secret_token, secret_tx, timestamp=int((time.time() - 3 * 3600) * 1000)), "stale_timestamp", KEY_ID)
@@ -352,6 +363,83 @@ first_fetches = fetch_calls["n"] - before
 r2 = callback(signed_query(secret_token, key_id="7777777777"))
 check("still-unknown key: rejected after exactly one refresh, and not re-fetched again straight away",
       r.status_code == 400 and r2.status_code == 400 and first_fetches == 1 and fetch_calls["n"] - before == 1)
+
+# --- Google-style callbacks: the raw query string is what is signed
+def google_signed(content: bytes, key=private_key, key_id=KEY_ID) -> bytes:
+    """Sign ``content`` byte for byte and append signature (base64url, no padding) and key_id, as AdMob does."""
+    signature = key.sign(content, ec.ECDSA(hashes.SHA256()))
+    return content + b"&signature=" + base64.urlsafe_b64encode(signature).rstrip(b"=") + b"&key_id=" + key_id.encode()
+
+
+def google_content(token, tx, reward_item="Extra%20Imports%20%26%20More%2B1%3D%E2%9C%93", path="a%2fb"):
+    ts = int(time.time() * 1000)
+    # Not alphabetical, with percent-encoded spaces, '&', '+', '=', a UTF-8 character and
+    # lower-case hex: the encoding is whatever AdMob sent, so it has to be used as it came.
+    return (
+        f"user_id=ab%20cd&reward_item={reward_item}&custom_data={token}&transaction_id={tx}"
+        f"&ad_unit=1234567890&reward_amount=2&timestamp={ts}&x={path}&ad_network=5450213213286189855"
+    ).encode()
+
+
+dg = new_device()
+exhaust(dg)
+tg = start(dg).get_json()["token"]
+txg = "g-" + uuid.uuid4().hex
+content_g = google_content(tg, txg)
+sent = google_signed(content_g)
+r = client.get("/reward/callback?" + sent.decode())
+check("percent-encoded, unusual-order query signed like Google -> 200 granted",
+      r.status_code == 200 and r.get_json()["granted"] is True and usage(dg)["bonus"] == 2)
+
+# The same request with an equivalent-but-different encoding must NOT verify: nothing is normalised.
+dg2 = new_device()
+exhaust(dg2)
+tg2 = start(dg2).get_json()["token"]
+content_g2 = google_content(tg2, "g2-" + uuid.uuid4().hex)
+sent2 = google_signed(content_g2).decode()
+check("re-encoding %2f as %2F is rejected (bytes are used as received)",
+      callback(sent2.replace("%2f", "%2F")).status_code == 400 and usage(dg2)["bonus"] == 0)
+check("turning %20 into + is rejected",
+      callback(sent2.replace("%20", "+")).status_code == 400 and usage(dg2)["bonus"] == 0)
+check("reordering two parameters is rejected",
+      callback(sent2.replace("user_id=ab%20cd&reward_item=", "reward_item=", 1).replace("&ad_unit=", "&user_id=ab%20cd&ad_unit=", 1)).status_code == 400)
+check("the untouched original still verifies afterwards", callback(sent2).status_code == 200 and usage(dg2)["bonus"] == 2)
+
+# Raw (not percent-encoded) non-ASCII bytes are verified as the bytes they are.
+raw_content = b"reward_item=caf\xe9\xff&timestamp=" + str(int(time.time() * 1000)).encode() + b"&transaction_id=raw-1"
+parsed = admob_ssv.verify_callback(google_signed(raw_content))
+check("raw non-ASCII bytes in the query verify byte for byte", parsed["transaction_id"] == "raw-1")
+
+# Padding: DER signatures are 70-72 bytes, so the unpadded base64 is sometimes short of a multiple of 4.
+short_of_padding = set()
+all_ok = True
+for i in range(60):
+    content = f"n={i}&timestamp={int(time.time() * 1000)}".encode()
+    signed = google_signed(content)
+    sig_b64 = signed.split(b"&signature=")[1].split(b"&key_id=")[0]
+    short_of_padding.add(len(sig_b64) % 4)
+    try:
+        admob_ssv.verify_callback(signed)
+        # the same signature with its '=' padding present (percent-encoded) must verify too
+        padded = sig_b64 + b"=" * (-len(sig_b64) % 4)
+        admob_ssv.verify_callback(signed.replace(sig_b64, padded.replace(b"=", b"%3D")))
+    except admob_ssv.InvalidCallback:
+        all_ok = False
+check("60 signatures verify whether or not their base64 needed padding", all_ok and bool(short_of_padding - {0}))
+
+# signature and key_id must be the last two parameters.
+check("a parameter after key_id is rejected as missing_params",
+      reject_line(sent2 + "&extra=1", "missing_params", KEY_ID)[0])
+
+# --- temporary debug fields: lengths and yes/no only
+bad_content = google_content("tok-" + uuid.uuid4().hex, "dbg-" + uuid.uuid4().hex)
+bad = google_signed(bad_content, key=other_key)
+response, logged = callback_logged(bad.decode())
+sig_len_b64 = len(bad.split(b"&signature=")[1].split(b"&key_id=")[0])
+check("signature failure logs content/signature lengths and a has-percent flag, no content",
+      f"content_len={len(bad_content)} " in logged and f"sig_b64_len={sig_len_b64} " in logged
+      and "raw_has_percent=true" in logged and "content_non_ascii=false" in logged and "sig_der_prefix=true" in logged
+      and "tok-" not in logged and "dbg-" not in logged and "Extra" not in logged)
 
 # --- privacy: check the response never echoes the token
 r = callback(signed_query("not-a-real-token-xyz"))

@@ -4,18 +4,21 @@ Follows Google's SSV documentation:
 https://developers.google.com/admob/android/ssv
 
 * The callback is a GET whose query string ends with ``signature=...&key_id=...``
-  (always last, in that order).
-* The signed content is the raw query string up to, but not including, the ``&``
-  before ``signature=``. It must not be re-ordered or re-encoded, so this module
-  works from the raw string, never from a parsed-and-rebuilt one.
-* The signature is ECDSA over SHA-256, DER encoded, base64 (URL-safe alphabet).
+  (always the last two parameters, in that order).
+* The signed content is the raw query string, exactly as received, up to but not
+  including the ``&`` before ``signature=``. It is never parsed, decoded, re-encoded
+  or reordered: this module works on the raw BYTES from the WSGI QUERY_STRING and
+  slices them by position, so what is verified is what was sent.
+* The signature is ECDSA over SHA-256, DER encoded, base64 with the URL-safe
+  alphabet and no padding (padding is restored before decoding).
 * Public keys come from Google's published verifier-keys JSON, matched on key_id.
   They rotate, so they are cached for at most 24 hours and re-fetched (rate
   limited) when an unknown key_id shows up.
 
 Nothing here logs request parameters: they contain the one-time reward token.
-Rejections carry only a short category (see InvalidCallback.reason) so callers can
-log why a callback was refused without logging anything from the request itself.
+Rejections carry only a short category (see InvalidCallback.reason), plus for a
+signature failure a few lengths and yes/no facts about the request (never its
+content), so callers can log why a callback was refused.
 """
 import base64
 import binascii
@@ -24,7 +27,7 @@ import re
 import threading
 import time
 import urllib.request
-from urllib.parse import parse_qsl, unquote
+from urllib.parse import parse_qsl, unquote_to_bytes
 
 from cryptography.exceptions import InvalidSignature as _CryptoInvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -35,9 +38,10 @@ KEY_CACHE_SECONDS = 12 * 3600      # Google asks for no more than 24h
 KEY_REFRESH_MIN_SECONDS = 60       # don't hammer Google if someone sends junk key_ids
 CALLBACK_MAX_AGE_SECONDS = 30 * 60  # the reward timestamp must be recent
 
-_SIGNATURE_TAIL = re.compile(r'^signature=([^&]+)&key_id=([^&]+)$')
-_KEY_ID_PARAM = re.compile(r'(?:^|&)key_id=([^&]*)')
-_NUMERIC_KEY_ID = re.compile(r'^\d{1,20}$')
+_SIGNATURE_MARKER = b'&signature='
+_SIGNATURE_TAIL = re.compile(rb'\Asignature=([^&]+)&key_id=([^&]+)\Z')
+_KEY_ID_PARAM = re.compile(rb'(?:\A|&)key_id=([^&]*)')
+_NUMERIC_KEY_ID = re.compile(rb'\A\d{1,20}\Z')
 
 _lock = threading.Lock()
 _keys: dict[str, str] = {}   # key_id -> PEM
@@ -54,35 +58,53 @@ class InvalidCallback(Exception):
       bad_signature    the signature is undecodable or does not match the content
       stale_timestamp  validly signed, but the reward time is too far from now
       other            anything else
+
+    ``debug`` is, for signature failures, a dict of lengths and booleans describing the
+    request (never any of its content), for temporary diagnostics.
     """
 
-    def __init__(self, reason: str = 'other'):
+    def __init__(self, reason: str = 'other', debug: dict | None = None):
         super().__init__(reason)
         self.reason = reason
+        self.debug = debug
 
 
-def loggable_key_id(query_string: str) -> str:
+def _as_bytes(query_string: bytes | str) -> bytes:
+    return query_string if isinstance(query_string, bytes) else query_string.encode('utf-8')
+
+
+def loggable_key_id(query_string: bytes | str) -> str:
     """The key_id from a raw query string, only if it looks like one (digits), for logging.
 
     Key ids are public identifiers, not secrets, but they come from the requester,
     so anything that is not a short number is reported as 'invalid' rather than echoed.
     """
-    match = _KEY_ID_PARAM.search(query_string)
+    match = _KEY_ID_PARAM.search(_as_bytes(query_string))
     if not match:
         return 'none'
-    value = unquote(match.group(1))
-    return value if _NUMERIC_KEY_ID.match(value) else 'invalid'
+    value = unquote_to_bytes(match.group(1))
+    return value.decode('ascii') if _NUMERIC_KEY_ID.match(value) else 'invalid'
 
 
 class KeysUnavailable(Exception):
     """Google's verifier keys could not be fetched (callers should answer 503 so AdMob retries)."""
 
 
+def _pem_from_entry(entry: dict) -> str:
+    """A PEM public key from one entry of Google's list (it has ``pem`` and ``base64``, the latter a DER SubjectPublicKeyInfo)."""
+    if entry.get('pem'):
+        return entry['pem']
+    der = base64.b64decode(entry['base64'])
+    body = base64.b64encode(der).decode('ascii')
+    lines = [body[i:i + 64] for i in range(0, len(body), 64)]
+    return '-----BEGIN PUBLIC KEY-----\n' + '\n'.join(lines) + '\n-----END PUBLIC KEY-----\n'
+
+
 def _fetch_keys() -> dict[str, str]:
     try:
         with urllib.request.urlopen(KEYS_URL, timeout=5) as response:  # noqa: S310 - fixed https URL
             payload = json.loads(response.read().decode('utf-8'))
-        return {str(entry['keyId']): entry['pem'] for entry in payload['keys']}
+        return {str(entry['keyId']): _pem_from_entry(entry) for entry in payload['keys']}
     except Exception as exc:  # network, JSON or schema problems all mean "can't verify right now"
         raise KeysUnavailable(type(exc).__name__) from exc
 
@@ -118,36 +140,62 @@ def _public_key_for(key_id: str):
     return key
 
 
-def _b64url_decode(value: str) -> bytes:
+def _b64url_decode(value: bytes) -> bytes:
+    """Decode base64 with the URL-safe alphabet; padding is optional (and restored here)."""
+    value = value.rstrip(b'=')
     try:
-        return base64.urlsafe_b64decode(value + '=' * (-len(value) % 4))
+        return base64.urlsafe_b64decode(value + b'=' * (-len(value) % 4))
     except (binascii.Error, ValueError) as exc:
         raise InvalidCallback('bad_signature') from exc
 
 
-def verify_callback(query_string: str, now: float | None = None) -> dict[str, str]:
+def _debug_facts(raw: bytes, signed_content: bytes, signature_b64: bytes, signature: bytes | None) -> dict:
+    """Lengths and yes/no facts only: nothing here reveals any of the request's content."""
+    return {
+        'content_len': len(signed_content),
+        'sig_b64_len': len(signature_b64),
+        'sig_len': len(signature) if signature is not None else -1,
+        # DER ECDSA signatures are a SEQUENCE (0x30); a raw r||s signature is not.
+        'sig_der_prefix': bool(signature) and signature[0] == 0x30,
+        'raw_has_percent': b'%' in raw,
+        'content_non_ascii': any(byte > 127 for byte in signed_content),
+    }
+
+
+def verify_callback(query_string: bytes | str, now: float | None = None) -> dict[str, str]:
     """Verify a raw SSV query string and return its parameters.
 
+    ``query_string`` should be the raw bytes as received (``request.query_string``).
     Raises InvalidCallback if anything is off, KeysUnavailable if Google's keys
     can't be obtained. The returned dict has no ``signature`` or ``key_id``.
     """
-    marker = query_string.find('&signature=')
+    raw = _as_bytes(query_string)
+
+    # signature and key_id are the last two parameters: slice by position, from the end.
+    marker = raw.rfind(_SIGNATURE_MARKER)
     if marker < 0:
         raise InvalidCallback('missing_params')
-    signed_content = query_string[:marker]
-    tail = _SIGNATURE_TAIL.match(query_string[marker + 1:])
+    signed_content = raw[:marker]
+    tail = _SIGNATURE_TAIL.match(raw[marker + 1:])
     if not tail:
         raise InvalidCallback('missing_params')
-    signature = _b64url_decode(unquote(tail.group(1)))
-    key_id = unquote(tail.group(2))
+    signature_b64 = unquote_to_bytes(tail.group(1))
+    key_id = unquote_to_bytes(tail.group(2)).decode('ascii', 'replace')
+
+    try:
+        signature = _b64url_decode(signature_b64)
+    except InvalidCallback as exc:
+        raise InvalidCallback('bad_signature', _debug_facts(raw, signed_content, signature_b64, None)) from exc
 
     public_key = _public_key_for(key_id)
     try:
-        public_key.verify(signature, signed_content.encode('utf-8'), ec.ECDSA(hashes.SHA256()))
+        public_key.verify(signature, signed_content, ec.ECDSA(hashes.SHA256()))
     except _CryptoInvalidSignature as exc:
-        raise InvalidCallback('bad_signature') from exc
+        raise InvalidCallback('bad_signature', _debug_facts(raw, signed_content, signature_b64, signature)) from exc
 
-    pairs = parse_qsl(signed_content, keep_blank_values=True)
+    # Only now, with the signature proven, are the parameters read (the verified
+    # bytes themselves are never altered).
+    pairs = parse_qsl(signed_content.decode('utf-8', 'replace'), keep_blank_values=True)
     params: dict[str, str] = {}
     for name, value in pairs:
         if name in params:

@@ -177,24 +177,34 @@ def reward_start_endpoint():
     })
 
 
-def reject_reward_callback(reason: str, query_string: str, error: str):
+def reject_reward_callback(reason: str, query_string: bytes, error: str, debug: dict | None = None):
     """Answer 400 and log one line saying why: a fixed category and the key_id only.
 
     Never logs the query string or anything from it (it carries the one-time token,
     transaction and user ids), so the key_id is only echoed when it is a plain number.
+
+    TEMPORARY: for a signature failure the line also carries lengths and yes/no facts
+    about the request (never its content), to work out why a real AdMob request does
+    not verify. Remove ``debug`` once that is understood.
     """
-    print(f"[reward-callback] rejected reason={reason} key_id={admob_ssv.loggable_key_id(query_string)}")
+    line = f"[reward-callback] rejected reason={reason} key_id={admob_ssv.loggable_key_id(query_string)}"
+    if debug:
+        line += ''.join(f" {name}={value if isinstance(value, int) and not isinstance(value, bool) else str(value).lower()}"
+                        for name, value in debug.items())
+    print(line)
     return jsonify({"error": error}), 400
 
 
 @app.get('/reward/callback')
 def reward_callback_endpoint():
     """AdMob server-side verification callback. Only a correctly signed request can grant anything."""
-    query_string = request.query_string.decode('utf-8', 'replace')
+    # The raw bytes exactly as received: the signature covers them, so they are never
+    # decoded, re-encoded or rebuilt from request.args.
+    query_string = request.query_string
     try:
         params = admob_ssv.verify_callback(query_string)
     except admob_ssv.InvalidCallback as exc:
-        return reject_reward_callback(exc.reason, query_string, "invalid_callback")
+        return reject_reward_callback(exc.reason, query_string, "invalid_callback", exc.debug)
     except admob_ssv.KeysUnavailable as exc:
         print(f"[reward] verifier keys unavailable: {exc}")
         return jsonify({"error": "verifier_unavailable"}), 503
