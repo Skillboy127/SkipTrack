@@ -14,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { noteTransition } from '../ads/interstitialManager';
 import { RootStackParamList, ServerUsage } from '../types';
 import {
   extractWorkoutFromImage,
@@ -62,6 +63,10 @@ export function ImportScreen({ navigation }: Props) {
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [importError, setImportError] = useState<ImportError | null>(null);
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    noteTransition('import');
+  }, []);
 
   // The import allowance lives on the server. Start from the last value we heard
   // (if any) and refresh it each time this screen opens; if that request fails we

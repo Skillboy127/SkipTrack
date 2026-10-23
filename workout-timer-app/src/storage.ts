@@ -8,6 +8,8 @@ const COUNTDOWN_SOUND_KEY = '@countdown_sound_mode_v1';
 const WEIGHT_UNIT_KEY = '@weight_unit_v1';
 const AD_FREE_KEY = '@ad_free_v1';
 const ONBOARDING_SEEN_KEY = '@onboarding_seen_v1';
+const LAST_AD_SHOWN_KEY = '@last_interstitial_at_v1';
+const FIRST_WORKOUT_DONE_KEY = '@first_workout_completed_v1';
 
 function normalizeWorkout(value: unknown): Workout | null {
   if (!value || typeof value !== 'object') return null;
@@ -217,5 +219,43 @@ export async function saveHasSeenOnboarding(): Promise<void> {
     await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
   } catch (e) {
     console.error('Failed to save onboarding status', e);
+  }
+}
+
+/** Epoch ms the last interstitial was shown, or null if none has been. */
+export async function loadLastAdShownAt(): Promise<number | null> {
+  try {
+    const value = Number(await AsyncStorage.getItem(LAST_AD_SHOWN_KEY));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch (e) {
+    console.error('Failed to load last ad time', e);
+    return null;
+  }
+}
+
+export async function saveLastAdShownAt(timestamp: number | null): Promise<void> {
+  try {
+    if (timestamp === null) await AsyncStorage.removeItem(LAST_AD_SHOWN_KEY);
+    else await AsyncStorage.setItem(LAST_AD_SHOWN_KEY, String(timestamp));
+  } catch (e) {
+    console.error('Failed to save last ad time', e);
+  }
+}
+
+/** True once the user has completed a workout (the first one never gets an ad). */
+export async function loadHasCompletedFirstWorkout(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(FIRST_WORKOUT_DONE_KEY)) === 'true';
+  } catch (e) {
+    console.error('Failed to load first-workout flag', e);
+    return true; // if unreadable, err on the side of showing no extra ad
+  }
+}
+
+export async function saveHasCompletedFirstWorkout(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(FIRST_WORKOUT_DONE_KEY, 'true');
+  } catch (e) {
+    console.error('Failed to save first-workout flag', e);
   }
 }

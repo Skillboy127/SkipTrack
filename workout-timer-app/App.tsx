@@ -28,6 +28,7 @@ import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { loadHasSeenOnboarding, loadAdFreeStatus } from './src/storage';
 import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
 import { fetchUsage } from './src/api';
+import { initInterstitials } from './src/ads/interstitialManager';
 import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -71,10 +72,12 @@ export default function App() {
     fetchUsage().catch(() => {});
   }, []);
 
-  // Required once at startup before any BannerAd can load.
+  // Required once at startup before any ad can load. The shared interstitial
+  // starts preloading as soon as the SDK is ready.
   useEffect(() => {
     mobileAds()
       .initialize()
+      .then(() => initInterstitials())
       .catch(error => console.warn('Mobile Ads SDK failed to initialize:', error));
   }, []);
 

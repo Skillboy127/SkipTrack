@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, StatusBar, PanResponder, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { noteTransition, onEditorSaved } from '../ads/interstitialManager';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList, Workout, Exercise } from '../types';
 import { loadWorkouts, saveWorkout } from '../storage';
@@ -180,6 +181,10 @@ function ExerciseRow({ exercise, index, onUpdate, onDelete, dragProps, nameInput
 export function WorkoutEditorScreen({ route, navigation }: Props) {
   const { workoutId, draftWorkout } = route.params;
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    noteTransition('editor');
+  }, []);
 
   const [name, setName] = useState('');
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -365,6 +370,7 @@ export function WorkoutEditorScreen({ route, navigation }: Props) {
     } else {
       navigation.goBack();
     }
+    onEditorSaved();
   };
 
   if (loading) {

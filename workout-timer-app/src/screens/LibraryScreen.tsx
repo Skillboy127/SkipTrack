@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image, Animated, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { onLeftLibrary, onLibraryArrived } from '../ads/interstitialManager';
 import { RootStackParamList, ServerUsage, Workout } from '../types';
 import { loadWorkouts, deleteWorkout, saveWorkout, saveWorkouts } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
@@ -51,6 +52,19 @@ export function LibraryScreen({ navigation }: Props) {
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
+
+  // Coming back to Library is a qualifying transition, and a place an ad may show.
+  // The very first time it appears (app launch) isn't a return, so it is skipped.
+  const hasBeenFocusedRef = useRef(false);
+  useEffect(() => {
+    if (!isFocused) return;
+    if (!hasBeenFocusedRef.current) {
+      hasBeenFocusedRef.current = true;
+      return;
+    }
+    onLibraryArrived();
+    return onLeftLibrary;
+  }, [isFocused]);
 
   // The hero is sized to fill the line, then collapses as the list scrolls so
   // only the wordmark row stays pinned.

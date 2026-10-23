@@ -3,14 +3,13 @@ import { View, StyleSheet, Pressable, TextInput, BackHandler, PanResponder, Stat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
-import { useInterstitialAd } from 'react-native-google-mobile-ads';
-import { INTERSTITIAL_AD_UNIT_ID } from '../adConfig';
+import { setWorkoutActive } from '../ads/interstitialManager';
 import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
-import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, loadAdFreeStatus } from '../storage';
+import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit } from '../storage';
 import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { UpNextDrawer } from '../components/UpNextDrawer';
@@ -69,26 +68,14 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     soundModeRef.current = soundMode;
   }, [soundMode]);
 
-  // Free users only, and only once that's known. Preloaded for the whole session
-  // so it's ready the moment the workout ends; nothing is shown mid-session.
-  const [adFree, setAdFree] = useState<boolean | null>(null);
+  // No interstitial ever shows during a workout: blocked from the moment this
+  // screen opens (get-ready countdown included) until the workout ends or is left.
   useEffect(() => {
-    loadAdFreeStatus().then(setAdFree);
+    setWorkoutActive(true);
+    return () => setWorkoutActive(false);
   }, []);
-  const completionAd = useInterstitialAd({
-    adUnitId: adFree === false ? INTERSTITIAL_AD_UNIT_ID : null,
-    requestOptions: { requestNonPersonalizedAdsOnly: true },
-  });
   const completionStartedRef = useRef(false);
-  const showingCompletionAdRef = useRef(false);
   const completionNavigatedRef = useRef(false);
-  useEffect(() => {
-    if (completionAd.status === 'loaded') {
-      console.log('[AdMob interstitial] loaded', INTERSTITIAL_AD_UNIT_ID);
-    } else if (completionAd.status === 'error' || completionAd.status === 'no-fill') {
-      console.log('[AdMob interstitial] failed to load', completionAd.status, completionAd.error?.code, completionAd.error?.message);
-    }
-  }, [completionAd.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCountdownTick = (secondsRemaining: number) => {
     if (soundModeRef.current === 'speech') speakCountdown(secondsRemaining);
@@ -295,24 +282,15 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     navigation.replace('Completion', { totalElapsed: engine.totalElapsed, workout, repLogs });
   };
 
-  // Finish: show the preloaded ad if it's ready, then move to the stats once it's
-  // dismissed. If there's no ad or it can't show, go straight to the stats.
+  // Finish: the workout is over, so ads are allowed again. Whether one shows is
+  // decided on the completion screen, which shares the app-wide ad rules.
   useEffect(() => {
     if (engine.timerState !== 'completed' || completionStartedRef.current) return;
     completionStartedRef.current = true;
+    setWorkoutActive(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    if (completionAd.status === 'loaded') {
-      showingCompletionAdRef.current = true;
-      completionAd.show();
-    } else {
-      goToCompletion();
-    }
+    goToCompletion();
   }, [engine.timerState]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!showingCompletionAdRef.current) return;
-    if (completionAd.status === 'closed' || completionAd.status === 'error') goToCompletion();
-  }, [completionAd.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!engine.currentPhase) {
     return (

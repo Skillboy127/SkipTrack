@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, ScrollView, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { onWorkoutCompleted } from '../ads/interstitialManager';
 import { RootStackParamList, WeightUnit } from '../types';
 import { addHistoryEntry, loadWeightUnit } from '../storage';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
@@ -26,6 +27,12 @@ export function CompletionScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     loadWeightUnit().then(setWeightUnit);
+  }, []);
+
+  // Offer the shared interstitial logic one chance per visit; it decides whether
+  // an ad actually shows (never for a user's very first workout).
+  useEffect(() => {
+    void onWorkoutCompleted();
   }, []);
 
   // Record this session to history exactly once, regardless of re-renders.

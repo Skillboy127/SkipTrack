@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronIcon, PlayIcon } from '../components/WorkoutIcons';
+import { noteTransition } from '../ads/interstitialManager';
 import { RootStackParamList, Workout } from '../types';
 import { loadCountdownSoundMode, loadWorkouts } from '../storage';
 import { primeSpeechEngine } from '../useSpeech';
@@ -17,6 +18,10 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
   const [workout, setWorkout] = useState<Workout>(route.params.workout);
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    noteTransition('preview');
+  }, []);
 
   // Re-read the saved copy whenever this screen regains focus, so changes made
   // in the editor show up here and are what Start actually runs.
