@@ -1,7 +1,15 @@
 import Constants from 'expo-constants';
 import { Workout, Exercise, ServerUsage } from './types';
 import { getDeviceId } from './deviceId';
-import { getUsageSnapshot, isUsageFresh, markChecking, markFailed, rememberUsage } from './usageStore';
+import {
+  getUsageSnapshot,
+  isUsageFresh,
+  markChecking,
+  markFailed,
+  markRewardConfirmed,
+  rememberUsage,
+  setRewardPending,
+} from './usageStore';
 
 // Get API URL from env, or dynamically from Expo's hostUri, with fallback
 const getHostUrl = () => {
@@ -191,6 +199,33 @@ export async function startReward(): Promise<string> {
   if (response.status === 409) throw new RewardStartError('not_needed');
   if (!response.ok || typeof payload?.token !== 'string' || !payload.token) throw new RewardStartError('unavailable');
   return payload.token;
+}
+
+// How long, and how often, to ask whether the server has added a watched video's
+// imports. AdMob's callback usually lands within seconds but can take minutes.
+const REWARD_WATCH_MS = 180_000;
+const REWARD_WATCH_INTERVAL_MS = 2500;
+let rewardWatch: Promise<ServerUsage | null> | null = null;
+
+/**
+ * Starts waiting for the server to confirm a watched video (once; callers share it).
+ * While it waits the store says a reward is pending, and when the server's allowance
+ * rises it records the confirmation, so any screen can show it however long it took.
+ * Resolves with the new usage, or null if nothing arrived in time.
+ */
+export function confirmReward(remainingBefore: number): Promise<ServerUsage | null> {
+  if (rewardWatch) return rewardWatch;
+  setRewardPending(true);
+  rewardWatch = waitForAllowanceIncrease(remainingBefore, REWARD_WATCH_MS, REWARD_WATCH_INTERVAL_MS)
+    .then(usage => {
+      if (usage) markRewardConfirmed(usage.remaining - remainingBefore);
+      else setRewardPending(false);
+      return usage;
+    })
+    .finally(() => {
+      rewardWatch = null;
+    });
+  return rewardWatch;
 }
 
 /**

@@ -24,9 +24,20 @@ export type UsageSnapshot = {
   status: UsageStatus;
   /** When the current check began, so a screen can time it out. */
   checkStartedAt: number | null;
+  /** A rewarded video was watched and the server hasn't confirmed it yet. */
+  rewardPending: boolean;
+  /** The latest reward the server confirmed (screens show it once per `at`). */
+  rewardConfirmed: { at: number; added: number } | null;
 };
 
-let snapshot: UsageSnapshot = { usage: null, fetchedAt: null, status: 'idle', checkStartedAt: null };
+let snapshot: UsageSnapshot = {
+  usage: null,
+  fetchedAt: null,
+  status: 'idle',
+  checkStartedAt: null,
+  rewardPending: false,
+  rewardConfirmed: null,
+};
 const listeners = new Set<() => void>();
 
 function update(next: UsageSnapshot) {
@@ -64,8 +75,18 @@ export function markFailed() {
 /** Record an answer from the server (a /usage response, or the usage attached to an import). */
 export function rememberUsage(usage: ServerUsage) {
   const fetchedAt = Date.now();
-  update({ usage, fetchedAt, status: 'fresh', checkStartedAt: null });
+  update({ ...snapshot, usage, fetchedAt, status: 'fresh', checkStartedAt: null });
   persist(usage, fetchedAt);
+}
+
+/** A watched video is waiting for the server's confirmation (true), or no longer is (false). */
+export function setRewardPending(pending: boolean) {
+  update({ ...snapshot, rewardPending: pending });
+}
+
+/** The server confirmed a reward: `added` imports were granted. */
+export function markRewardConfirmed(added: number) {
+  update({ ...snapshot, rewardPending: false, rewardConfirmed: { at: Date.now(), added } });
 }
 
 /** Adjust the current value without claiming a new server answer (e.g. rewards just ran out). */

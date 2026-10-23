@@ -11,11 +11,12 @@ export const CHECK_TIMEOUT_MS = 10_000;
  *   status    'fresh' | 'checking' | 'failed' | 'idle'; anything but 'fresh' means
  *             `usage` is the cached value and may be out of date
  *   timedOut  a check has been running for CHECK_TIMEOUT_MS
- *   settled   safe to act on: the answer is in, the check failed, or it timed out.
- *             Not settled means the server hasn't been heard from yet.
+ *   settled   safe to act on: the answer is in, the check failed, or it timed out,
+ *             and no watched video is waiting to be confirmed.
+ *   rewardPending  a watched video is waiting for the server to add its imports
  */
 export function useUsage() {
-  const { usage, status, checkStartedAt } = useSyncExternalStore(subscribeUsage, getUsageSnapshot);
+  const { usage, status, checkStartedAt, rewardPending } = useSyncExternalStore(subscribeUsage, getUsageSnapshot);
 
   // Which check (by its start time) has run out of patience.
   const [timedOutCheck, setTimedOutCheck] = useState<number | null>(null);
@@ -27,6 +28,8 @@ export function useUsage() {
   }, [status, checkStartedAt]);
 
   const timedOut = status === 'checking' && timedOutCheck === checkStartedAt;
-  const settled = status === 'fresh' || status === 'failed' || timedOut;
-  return { usage, status, timedOut, settled };
+  // While a watched video is still being confirmed the count is about to change, so
+  // it isn't settled either.
+  const settled = (status === 'fresh' || status === 'failed' || timedOut) && !rewardPending;
+  return { usage, status, timedOut, settled, rewardPending };
 }

@@ -23,11 +23,11 @@ import {
   ImportLimitError,
   refreshUsage,
   RewardStartError,
+  confirmReward,
   startReward,
-  waitForAllowanceIncrease,
 } from '../api';
 import { REWARDED_ADS_CONFIGURED, showRewardedAd } from '../rewardedAd';
-import { patchUsage } from '../usageStore';
+import { getUsageSnapshot, patchUsage, subscribeUsage } from '../usageStore';
 import { useUsage } from '../useUsage';
 import { CloseIcon, CameraIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -59,6 +59,10 @@ const TABS: { key: Tab; title: string }[] = [
 
 type ImportError = { tab: Tab; message: string };
 
+// How long the "adding your imports" dialog stays open before the user is let go on
+// while the confirmation keeps being awaited in the background.
+const REWARD_FOREGROUND_WAIT_MS = 30_000;
+
 export function ImportScreen({ navigation }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('image');
   const [loading, setLoading] = useState(false);
@@ -75,9 +79,9 @@ export function ImportScreen({ navigation }: Props) {
   // keep the last known value, or show no counter at all if there isn't one.
   // The cached allowance shows straight away; `usageStatus` says whether the server
   // has confirmed it yet. Until it has (or 10 seconds pass), Import stays disabled.
-  const { usage, status: usageStatus, settled: usageSettled } = useUsage();
+  const { usage, status: usageStatus, settled: usageSettled, rewardPending } = useUsage();
   const [limitModalVisible, setLimitModalVisible] = useState(false);
-  const [rewardPhase, setRewardPhase] = useState<'idle' | 'preparing' | 'confirming'>('idle');
+  const [rewardPhase, setRewardPhase] = useState<'idle' | 'preparing' | 'confirming' | 'slow'>('idle');
   const [rewardNotice, setRewardNotice] = useState<{ title: string; message: string } | null>(null);
   const isFocused = useIsFocused();
 
@@ -90,14 +94,14 @@ export function ImportScreen({ navigation }: Props) {
     if (!isFocused) return;
     refreshUsage().then(fresh => {
       if (!isMountedRef.current) return;
-      if (fresh && fresh.remaining <= 0) setLimitModalVisible(true);
+      if (fresh && fresh.remaining <= 0 && !getUsageSnapshot().rewardPending) setLimitModalVisible(true);
     });
   }, [isFocused]);
 
   /** Returns true if the import can proceed; otherwise shows the limit-reached modal. */
   const checkImportAllowed = (): boolean => {
     // Only a confirmed answer blocks here; otherwise the server decides.
-    if (usageStatus === 'fresh' && usage !== null && usage.remaining <= 0) {
+    if (!rewardPending && usageStatus === 'fresh' && usage !== null && usage.remaining <= 0) {
       setLimitModalVisible(true);
       return false;
     }
@@ -258,31 +262,53 @@ export function ImportScreen({ navigation }: Props) {
       return;
     }
 
+    // Earned. The "limit reached" prompt is out of date from here on, whatever happens next.
+    setLimitModalVisible(false);
     setRewardPhase('confirming');
-    const fresh = await waitForAllowanceIncrease(remainingBefore);
+    const watch = confirmReward(remainingBefore);
+    // Success is announced by the store subscription below, whenever the server confirms.
+    watch.then(confirmed => {
+      if (confirmed || !isMountedRef.current) return;
+      setRewardPhase('idle');
+      setRewardNotice({
+        title: "Couldn't confirm your video",
+        message: "The server didn't confirm it in time. If your imports don't show up, try the video again.",
+      });
+    });
+    // Wait a little with the dialog open; after that let the user carry on while the
+    // confirmation keeps being awaited in the background.
+    await Promise.race([watch, new Promise(resolve => setTimeout(resolve, REWARD_FOREGROUND_WAIT_MS))]);
     if (!isMountedRef.current) return;
-    setRewardPhase('idle');
-    if (fresh) {
-      setLimitModalVisible(false);
-      setRewardNotice({
-        title: `+${fresh.remaining - remainingBefore} imports added`,
-        message: `You have ${fresh.remaining} ${fresh.remaining === 1 ? 'import' : 'imports'} left.`,
-      });
-    } else {
-      setRewardNotice({
-        title: 'Still confirming',
-        message: 'Your video is still being confirmed. This can take a minute. Check back shortly, then try again.',
-      });
-    }
+    if (getUsageSnapshot().rewardPending) setRewardPhase(phase => (phase === 'confirming' ? 'slow' : phase));
   };
+
+  // The server confirms a reward whenever AdMob's callback lands (seconds, or minutes).
+  // This shows it once, at that moment, wherever the user is on this screen.
+  const lastConfirmedRef = useRef(getUsageSnapshot().rewardConfirmed?.at ?? null);
+  useEffect(
+    () =>
+      subscribeUsage(() => {
+        const { rewardConfirmed, usage: latest } = getUsageSnapshot();
+        if (!rewardConfirmed || rewardConfirmed.at === lastConfirmedRef.current) return;
+        lastConfirmedRef.current = rewardConfirmed.at;
+        const left = latest?.remaining ?? rewardConfirmed.added;
+        setRewardPhase('idle');
+        setLimitModalVisible(false);
+        setRewardNotice({
+          title: `+${rewardConfirmed.added} imports added`,
+          message: `You have ${left} ${left === 1 ? 'import' : 'imports'} left.`,
+        });
+      }),
+    [],
+  );
 
   const dismissRewardNotice = () => {
     setRewardNotice(null);
-    // A slow confirmation may have landed by now; refresh so the counter is right.
+    // Refresh so the counter is right; only an unconfirmed, empty allowance brings the limit prompt back.
     fetchUsage()
       .then(fresh => {
         if (!isMountedRef.current) return;
-        if (fresh.remaining <= 0) setLimitModalVisible(true);
+        if (fresh.remaining <= 0 && !getUsageSnapshot().rewardPending) setLimitModalVisible(true);
       })
       .catch(() => {});
   };
@@ -300,7 +326,7 @@ export function ImportScreen({ navigation }: Props) {
 
   // ─── Derived ────────────────────────────────────────────────────────────────
 
-  const limitReached = usageStatus === 'fresh' && usage !== null && usage.remaining <= 0;
+  const limitReached = !rewardPending && usageStatus === 'fresh' && usage !== null && usage.remaining <= 0;
   const resetDate = usage?.resets_at
     ? new Date(usage.resets_at.replace(/(\.\d{3})\d+/, '$1')).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
@@ -312,15 +338,24 @@ export function ImportScreen({ navigation }: Props) {
   const canWatchVideo = REWARDED_ADS_CONFIGURED && (usage?.rewards_remaining ?? 0) > 0;
   const closeLimitDialog = () => setLimitModalVisible(false);
 
+  const closeSlowDialog = () => setRewardPhase('idle');
+
   // One dialog slot, whichever message is current: working, result, or the limit prompt.
   const dialog: Omit<React.ComponentProps<typeof ConfirmDialog>, 'visible'> =
-    rewardPhase !== 'idle'
+    rewardPhase === 'slow'
+      ? {
+          title: 'Almost there',
+          message: "Your video is still being confirmed. You can close this: your imports are added automatically as soon as it's done.",
+          onRequestClose: closeSlowDialog,
+          actions: [{ label: 'Close', variant: 'primary', onPress: closeSlowDialog }],
+        }
+      : rewardPhase !== 'idle'
       ? {
           title: rewardPhase === 'preparing' ? 'Getting your video ready' : 'Adding your imports',
           message:
             rewardPhase === 'preparing'
               ? 'Hang tight, this only takes a moment.'
-              : 'Confirming your video with the server...',
+              : 'Confirming your video with the server. This usually takes a few seconds.',
           actions: [],
         }
       : rewardNotice
@@ -375,7 +410,11 @@ export function ImportScreen({ navigation }: Props) {
                 ]}
               />
               <Label style={[styles.usageLabel, usageStatus !== 'fresh' && styles.usageLabelPending]}>
-                {limitReached ? 'No imports left' : `${usage.remaining} Imports left${usageStatus === 'checking' ? '…' : ''}`}
+                {rewardPending
+                  ? 'Confirming video…'
+                  : limitReached
+                    ? 'No imports left'
+                    : `${usage.remaining} Imports left${usageStatus === 'checking' ? '…' : ''}`}
               </Label>
             </View>
             {usageStatus === 'failed' && <Label style={styles.usageNote}>May be out of date</Label>}
@@ -507,7 +546,7 @@ export function ImportScreen({ navigation }: Props) {
             accessibilityState={{ disabled: !canImport }}
           >
             <Display style={[styles.primaryBarLabel, !canImport && styles.primaryBarLabelDisabled]}>
-              {usageSettled ? 'Import' : 'Checking imports…'}
+              {rewardPending ? 'Confirming video…' : usageSettled ? 'Import' : 'Checking imports…'}
             </Display>
           </Pressable>
         </>
