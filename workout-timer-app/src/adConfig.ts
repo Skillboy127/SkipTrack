@@ -31,3 +31,6 @@ const REAL_REWARDED_AD_UNIT_ID = 'ca-app-pub-9013066559297172/4643744514';
 const useTestRewardedAds = USE_GOOGLE_TEST_REWARDED_ADS || __DEV__;
 
 export const REWARDED_AD_UNIT_ID = useTestRewardedAds ? TEST_REWARDED_AD_UNIT_ID : REAL_REWARDED_AD_UNIT_ID;
+
+/** True when the rewarded ad is using Google's sample unit rather than your own. */
+export const REWARDED_AD_IS_TEST_UNIT = useTestRewardedAds;

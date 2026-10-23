@@ -13,6 +13,28 @@ export type RewardedAdOutcome = 'earned' | 'closed' | 'failed';
 
 const LOAD_TIMEOUT_MS = 20000;
 
+export type RewardedAdError = {
+  /** The SDK's error code, e.g. googleMobileAds/error-code-no-fill, or 'timeout'. */
+  code: string;
+  message: string;
+  /** Whether it failed while loading or while being shown. */
+  stage: 'load' | 'show';
+  /** Epoch ms. */
+  at: number;
+};
+
+// Kept in memory only, for the preview-build debug panel in Settings.
+let lastError: RewardedAdError | null = null;
+
+export function getLastRewardedError(): RewardedAdError | null {
+  return lastError;
+}
+
+function recordError(stage: RewardedAdError['stage'], code: unknown, message: unknown) {
+  lastError = { code: String(code ?? 'unknown'), message: String(message ?? 'no message'), stage, at: Date.now() };
+  console.log(`[RewardedAd] ${stage} failed: code=${lastError.code} message=${lastError.message}`);
+}
+
 /**
  * Loads and shows one rewarded ad. `token` goes to AdMob as the server-side
  * verification custom data, so the signed callback AdMob sends to our server
@@ -28,6 +50,7 @@ export function showRewardedAd(token: string): Promise<RewardedAdOutcome> {
 
     let settled = false;
     let earned = false;
+    let loaded = false;
     let loadTimer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribers: (() => void)[] = [];
 
@@ -43,8 +66,9 @@ export function showRewardedAd(token: string): Promise<RewardedAdOutcome> {
       ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
         // Loaded: the viewer is about to watch, so the load timeout no longer applies.
         if (loadTimer) clearTimeout(loadTimer);
+        loaded = true;
         ad.show().catch(error => {
-          console.log('[RewardedAd] show failed:', error?.message ?? error);
+          recordError('show', (error as { code?: unknown })?.code, (error as Error)?.message ?? error);
           finish('failed');
         });
       }),
@@ -53,12 +77,15 @@ export function showRewardedAd(token: string): Promise<RewardedAdOutcome> {
       }),
       ad.addAdEventListener(AdEventType.CLOSED, () => finish(earned ? 'earned' : 'closed')),
       ad.addAdEventListener(AdEventType.ERROR, error => {
-        console.log('[RewardedAd] error:', error?.message ?? error);
+        recordError(loaded ? 'show' : 'load', (error as { code?: unknown })?.code, error?.message ?? error);
         finish('failed');
       }),
     );
 
-    loadTimer = setTimeout(() => finish('failed'), LOAD_TIMEOUT_MS);
+    loadTimer = setTimeout(() => {
+      if (!settled) recordError('load', 'timeout', `no response after ${LOAD_TIMEOUT_MS / 1000}s`);
+      finish('failed');
+    }, LOAD_TIMEOUT_MS);
     ad.load();
   });
 }

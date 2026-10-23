@@ -3,10 +3,14 @@ import { View, StyleSheet, Pressable, StatusBar, Alert, ActivityIndicator, Scrol
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIAP } from 'react-native-iap';
 import Constants from 'expo-constants';
+import mobileAds from 'react-native-google-mobile-ads';
 import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
 import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit, loadAdFreeStatus, saveAdFreeStatus } from '../storage';
 import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 import { BottomTabBar } from '../components/BottomTabBar';
+import { REWARDED_AD_IS_TEST_UNIT, REWARDED_AD_UNIT_ID } from '../adConfig';
+import { IS_PREVIEW_BUILD } from '../buildInfo';
+import { getLastRewardedError } from '../rewardedAd';
 import { Display, Label, Body } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
@@ -169,6 +173,16 @@ export function SettingsScreen({ navigation }: Props) {
 
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
+  // Diagnostics for testing: long-press the version to show them. Preview and
+  // dev builds only; in a production build the version row does nothing.
+  const [debugOpen, setDebugOpen] = useState(false);
+  const lastRewardedError = debugOpen ? getLastRewardedError() : null;
+  const openAdInspector = () => {
+    mobileAds()
+      .openAdInspector()
+      .catch(e => Alert.alert('Ad Inspector', e?.message ?? 'The Ad Inspector could not be opened.'));
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
@@ -299,11 +313,49 @@ export function SettingsScreen({ navigation }: Props) {
               <Label style={styles.linkLabel}>Contact</Label>
               <Label style={styles.versionValue}>{CONTACT_EMAIL}</Label>
             </Pressable>
-            <View style={[styles.linkRow, styles.optionRowBorder]}>
+            <Pressable
+              style={[styles.linkRow, styles.optionRowBorder]}
+              disabled={!IS_PREVIEW_BUILD}
+              delayLongPress={600}
+              onLongPress={() => setDebugOpen(open => !open)}
+            >
               <Label style={styles.linkLabel}>Version</Label>
               <Label style={styles.versionValue}>{version}</Label>
-            </View>
+            </Pressable>
           </View>
+
+          {IS_PREVIEW_BUILD && debugOpen && (
+            <>
+              <Label style={styles.sectionHeader}>Debug · rewarded ad</Label>
+              <View style={styles.card}>
+                <View style={styles.debugRow}>
+                  <Label style={styles.debugKey}>Unit ID</Label>
+                  <Body style={styles.debugValue} selectable>{REWARDED_AD_UNIT_ID || '(none set)'}</Body>
+                </View>
+                <View style={[styles.debugRow, styles.optionRowBorder]}>
+                  <Label style={styles.debugKey}>Unit type</Label>
+                  <Body style={styles.debugValue}>
+                    {REWARDED_AD_IS_TEST_UNIT ? "Google's TEST unit (no SSV callback)" : 'Your REAL unit'}
+                  </Body>
+                </View>
+                <View style={[styles.debugRow, styles.optionRowBorder]}>
+                  <Label style={styles.debugKey}>Last error</Label>
+                  <Body style={styles.debugValue} selectable>
+                    {lastRewardedError
+                      ? `${lastRewardedError.code}\n${lastRewardedError.message}\n(${lastRewardedError.stage}, ${new Date(lastRewardedError.at).toLocaleTimeString()})`
+                      : 'None since the app opened'}
+                  </Body>
+                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.debugButton, styles.optionRowBorder, pressed && styles.pressed]}
+                  onPress={openAdInspector}
+                  accessibilityRole="button"
+                >
+                  <Label style={styles.linkLabel}>Open Ad Inspector</Label>
+                </Pressable>
+              </View>
+            </>
+          )}
         </ScrollView>
       )}
 
@@ -375,6 +427,24 @@ const styles = StyleSheet.create({
   optionRowBorder: {
     borderTopWidth: rule.heavy,
     borderTopColor: colors.ink,
+  },
+  debugRow: {
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
+    gap: space.hair,
+  },
+  debugKey: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
+  },
+  debugValue: {
+    fontSize: label.small,
+    lineHeight: label.small * 1.4,
+  },
+  debugButton: {
+    minHeight: band.control,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   marker: {
     width: 22,
