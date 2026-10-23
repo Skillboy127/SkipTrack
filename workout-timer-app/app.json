@@ -24,13 +24,16 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.READ_MEDIA_IMAGES"
       ],
-      "package": "com.anonymous.workouttimerapp"
+      "package": "com.anonymous.workouttimerapp",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -39,14 +42,16 @@
       [
         "expo-audio",
         {
-          "enableBackgroundPlayback": true
+          "enableBackgroundPlayback": false,
+          "recordAudioAndroid": false
         }
       ],
       "expo-asset",
       [
         "expo-image-picker",
         {
-          "photosPermission": "The app accesses your photos to let you import workouts from images."
+          "photosPermission": "The app accesses your photos to let you import workouts from images.",
+          "microphonePermission": false
         }
       ],
       [
