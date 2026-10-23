@@ -14,7 +14,8 @@
         "UIBackgroundModes": [
           "audio"
         ]
-      }
+      },
+      "bundleIdentifier": "in.harshtalnikar.flex"
     },
     "android": {
       "adaptiveIcon": {
@@ -26,7 +27,7 @@
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "package": "com.anonymous.workouttimerapp",
+      "package": "in.harshtalnikar.flex",
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.FOREGROUND_SERVICE",
