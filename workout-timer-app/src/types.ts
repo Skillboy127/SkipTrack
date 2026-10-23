@@ -42,6 +42,10 @@ export type ServerUsage = {
   remaining: number;
   /** ISO-8601 UTC time the current window ends; null for a user who has never imported. */
   resets_at: string | null;
+  /** Extra imports earned from rewarded ads this window (already included in limit/remaining). */
+  bonus?: number;
+  /** How many more rewarded videos can be watched this window. Absent on an older server. */
+  rewards_remaining?: number;
 };
 
 export type WorkoutHistoryEntry = {

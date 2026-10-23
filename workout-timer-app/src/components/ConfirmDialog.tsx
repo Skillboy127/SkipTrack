@@ -137,7 +137,10 @@ const styles = StyleSheet.create({
     marginTop: space.hair,
   },
   actionBtn: {
-    height: band.actionHeight,
+    // minHeight, not height, so a long label can wrap instead of being clipped.
+    minHeight: band.actionHeight,
+    paddingHorizontal: space.row,
+    paddingVertical: space.hair,
     borderWidth: rule.heavy,
     borderColor: colors.ink,
     alignItems: 'center',
@@ -157,6 +160,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: label.base,
     letterSpacing: tracking.wide,
+    textAlign: 'center',
   },
   actionTextPrimary: {
     color: colors.onInk,

@@ -21,7 +21,11 @@ import {
   fetchUsage,
   getLastKnownUsage,
   ImportLimitError,
+  RewardStartError,
+  startReward,
+  waitForAllowanceIncrease,
 } from '../api';
+import { REWARDED_ADS_CONFIGURED, showRewardedAd } from '../rewardedAd';
 import { CloseIcon, CameraIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Display, Label, Body } from '../components/PosterText';
@@ -64,6 +68,8 @@ export function ImportScreen({ navigation }: Props) {
   // keep the last known value, or show no counter at all if there isn't one.
   const [usage, setUsage] = useState<ServerUsage | null>(getLastKnownUsage());
   const [limitModalVisible, setLimitModalVisible] = useState(false);
+  const [rewardPhase, setRewardPhase] = useState<'idle' | 'preparing' | 'confirming'>('idle');
+  const [rewardNotice, setRewardNotice] = useState<{ title: string; message: string } | null>(null);
   const isFocused = useIsFocused();
 
   // An extraction can finish after the user has backed out of this screen; its
@@ -196,6 +202,90 @@ export function ImportScreen({ navigation }: Props) {
     }
   };
 
+  // ─── Rewarded video (+2 imports) ────────────────────────────────────────────
+  // The server decides the reward: it issues a token, AdMob confirms the view to
+  // the server, and the server adds the imports. This screen only asks, plays the
+  // ad, and then reads the new allowance back; it never grants anything itself.
+
+  const handleWatchVideo = async () => {
+    if (rewardPhase !== 'idle') return;
+    const remainingBefore = usage?.remaining ?? 0;
+    setRewardNotice(null);
+    setRewardPhase('preparing');
+
+    let token: string;
+    try {
+      token = await startReward();
+    } catch (e) {
+      if (!isMountedRef.current) return;
+      setRewardPhase('idle');
+      if (e instanceof RewardStartError && e.kind === 'cap_reached') {
+        setUsage(current => (current ? { ...current, rewards_remaining: 0 } : current));
+        setLimitModalVisible(false);
+        setRewardNotice({
+          title: 'No more videos',
+          message: "You've used all your bonus videos for this month. Your imports reset at the start of your next period.",
+        });
+      } else if (e instanceof RewardStartError && e.kind === 'not_needed') {
+        setLimitModalVisible(false);
+        fetchUsage().then(fresh => isMountedRef.current && setUsage(fresh)).catch(() => {});
+      } else {
+        setRewardNotice({
+          title: "Couldn't start the video",
+          message: "We couldn't reach the server just now. Nothing was used. Please try again in a moment.",
+        });
+      }
+      return;
+    }
+
+    const outcome = await showRewardedAd(token);
+    if (!isMountedRef.current) return;
+
+    if (outcome === 'failed') {
+      setRewardPhase('idle');
+      setRewardNotice({
+        title: 'No video available',
+        message: "We couldn't load a video right now. Nothing was used. Please try again in a bit.",
+      });
+      return;
+    }
+    if (outcome === 'closed') {
+      // Closed before the reward was earned: back to the limit dialog.
+      setRewardPhase('idle');
+      return;
+    }
+
+    setRewardPhase('confirming');
+    const fresh = await waitForAllowanceIncrease(remainingBefore);
+    if (!isMountedRef.current) return;
+    setRewardPhase('idle');
+    if (fresh) {
+      setUsage(fresh);
+      setLimitModalVisible(false);
+      setRewardNotice({
+        title: `+${fresh.remaining - remainingBefore} imports added`,
+        message: `You have ${fresh.remaining} ${fresh.remaining === 1 ? 'import' : 'imports'} left.`,
+      });
+    } else {
+      setRewardNotice({
+        title: 'Still confirming',
+        message: 'Your video is still being confirmed. This can take a minute. Check back shortly, then try again.',
+      });
+    }
+  };
+
+  const dismissRewardNotice = () => {
+    setRewardNotice(null);
+    // A slow confirmation may have landed by now; refresh so the counter is right.
+    fetchUsage()
+      .then(fresh => {
+        if (!isMountedRef.current) return;
+        setUsage(fresh);
+        if (fresh.remaining <= 0) setLimitModalVisible(true);
+      })
+      .catch(() => {});
+  };
+
   const handleRetryImport = () => {
     if (!importError) return;
     if (importError.tab === 'image') handleImageExtract();
@@ -216,6 +306,40 @@ export function ImportScreen({ navigation }: Props) {
   const limitMessage = usage
     ? `You've used all ${usage.limit} imports for this month.${resetDate ? ` Your imports reset on ${resetDate}.` : ''}`
     : "You've used all your imports for this month.";
+  // Offered whenever the server says a reward is still available; Remove Ads
+  // doesn't affect it because the video is optional.
+  const canWatchVideo = REWARDED_ADS_CONFIGURED && (usage?.rewards_remaining ?? 0) > 0;
+  const closeLimitDialog = () => setLimitModalVisible(false);
+
+  // One dialog slot, whichever message is current: working, result, or the limit prompt.
+  const dialog: Omit<React.ComponentProps<typeof ConfirmDialog>, 'visible'> =
+    rewardPhase !== 'idle'
+      ? {
+          title: rewardPhase === 'preparing' ? 'Getting your video ready' : 'Adding your imports',
+          message:
+            rewardPhase === 'preparing'
+              ? 'Hang tight, this only takes a moment.'
+              : 'Confirming your video with the server...',
+          actions: [],
+        }
+      : rewardNotice
+        ? {
+            title: rewardNotice.title,
+            message: rewardNotice.message,
+            onRequestClose: dismissRewardNotice,
+            actions: [{ label: 'OK', variant: 'primary', onPress: dismissRewardNotice }],
+          }
+        : {
+            title: 'Import limit reached',
+            message: limitMessage,
+            onRequestClose: closeLimitDialog,
+            actions: [
+              ...(canWatchVideo
+                ? [{ label: 'Watch a video for +2 imports', variant: 'primary' as const, onPress: handleWatchVideo }]
+                : []),
+              { label: 'OK', variant: canWatchVideo ? ('neutral' as const) : ('primary' as const), onPress: closeLimitDialog },
+            ],
+          };
   const canImportText = workoutText.trim().length > 0 && !limitReached;
   const canImportImage = imageBase64 !== null && !limitReached;
   const canImport = activeTab === 'image' ? canImportImage : canImportText;
@@ -371,13 +495,8 @@ export function ImportScreen({ navigation }: Props) {
       )}
 
       <ConfirmDialog
-        visible={limitModalVisible}
-        title="Import limit reached"
-        message={limitMessage}
-        onRequestClose={() => setLimitModalVisible(false)}
-        actions={[
-          { label: 'OK', variant: 'primary', onPress: () => setLimitModalVisible(false) },
-        ]}
+        visible={limitModalVisible || rewardPhase !== 'idle' || rewardNotice !== null}
+        {...dialog}
       />
     </View>
   );
