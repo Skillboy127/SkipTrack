@@ -15,7 +15,8 @@ import re
 import sys
 import time
 import uuid
-from urllib.parse import quote
+from unittest import mock
+from urllib.parse import quote, unquote_to_bytes
 
 os.environ.setdefault("DEVICE_ID_SECRET", "test-secret")
 if not os.getenv("DATABASE_URL"):
@@ -365,16 +366,22 @@ check("still-unknown key: rejected after exactly one refresh, and not re-fetched
       r.status_code == 400 and r2.status_code == 400 and first_fetches == 1 and fetch_calls["n"] - before == 1)
 
 # --- Google-style callbacks: the raw query string is what is signed
-def google_signed(content: bytes, key=private_key, key_id=KEY_ID) -> bytes:
-    """Sign ``content`` byte for byte and append signature (base64url, no padding) and key_id, as AdMob does."""
-    signature = key.sign(content, ec.ECDSA(hashes.SHA256()))
+def google_signed(content: bytes, key=private_key, key_id=KEY_ID, decoded=True) -> bytes:
+    """Append a signature (base64url, no padding) and key_id to ``content``, as AdMob does.
+
+    AdMob signs the PERCENT-DECODED query (found by checking a real "Verify URL" request against
+    Google's production key), so by default the signature is over the decoded text while the
+    request carries the encoded form. ``decoded=False`` signs the bytes as sent instead.
+    """
+    signed = unquote_to_bytes(content) if decoded else content
+    signature = key.sign(signed, ec.ECDSA(hashes.SHA256()))
     return content + b"&signature=" + base64.urlsafe_b64encode(signature).rstrip(b"=") + b"&key_id=" + key_id.encode()
 
 
 def google_content(token, tx, reward_item="Extra%20Imports%20%26%20More%2B1%3D%E2%9C%93", path="a%2fb"):
     ts = int(time.time() * 1000)
     # Not alphabetical, with percent-encoded spaces, '&', '+', '=', a UTF-8 character and
-    # lower-case hex: the encoding is whatever AdMob sent, so it has to be used as it came.
+    # lower-case hex.
     return (
         f"user_id=ab%20cd&reward_item={reward_item}&custom_data={token}&transaction_id={tx}"
         f"&ad_unit=1234567890&reward_amount=2&timestamp={ts}&x={path}&ad_network=5450213213286189855"
@@ -391,19 +398,75 @@ r = client.get("/reward/callback?" + sent.decode())
 check("percent-encoded, unusual-order query signed like Google -> 200 granted",
       r.status_code == 200 and r.get_json()["granted"] is True and usage(dg)["bonus"] == 2)
 
-# The same request with an equivalent-but-different encoding must NOT verify: nothing is normalised.
+# AdMob signs the decoded text, so the same request with an equivalent encoding of it verifies
+# (%2f vs %2F is the same text), while any change to the text itself does not.
 dg2 = new_device()
 exhaust(dg2)
 tg2 = start(dg2).get_json()["token"]
 content_g2 = google_content(tg2, "g2-" + uuid.uuid4().hex)
 sent2 = google_signed(content_g2).decode()
-check("re-encoding %2f as %2F is rejected (bytes are used as received)",
-      callback(sent2.replace("%2f", "%2F")).status_code == 400 and usage(dg2)["bonus"] == 0)
-check("turning %20 into + is rejected",
+check("'+' in place of %20 changes the signed text and is rejected",
       callback(sent2.replace("%20", "+")).status_code == 400 and usage(dg2)["bonus"] == 0)
 check("reordering two parameters is rejected",
       callback(sent2.replace("user_id=ab%20cd&reward_item=", "reward_item=", 1).replace("&ad_unit=", "&user_id=ab%20cd&ad_unit=", 1)).status_code == 400)
-check("the untouched original still verifies afterwards", callback(sent2).status_code == 200 and usage(dg2)["bonus"] == 2)
+check("changing a value is rejected",
+      callback(sent2.replace("reward_amount=2", "reward_amount=9")).status_code == 400 and usage(dg2)["bonus"] == 0)
+check("the untouched original verifies", callback(sent2).status_code == 200 and usage(dg2)["bonus"] == 2)
+
+dg3 = new_device()
+exhaust(dg3)
+tg3 = start(dg3).get_json()["token"]
+sent3 = google_signed(google_content(tg3, "g3-" + uuid.uuid4().hex)).decode()
+r = callback(sent3.replace("%2f", "%2F"))
+check("an equivalent percent-encoding (%2f as %2F) of the same text verifies",
+      r.status_code == 200 and r.get_json()["granted"] is True and usage(dg3)["bonus"] == 2)
+
+# A request signed over the bytes exactly as sent (the fallback form) verifies too, and stays exact.
+dg4 = new_device()
+exhaust(dg4)
+tg4 = start(dg4).get_json()["token"]
+sent4 = google_signed(google_content(tg4, "g4-" + uuid.uuid4().hex), decoded=False).decode()
+check("a request signed over the bytes as received still verifies (fallback)",
+      callback(sent4.replace("%2f", "%2F")).status_code == 400 and callback(sent4).status_code == 200 and usage(dg4)["bonus"] == 2)
+
+# An encoded '&' stays inside its value: it can't turn one parameter into two.
+smuggled = google_signed(
+    ("custom_data=AAA%26transaction_id%3DT&reward_amount=2&timestamp=" + str(int(time.time() * 1000)) + "&transaction_id=REAL").encode()
+)
+params = admob_ssv.verify_callback(smuggled)
+check("an encoded & is part of its value, not a new parameter",
+      params["custom_data"] == "AAA&transaction_id=T" and params["transaction_id"] == "REAL")
+r = callback(smuggled.decode())
+check("such a custom_data matches no token, so nothing is granted", r.status_code == 400)
+
+# GROUND TRUTH: a real AdMob "Verify URL" request, signed by Google's production key (public).
+REAL_KEY_ID = "3335741209"
+REAL_PEM = """-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+nzvoGqvDeB9+SzE6igTl7TyK4JB
+bglwir9oTcQta8NuG26ZpZFxt+F2NDk7asTE6/2Yc8i1ATcGIqtuS5hv0Q==
+-----END PUBLIC KEY-----
+"""
+REAL_PING = (
+    "ad_network=5450213213286189855&ad_unit=1234567890&reward_amount=2&reward_item=Imports%20Rewarded"
+    "&timestamp=1792761966832&transaction_id=123456789"
+    "&signature=MEUCIExGVa9x-KYzf9LBKpFtkNF8PQTaUT8Qcbn5Iy6k5iI3AiEAr3W6d6Nymz-ZNPlw2JeCEF8Ec8zLdI3hrtRLtofemN0"
+    "&key_id=3335741209"
+)
+PING_TIME = 1792761967.0  # a second after the ping was sent; its timestamp must be recent
+# (the local test key above deliberately shares this id, so put it back afterwards)
+local_test_pem = admob_ssv._keys[REAL_KEY_ID]
+admob_ssv._keys[REAL_KEY_ID] = REAL_PEM
+real = admob_ssv.verify_callback(REAL_PING.encode(), now=PING_TIME)
+check("a real Google-signed console ping verifies against Google's production key",
+      real["transaction_id"] == "123456789" and real["reward_item"] == "Imports Rewarded" and "custom_data" not in real)
+with mock.patch.object(admob_ssv.time, "time", return_value=PING_TIME):
+    r = callback(REAL_PING)
+check("the real ping through /reward/callback -> 200, verified, nothing granted",
+      r.status_code == 200 and r.get_json() == {"verified": True, "granted": False})
+with mock.patch.object(admob_ssv.time, "time", return_value=PING_TIME):
+    r_tampered = callback(REAL_PING.replace("reward_amount=2", "reward_amount=9"))
+check("the real ping with one value changed is rejected", r_tampered.status_code == 400)
+admob_ssv._keys[REAL_KEY_ID] = local_test_pem
 
 # Raw (not percent-encoded) non-ASCII bytes are verified as the bytes they are.
 raw_content = b"reward_item=caf\xe9\xff&timestamp=" + str(int(time.time() * 1000)).encode() + b"&transaction_id=raw-1"

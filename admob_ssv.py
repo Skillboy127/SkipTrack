@@ -5,10 +5,16 @@ https://developers.google.com/admob/android/ssv
 
 * The callback is a GET whose query string ends with ``signature=...&key_id=...``
   (always the last two parameters, in that order).
-* The signed content is the raw query string, exactly as received, up to but not
-  including the ``&`` before ``signature=``. It is never parsed, decoded, re-encoded
-  or reordered: this module works on the raw BYTES from the WSGI QUERY_STRING and
-  slices them by position, so what is verified is what was sent.
+* The signed content is the query string up to, but not including, the ``&`` before
+  ``signature=``. Google signs it PERCENT-DECODED (``reward_item=Imports%20Rewarded``
+  on the wire is signed as ``reward_item=Imports Rewarded``): found by checking a
+  real AdMob "Verify URL" request against Google's production key, which verifies
+  only over the decoded form. So the signature is checked against that decoded form
+  and, failing that, against the bytes exactly as received. Both are derived from the
+  request by fixed rules and both need Google's private key to satisfy, so accepting
+  either lets nothing extra through.
+* This module works on the raw BYTES from the WSGI QUERY_STRING and slices them by
+  position (never from request.args, never reordered or re-encoded).
 * The signature is ECDSA over SHA-256, DER encoded, base64 with the URL-safe
   alphabet and no padding (padding is restored before decoding).
 * Public keys come from Google's published verifier-keys JSON, matched on key_id.
@@ -28,7 +34,7 @@ import string
 import threading
 import time
 import urllib.request
-from urllib.parse import parse_qsl, unquote_to_bytes
+from urllib.parse import unquote_to_bytes
 
 from cryptography.exceptions import InvalidSignature as _CryptoInvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -228,6 +234,9 @@ def verify_callback(query_string: bytes | str, now: float | None = None) -> dict
     ``query_string`` should be the raw bytes as received (``request.query_string``).
     Raises InvalidCallback if anything is off, KeysUnavailable if Google's keys
     can't be obtained. The returned dict has no ``signature`` or ``key_id``.
+
+    The parameters returned are those the request carried: each name and value of the
+    raw string percent-decoded on its own (so an encoded ``&`` stays part of its value).
     """
     raw = _as_bytes(query_string)
 
@@ -248,19 +257,30 @@ def verify_callback(query_string: bytes | str, now: float | None = None) -> dict
         raise InvalidCallback('bad_signature', _debug_facts(raw, signed_content, signature_b64, None)) from exc
 
     public_key = _public_key_for(key_id)
-    try:
-        public_key.verify(signature, signed_content, ec.ECDSA(hashes.SHA256()))
-    except _CryptoInvalidSignature as exc:
-        raise InvalidCallback('bad_signature', _debug_facts(raw, signed_content, signature_b64, signature)) from exc
 
-    # Only now, with the signature proven, are the parameters read (the verified
-    # bytes themselves are never altered).
-    pairs = parse_qsl(signed_content.decode('utf-8', 'replace'), keep_blank_values=True)
+    # What Google signed: the percent-decoded query. The bytes as received are tried
+    # second, in case a request was signed in that form.
+    decoded_content = unquote_to_bytes(signed_content)
+    candidates = [decoded_content] if decoded_content == signed_content else [decoded_content, signed_content]
+    for candidate in candidates:
+        try:
+            public_key.verify(signature, candidate, ec.ECDSA(hashes.SHA256()))
+            break
+        except _CryptoInvalidSignature:
+            continue
+    else:
+        raise InvalidCallback('bad_signature', _debug_facts(raw, signed_content, signature_b64, signature))
+
+    # Only now, with the signature proven, are the parameters read. Each name and
+    # value is decoded separately, so an encoded '&' or '=' can't change which
+    # parameter a value belongs to.
     params: dict[str, str] = {}
-    for name, value in pairs:
+    for part in signed_content.split(b'&'):
+        name_bytes, _, value_bytes = part.partition(b'=')
+        name = unquote_to_bytes(name_bytes).decode('utf-8', 'replace')
         if name in params:
             raise InvalidCallback('missing_params')
-        params[name] = value
+        params[name] = unquote_to_bytes(value_bytes).decode('utf-8', 'replace')
 
     try:
         reward_time = int(params['timestamp']) / 1000.0
