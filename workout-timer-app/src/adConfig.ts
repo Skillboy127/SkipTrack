@@ -26,7 +26,7 @@ export const USE_GOOGLE_TEST_REWARDED_ADS = false;
 const TEST_REWARDED_AD_UNIT_ID = 'ca-app-pub-3940256099942544/5224354917';
 
 // Your own rewarded ad unit (SSV callback: https://skiptrack-api.onrender.com/reward/callback).
-const REAL_REWARDED_AD_UNIT_ID = 'ca-app-pub-9013066559297172/1961830145';
+const REAL_REWARDED_AD_UNIT_ID = 'ca-app-pub-9013066559297172/4643744514';
 
 const useTestRewardedAds = USE_GOOGLE_TEST_REWARDED_ADS || __DEV__;
 
