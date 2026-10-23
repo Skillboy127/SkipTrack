@@ -177,16 +177,24 @@ def reward_start_endpoint():
     })
 
 
+def reject_reward_callback(reason: str, query_string: str, error: str):
+    """Answer 400 and log one line saying why: a fixed category and the key_id only.
+
+    Never logs the query string or anything from it (it carries the one-time token,
+    transaction and user ids), so the key_id is only echoed when it is a plain number.
+    """
+    print(f"[reward-callback] rejected reason={reason} key_id={admob_ssv.loggable_key_id(query_string)}")
+    return jsonify({"error": error}), 400
+
+
 @app.get('/reward/callback')
 def reward_callback_endpoint():
-    """AdMob server-side verification callback. Only a correctly signed request can grant anything.
-
-    Nothing from this request is logged: the query string carries the one-time token.
-    """
+    """AdMob server-side verification callback. Only a correctly signed request can grant anything."""
+    query_string = request.query_string.decode('utf-8', 'replace')
     try:
-        params = admob_ssv.verify_callback(request.query_string.decode('utf-8', 'replace'))
-    except admob_ssv.InvalidCallback:
-        return jsonify({"error": "invalid_callback"}), 400
+        params = admob_ssv.verify_callback(query_string)
+    except admob_ssv.InvalidCallback as exc:
+        return reject_reward_callback(exc.reason, query_string, "invalid_callback")
     except admob_ssv.KeysUnavailable as exc:
         print(f"[reward] verifier keys unavailable: {exc}")
         return jsonify({"error": "verifier_unavailable"}), 503
@@ -198,7 +206,7 @@ def reward_callback_endpoint():
         # custom data. It is genuine, but there is nothing to reward.
         return jsonify({"verified": True, "granted": False}), 200
     if not transaction_id:
-        return jsonify({"error": "invalid_callback"}), 400
+        return reject_reward_callback('missing_params', query_string, "invalid_callback")
 
     try:
         outcome = usage_limits.grant_reward(token, transaction_id)
@@ -207,7 +215,7 @@ def reward_callback_endpoint():
         print(f"[reward] unavailable: {exc}")
         return jsonify(USAGE_UNAVAILABLE_BODY), 503
     if outcome == 'invalid_token':
-        return jsonify({"error": "invalid_token"}), 400
+        return reject_reward_callback('unknown_or_used_token', query_string, "invalid_token")
     return jsonify({"verified": True, "granted": outcome == 'granted'}), 200
 
 

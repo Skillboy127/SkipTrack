@@ -8,6 +8,8 @@ are signed exactly the way AdMob signs them (ECDSA/SHA-256, DER, base64url over 
 raw query string) without any network access.
 """
 import base64
+import contextlib
+import io
 import os
 import sys
 import time
@@ -42,11 +44,12 @@ admob_ssv._keys = {
 admob_ssv._fetched_at = time.time()
 # An unknown key_id triggers a refresh from Google; stand in for Google with the local key.
 fetch_calls = {"n": 0}
+google_keys = dict(admob_ssv._keys)
 
 
 def fake_fetch_keys():
     fetch_calls["n"] += 1
-    return dict(admob_ssv._keys)
+    return dict(google_keys)
 
 
 admob_ssv._fetch_keys = fake_fetch_keys
@@ -101,6 +104,14 @@ def signed_query(token, transaction_id=None, key=private_key, key_id=KEY_ID, tim
 
 def callback(query):
     return client.get("/reward/callback?" + query)
+
+
+def callback_logged(query):
+    """The response and everything the server printed while handling it."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        response = callback(query)
+    return response, out.getvalue()
 
 
 def check(name, condition):
@@ -274,7 +285,75 @@ threads = [threading.Thread(target=fire) for _ in range(5)]
 [th.join() for th in threads]
 check("5 concurrent identical callbacks -> exactly one grant", usage(d7)["bonus"] == 2)
 
-# --- privacy: nothing sensitive in logs is covered by code review; check the response never echoes the token
+# --- rejection logging: one line, a fixed reason, the key_id, and nothing else
+def reject_line(query, reason, key_id):
+    response, logged = callback_logged(query)
+    lines = [ln for ln in logged.splitlines() if ln.strip()]
+    expected = f"[reward-callback] rejected reason={reason} key_id={key_id}"
+    return response.status_code == 400 and lines == [expected], logged
+
+
+dl = new_device()
+exhaust(dl)
+secret_token = start(dl).get_json()["token"]
+secret_tx = "tx-" + uuid.uuid4().hex
+secret_user = "user-" + uuid.uuid4().hex
+base_q = signed_query(secret_token, secret_tx, extra={"user_id": secret_user})
+
+ok, logged = reject_line(signed_query(secret_token, secret_tx, key=other_key), "bad_signature", KEY_ID)
+check("bad signature -> one log line: reason=bad_signature + key_id", ok)
+ok, logged_unknown = reject_line(signed_query(secret_token, secret_tx, key_id="999"), "unknown_key_id", "999")
+check("unknown key -> one log line: reason=unknown_key_id + key_id", ok)
+ok, _ = reject_line(signed_query(secret_token, secret_tx, timestamp=int((time.time() - 3 * 3600) * 1000)), "stale_timestamp", KEY_ID)
+check("stale timestamp -> one log line: reason=stale_timestamp", ok)
+ok, _ = reject_line("custom_data=" + secret_token + "&transaction_id=" + secret_tx, "missing_params", "none")
+check("unsigned request -> reason=missing_params, key_id=none", ok)
+ok, _ = reject_line(signed_query("never-issued-token-" + uuid.uuid4().hex), "unknown_or_used_token", KEY_ID)
+check("unknown token -> one log line: reason=unknown_or_used_token", ok)
+used_q = signed_query(secret_token, secret_tx)
+assert callback(used_q).status_code == 200
+ok, _ = reject_line(signed_query(secret_token, "another-" + uuid.uuid4().hex), "unknown_or_used_token", KEY_ID)
+check("used token -> reason=unknown_or_used_token", ok)
+
+# A key_id that is not a plain number is never echoed (it comes from the requester).
+evil = base_q.rsplit("key_id=", 1)[0] + "key_id=12%0A%5Bfake%5D%20line"
+response, logged = callback_logged(evil)
+check("key_id with newline/markup is logged as 'invalid', not echoed",
+      response.status_code == 400 and logged.strip().endswith("key_id=invalid") and "fake" not in logged and logged.count("\n") == 1)
+
+everything = logged_unknown + logged
+check("logs never contain the token, transaction id, user id or the query",
+      not any(secret in everything for secret in (secret_token, secret_tx, secret_user, "signature=", "custom_data")))
+
+# --- key rotation: an unknown key_id triggers one refresh of Google's list, then verification retries
+ROTATED_ID = "4444444444"
+rotated_key = ec.generate_private_key(ec.SECP256R1())
+rotated_pem = rotated_key.public_key().public_bytes(
+    serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+).decode()
+
+dr = new_device()
+exhaust(dr)
+tr = start(dr).get_json()["token"]
+# Google has rotated in a new key; our cache only knows the old one and was last refreshed a while ago.
+google_keys[ROTATED_ID] = rotated_pem
+admob_ssv._last_refresh_attempt = 0
+before = fetch_calls["n"]
+r = callback(signed_query(tr, key=rotated_key, key_id=ROTATED_ID))
+check("rotated key: cache refreshed once, retry verifies, reward granted",
+      r.status_code == 200 and r.get_json()["granted"] is True and fetch_calls["n"] - before == 1)
+
+# A key Google doesn't publish even after a refresh is rejected, with exactly one refresh,
+# and a second attempt straight afterwards does not hit Google again.
+admob_ssv._last_refresh_attempt = 0
+before = fetch_calls["n"]
+r = callback(signed_query(secret_token, key_id="7777777777"))
+first_fetches = fetch_calls["n"] - before
+r2 = callback(signed_query(secret_token, key_id="7777777777"))
+check("still-unknown key: rejected after exactly one refresh, and not re-fetched again straight away",
+      r.status_code == 400 and r2.status_code == 400 and first_fetches == 1 and fetch_calls["n"] - before == 1)
+
+# --- privacy: check the response never echoes the token
 r = callback(signed_query("not-a-real-token-xyz"))
 check("error responses do not echo the token", "not-a-real-token-xyz" not in r.get_data(as_text=True))
 
