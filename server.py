@@ -183,13 +183,15 @@ def reject_reward_callback(reason: str, query_string: bytes, error: str, debug: 
     Never logs the query string or anything from it (it carries the one-time token,
     transaction and user ids), so the key_id is only echoed when it is a plain number.
 
-    TEMPORARY: for a signature failure the line also carries lengths and yes/no facts
-    about the request (never its content), to work out why a real AdMob request does
-    not verify. Remove ``debug`` once that is understood.
+    TEMPORARY: for a signature failure the line also carries lengths, yes/no facts, the
+    parameter names in order, and a "shape" (the query with every value masked), never
+    any value, to work out why a real AdMob request does not verify. Remove ``debug``
+    once that is understood.
     """
     line = f"[reward-callback] rejected reason={reason} key_id={admob_ssv.loggable_key_id(query_string)}"
     if debug:
-        line += ''.join(f" {name}={value if isinstance(value, int) and not isinstance(value, bool) else str(value).lower()}"
+        # Booleans as true/false; everything else exactly as given (the shape's letter case matters).
+        line += ''.join(f" {name}={str(value).lower() if isinstance(value, bool) else value}"
                         for name, value in debug.items())
     print(line)
     return jsonify({"error": error}), 400

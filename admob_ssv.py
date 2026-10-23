@@ -24,6 +24,7 @@ import base64
 import binascii
 import json
 import re
+import string
 import threading
 import time
 import urllib.request
@@ -42,6 +43,11 @@ _SIGNATURE_MARKER = b'&signature='
 _SIGNATURE_TAIL = re.compile(rb'\Asignature=([^&]+)&key_id=([^&]+)\Z')
 _KEY_ID_PARAM = re.compile(rb'(?:\A|&)key_id=([^&]*)')
 _NUMERIC_KEY_ID = re.compile(rb'\A\d{1,20}\Z')
+_PERCENT_TRIPLET = re.compile(rb'%[0-9A-Fa-f]{2}')
+_PARAM_NAME = re.compile(rb'\A[A-Za-z0-9_.\-]{1,40}\Z')
+_PUNCTUATION = frozenset(string.punctuation.encode('ascii'))
+_SHAPE_MAX_CHARS = 1000
+_NAMES_MAX = 40
 
 _lock = threading.Lock()
 _keys: dict[str, str] = {}   # key_id -> PEM
@@ -149,8 +155,60 @@ def _b64url_decode(value: bytes) -> bytes:
         raise InvalidCallback('bad_signature') from exc
 
 
+def _mask_value(value: bytes) -> str:
+    """A value with every letter and digit replaced by 'x'.
+
+    Percent-encoded triplets (%2f, %2F) are kept exactly as received, and so is other
+    ASCII punctuation; anything else (control characters, spaces, non-ASCII bytes)
+    becomes '?', so the result is always plain printable text that can't break a log line.
+    """
+    out = []
+    i = 0
+    while i < len(value):
+        if _PERCENT_TRIPLET.match(value, i):
+            out.append(value[i:i + 3].decode('ascii'))
+            i += 3
+            continue
+        byte = value[i]
+        if 0x30 <= byte <= 0x39 or 0x41 <= byte <= 0x5A or 0x61 <= byte <= 0x7A:
+            out.append('x')
+        elif byte in _PUNCTUATION:
+            out.append(chr(byte))
+        else:
+            out.append('?')
+        i += 1
+    return ''.join(out)
+
+
+def describe_shape(raw: bytes) -> tuple[str, str]:
+    """(shape, names) of a raw query string, revealing the structure but none of the values.
+
+    ``shape`` is the query with parameter names and separators as they are and every value
+    masked (see _mask_value), so the order, the encoding style and the upper/lower case of
+    percent escapes are visible. ``names`` is the parameter names in order, comma separated.
+    A name that isn't a plain identifier is masked like a value. Both are length-limited.
+    """
+    shape_parts = []
+    names = []
+    for part in raw.split(b'&'):
+        name, equals, value = part.partition(b'=')
+        if _PARAM_NAME.match(name):
+            shown_name = name.decode('ascii')
+            names.append(shown_name)
+        else:
+            shown_name = _mask_value(name)
+            names.append('invalid')
+        shape_parts.append(shown_name + equals.decode('ascii') + _mask_value(value))
+    shape = '&'.join(shape_parts)
+    if len(shape) > _SHAPE_MAX_CHARS:
+        shape = shape[:_SHAPE_MAX_CHARS] + '...'
+    names_text = ','.join(names[:_NAMES_MAX]) + ('...' if len(names) > _NAMES_MAX else '')
+    return shape, names_text
+
+
 def _debug_facts(raw: bytes, signed_content: bytes, signature_b64: bytes, signature: bytes | None) -> dict:
-    """Lengths and yes/no facts only: nothing here reveals any of the request's content."""
+    """Lengths, yes/no facts, and a masked outline of the request: none of its values."""
+    shape, names = describe_shape(raw)
     return {
         'content_len': len(signed_content),
         'sig_b64_len': len(signature_b64),
@@ -159,6 +217,8 @@ def _debug_facts(raw: bytes, signed_content: bytes, signature_b64: bytes, signat
         'sig_der_prefix': bool(signature) and signature[0] == 0x30,
         'raw_has_percent': b'%' in raw,
         'content_non_ascii': any(byte > 127 for byte in signed_content),
+        'shape': shape,
+        'names': names,
     }
 
 

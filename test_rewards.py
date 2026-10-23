@@ -289,7 +289,7 @@ check("5 concurrent identical callbacks -> exactly one grant", usage(d7)["bonus"
 # --- rejection logging: one line, a fixed reason, the key_id, and nothing else
 DEBUG_FIELDS = (
     r" content_len=\d+ sig_b64_len=\d+ sig_len=-?\d+ sig_der_prefix=(true|false)"
-    r" raw_has_percent=(true|false) content_non_ascii=(true|false)"
+    r" raw_has_percent=(true|false) content_non_ascii=(true|false) shape=\S+ names=\S+"
 )
 
 
@@ -440,6 +440,37 @@ check("signature failure logs content/signature lengths and a has-percent flag, 
       f"content_len={len(bad_content)} " in logged and f"sig_b64_len={sig_len_b64} " in logged
       and "raw_has_percent=true" in logged and "content_non_ascii=false" in logged and "sig_der_prefix=true" in logged
       and "tok-" not in logged and "dbg-" not in logged and "Extra" not in logged)
+
+# --- the temporary "shape" and "names" fields: structure without values
+shape, names = admob_ssv.describe_shape(
+    b"user_id=Ab%2fCd%20ef&custom_data=TOKEN-abc_123.x&reward_amount=2&x=a%2Fb&flag&y=%zz+1~&signature=AbC-_9&key_id=3335741209"
+)
+check("shape masks letters/digits in values, keeps names, separators, punctuation and %XX exactly",
+      shape == "user_id=xx%2fxx%20xx&custom_data=xxxxx-xxx_xxx.x&reward_amount=x&x=x%2Fx&flag&y=%xx+x~&signature=xxx-_x&key_id=xxxxxxxxxx")
+check("names are listed in order, names only",
+      names == "user_id,custom_data,reward_amount,x,flag,y,signature,key_id")
+odd_shape, odd_names = admob_ssv.describe_shape(b"a b=\x00\xff caf\xe9\n&" + b"n" * 80 + b"=v&ok=\"1\"")
+check("control chars, spaces and non-ASCII become '?', so nothing can break the log line",
+      "\n" not in odd_shape and " " not in odd_shape and all(32 < ord(c) < 127 for c in odd_shape))
+check("an implausible parameter name is reported as 'invalid', not echoed",
+      odd_names.split(",")[:2] == ["invalid", "invalid"] and "n" * 80 not in odd_shape)
+long_shape, long_names = admob_ssv.describe_shape(b"&".join(b"param_%d=" % i + b"v" * 20 for i in range(100)))
+check("shape and names are length-limited", long_shape.endswith("...") and long_names.endswith("...") and len(long_shape) <= 1003)
+
+secret_user = "user-" + uuid.uuid4().hex
+secret_tok = "tok-" + uuid.uuid4().hex
+secret_tx2 = "tx-" + uuid.uuid4().hex
+content_s = google_content(secret_tok, secret_tx2).replace(b"user_id=ab%20cd", b"user_id=" + secret_user.encode())
+bad_s = google_signed(content_s, key=other_key)
+response, logged_s = callback_logged(bad_s.decode())
+line_s = [ln for ln in logged_s.splitlines() if ln.strip()][0]
+expected_names = "user_id,reward_item,custom_data,transaction_id,ad_unit,reward_amount,timestamp,x,ad_network,signature,key_id"
+check("the bad_signature line carries the shape (with %2f lower-case kept) and the names in order",
+      response.status_code == 400 and f" names={expected_names}" in line_s and "&x=x%2fx&" in line_s
+      and "reward_item=xxxxx%20xxxxxxx%20%26%20xxxx%2Bx%3D%E2%9C%93" in line_s and "ad_network=" + "x" * 19 + " " not in line_s and "&ad_network=" + "x" * 19 + "&" in line_s)
+check("…and no token, transaction id, user id, signature, ad unit or amount value appears anywhere in it",
+      not any(v in logged_s for v in (secret_user, secret_tok, secret_tx2, "5450213213286189855", "1234567890", "Extra", "Imports"))
+      and "signature=x" in line_s)
 
 # --- privacy: check the response never echoes the token
 r = callback(signed_query("not-a-real-token-xyz"))
