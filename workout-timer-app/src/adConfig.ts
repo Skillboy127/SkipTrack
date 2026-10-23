@@ -21,7 +21,7 @@ export const INTERSTITIAL_AD_UNIT_ID = useTestAds ? TEST_INTERSTITIAL_AD_UNIT_ID
 // sends the server-side verification callback for it: the video plays, but the
 // server never grants the imports. To test the full flow, create a rewarded unit in
 // AdMob, put its ID in REAL_REWARDED_AD_UNIT_ID, and set this to false.
-export const USE_GOOGLE_TEST_REWARDED_ADS = true;
+export const USE_GOOGLE_TEST_REWARDED_ADS = false;
 
 const TEST_REWARDED_AD_UNIT_ID = 'ca-app-pub-3940256099942544/5224354917';
 
