@@ -177,23 +177,13 @@ def reward_start_endpoint():
     })
 
 
-def reject_reward_callback(reason: str, query_string: bytes, error: str, debug: dict | None = None):
+def reject_reward_callback(reason: str, query_string: bytes, error: str):
     """Answer 400 and log one line saying why: a fixed category and the key_id only.
 
     Never logs the query string or anything from it (it carries the one-time token,
     transaction and user ids), so the key_id is only echoed when it is a plain number.
-
-    TEMPORARY: for a signature failure the line also carries lengths, yes/no facts, the
-    parameter names in order, and a "shape" (the query with every value masked), never
-    any value, to work out why a real AdMob request does not verify. Remove ``debug``
-    once that is understood.
     """
-    line = f"[reward-callback] rejected reason={reason} key_id={admob_ssv.loggable_key_id(query_string)}"
-    if debug:
-        # Booleans as true/false; everything else exactly as given (the shape's letter case matters).
-        line += ''.join(f" {name}={str(value).lower() if isinstance(value, bool) else value}"
-                        for name, value in debug.items())
-    print(line)
+    print(f"[reward-callback] rejected reason={reason} key_id={admob_ssv.loggable_key_id(query_string)}")
     return jsonify({"error": error}), 400
 
 
@@ -206,7 +196,7 @@ def reward_callback_endpoint():
     try:
         params = admob_ssv.verify_callback(query_string)
     except admob_ssv.InvalidCallback as exc:
-        return reject_reward_callback(exc.reason, query_string, "invalid_callback", exc.debug)
+        return reject_reward_callback(exc.reason, query_string, "invalid_callback")
     except admob_ssv.KeysUnavailable as exc:
         print(f"[reward] verifier keys unavailable: {exc}")
         return jsonify({"error": "verifier_unavailable"}), 503
