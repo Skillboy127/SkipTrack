@@ -72,7 +72,9 @@ export function LibraryScreen({ navigation }: Props) {
   // via a JS-animated height tied to the scroll offset, which resized the list
   // mid-scroll and made scrolling stutter.
   const { width } = useWindowDimensions();
-  const heroSize = Math.min(104, Math.round((width - space.gutter * 2) / 3.75));
+  // "WORKOUTS" in Anton measures 3.96em wide (from the font's glyph widths), so the
+  // size leaves a few percent spare to keep the whole word on one line.
+  const heroSize = Math.min(104, Math.floor((width - space.gutter * 2) / 4.15));
 
   useEffect(() => {
     if (isFocused) {
@@ -317,6 +319,7 @@ export function LibraryScreen({ navigation }: Props) {
             style={[styles.hero, { fontSize: heroSize, lineHeight: Math.round(heroSize * leading.display) }]}
             numberOfLines={1}
             adjustsFontSizeToFit
+            maxFontSizeMultiplier={1}
           >
             Workouts
           </Display>
