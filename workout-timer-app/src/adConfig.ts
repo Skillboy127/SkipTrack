@@ -1,7 +1,7 @@
 // Flip this ONE value to switch between Google's sample ads and the real ad units.
 // true  = Google's official test units (verifies the integration, earns nothing).
 // false = real units in release builds; dev builds still use the sample units.
-export const USE_GOOGLE_TEST_ADS = true;
+export const USE_GOOGLE_TEST_ADS = false;
 
 // Google's sample units for Android, from
 // https://developers.google.com/admob/android/test-ads

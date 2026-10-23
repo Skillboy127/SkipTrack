@@ -1,5 +1,6 @@
 import { AdEventType, RewardedAd, RewardedAdEventType } from 'react-native-google-mobile-ads';
 import { REWARDED_AD_UNIT_ID } from './adConfig';
+import { IS_PREVIEW_BUILD } from './buildInfo';
 
 /** False until a rewarded ad unit is configured for the current mode (see adConfig.ts). */
 export const REWARDED_ADS_CONFIGURED = REWARDED_AD_UNIT_ID.length > 0;
@@ -32,7 +33,8 @@ export function getLastRewardedError(): RewardedAdError | null {
 
 function recordError(stage: RewardedAdError['stage'], code: unknown, message: unknown) {
   lastError = { code: String(code ?? 'unknown'), message: String(message ?? 'no message'), stage, at: Date.now() };
-  console.log(`[RewardedAd] ${stage} failed: code=${lastError.code} message=${lastError.message}`);
+  // Logged in dev and preview builds only; a production build keeps it to itself.
+  if (IS_PREVIEW_BUILD) console.log(`[RewardedAd] ${stage} failed: code=${lastError.code} message=${lastError.message}`);
 }
 
 /**
