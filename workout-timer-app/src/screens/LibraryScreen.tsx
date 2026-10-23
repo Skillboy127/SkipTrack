@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image, Animated, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { onLeftLibrary, onLibraryArrived } from '../ads/interstitialManager';
-import { RootStackParamList, ServerUsage, Workout } from '../types';
+import { RootStackParamList, Workout } from '../types';
 import { loadWorkouts, deleteWorkout, saveWorkout, saveWorkouts } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
-import { getLastKnownUsage } from '../api';
+import { refreshUsage } from '../api';
+import { useUsage } from '../useUsage';
 import { PlayIcon, PlusIcon, DownloadIcon, SearchIcon, CloseIcon, DragHandleIcon } from '../components/WorkoutIcons';
 import { ReorderableList, ReorderItemInfo, ReorderScrollView } from '../components/ReorderableList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -48,7 +49,7 @@ export function LibraryScreen({ navigation }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
   const [reorderMode, setReorderMode] = useState(false);
-  const [usage, setUsage] = useState<ServerUsage | null>(getLastKnownUsage());
+  const { usage, status: usageStatus } = useUsage();
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
@@ -88,8 +89,8 @@ export function LibraryScreen({ navigation }: Props) {
   useEffect(() => {
     if (isFocused) {
       loadData();
-      // Whatever the server last told us; the Import screen owns fetching it.
-      setUsage(getLastKnownUsage());
+      // The cached count is already on screen; this swaps in the server's answer.
+      refreshUsage();
     }
   }, [isFocused]);
 
@@ -331,9 +332,19 @@ export function LibraryScreen({ navigation }: Props) {
           <Display style={styles.wordmark}>Flex</Display>
         </View>
         {usage !== null && (
-          <View style={styles.importsLeft}>
-            <View style={styles.importsDot} />
-            <Label style={styles.importsLabel}>{usage.remaining} Imports Left</Label>
+          <View
+            style={styles.importsLeft}
+            accessibilityLabel={
+              usageStatus === 'fresh'
+                ? `${usage.remaining} imports left`
+                : `${usage.remaining} imports left, may be out of date`
+            }
+          >
+            <View style={[styles.importsDot, usageStatus !== 'fresh' && styles.importsDotPending]} />
+            <Label style={[styles.importsLabel, usageStatus !== 'fresh' && styles.importsLabelPending]}>
+              {usageStatus === 'failed' ? '~' : ''}
+              {usage.remaining} Imports Left
+            </Label>
           </View>
         )}
       </View>
@@ -553,6 +564,15 @@ const styles = StyleSheet.create({
   },
   importsLabel: {
     fontSize: label.small,
+  },
+  // While the count is still being checked, or could not be: the cached value, dimmed.
+  importsDotPending: {
+    backgroundColor: 'transparent',
+    borderWidth: rule.thin,
+    borderColor: colors.inkMuted,
+  },
+  importsLabelPending: {
+    color: colors.inkMuted,
   },
   // ── Hero ──────────────────────────────────────────────────────────────────
   heroWrap: {

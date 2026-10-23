@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { Workout, Exercise, ServerUsage } from './types';
 import { getDeviceId } from './deviceId';
+import { getUsageSnapshot, isUsageFresh, markChecking, markFailed, rememberUsage } from './usageStore';
 
 // Get API URL from env, or dynamically from Expo's hostUri, with fallback
 const getHostUrl = () => {
@@ -132,11 +133,10 @@ export class ImportLimitError extends Error {
 const DEVICE_UNAVAILABLE_MESSAGE =
   "This version of the app can't verify your device, so imports are unavailable. Please update the app.";
 
-// Last allowance the server told us about, kept in memory only (never persisted),
-// so the Import screen has something to show if a later /usage request fails.
-let lastKnownUsage: ServerUsage | null = null;
+// The last allowance the server told us about lives in usageStore (saved to
+// storage, observable by screens), so a counter can show before the server answers.
 export function getLastKnownUsage(): ServerUsage | null {
-  return lastKnownUsage;
+  return getUsageSnapshot().usage;
 }
 
 function parseUsage(value: any): ServerUsage | null {
@@ -213,7 +213,7 @@ export async function waitForAllowanceIncrease(
       if (response.ok) {
         const usage = parseUsage(await response.json().catch(() => null));
         if (usage) {
-          lastKnownUsage = usage;
+          rememberUsage(usage);
           if (usage.remaining > remainingBefore) return usage;
         }
       }
@@ -236,10 +236,36 @@ let usageRequest: Promise<ServerUsage> | null = null;
  */
 export function fetchUsage(): Promise<ServerUsage> {
   if (usageRequest) return usageRequest;
-  usageRequest = fetchUsageWithRetries().finally(() => {
-    usageRequest = null;
-  });
+  markChecking();
+  usageRequest = fetchUsageWithRetries()
+    .catch(error => {
+      markFailed();
+      throw error;
+    })
+    .finally(() => {
+      usageRequest = null;
+    });
   return usageRequest;
+}
+
+/**
+ * Ask for the allowance when a screen opens, unless the server answered a moment
+ * ago. Resolves with the fresh value, or null if the server couldn't be reached
+ * (the cached value stays on screen, marked as possibly out of date).
+ */
+export async function refreshUsage(): Promise<ServerUsage | null> {
+  const current = getUsageSnapshot();
+  if (isUsageFresh() && current.usage) return current.usage;
+  try {
+    return await fetchUsage();
+  } catch {
+    return null;
+  }
+}
+
+/** One cheap request at launch so a sleeping free-tier server starts waking up straight away. */
+export function pingServer(): void {
+  fetchWithTimeout(`${API_BASE}/health`, {}, 60000).catch(() => {});
 }
 
 async function fetchUsageWithRetries(): Promise<ServerUsage> {
@@ -254,7 +280,7 @@ async function fetchUsageWithRetries(): Promise<ServerUsage> {
       if (!response.ok) throw new Error(`Usage request failed (${response.status})`);
       const usage = parseUsage(await response.json().catch(() => null));
       if (!usage) throw new Error('Usage response was not understood');
-      lastKnownUsage = usage;
+      rememberUsage(usage);
       return usage;
     } catch (err: any) {
       lastError = err;
@@ -313,7 +339,7 @@ async function postJson(path: string, body: Record<string, string>, timeoutMs = 
         resets_at: typeof payload.resets_at === 'string' ? payload.resets_at : null,
         rewards_remaining: typeof payload.rewards_remaining === 'number' ? payload.rewards_remaining : undefined,
       };
-      lastKnownUsage = usage;
+      rememberUsage(usage);
       throw new ImportLimitError(usage);
     }
     throw new Error(
@@ -321,7 +347,7 @@ async function postJson(path: string, body: Record<string, string>, timeoutMs = 
     );
   }
   const usage = parseUsage(payload?.usage);
-  if (usage) lastKnownUsage = usage;
+  if (usage) rememberUsage(usage);
   return { workout: mapResponseToWorkout(payload), usage };
 }
 

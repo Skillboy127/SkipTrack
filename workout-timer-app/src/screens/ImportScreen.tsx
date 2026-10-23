@@ -15,18 +15,20 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { noteTransition } from '../ads/interstitialManager';
-import { RootStackParamList, ServerUsage } from '../types';
+import { RootStackParamList } from '../types';
 import {
   extractWorkoutFromImage,
   extractWorkoutFromText,
   fetchUsage,
-  getLastKnownUsage,
   ImportLimitError,
+  refreshUsage,
   RewardStartError,
   startReward,
   waitForAllowanceIncrease,
 } from '../api';
 import { REWARDED_ADS_CONFIGURED, showRewardedAd } from '../rewardedAd';
+import { patchUsage } from '../usageStore';
+import { useUsage } from '../useUsage';
 import { CloseIcon, CameraIcon, RotatingDumbbellIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Display, Label, Body } from '../components/PosterText';
@@ -71,7 +73,9 @@ export function ImportScreen({ navigation }: Props) {
   // The import allowance lives on the server. Start from the last value we heard
   // (if any) and refresh it each time this screen opens; if that request fails we
   // keep the last known value, or show no counter at all if there isn't one.
-  const [usage, setUsage] = useState<ServerUsage | null>(getLastKnownUsage());
+  // The cached allowance shows straight away; `usageStatus` says whether the server
+  // has confirmed it yet. Until it has (or 10 seconds pass), Import stays disabled.
+  const { usage, status: usageStatus, settled: usageSettled } = useUsage();
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [rewardPhase, setRewardPhase] = useState<'idle' | 'preparing' | 'confirming'>('idle');
   const [rewardNotice, setRewardNotice] = useState<{ title: string; message: string } | null>(null);
@@ -84,18 +88,16 @@ export function ImportScreen({ navigation }: Props) {
 
   useEffect(() => {
     if (!isFocused) return;
-    fetchUsage()
-      .then(fresh => {
-        if (!isMountedRef.current) return;
-        setUsage(fresh);
-        if (fresh.remaining <= 0) setLimitModalVisible(true);
-      })
-      .catch(() => {});
+    refreshUsage().then(fresh => {
+      if (!isMountedRef.current) return;
+      if (fresh && fresh.remaining <= 0) setLimitModalVisible(true);
+    });
   }, [isFocused]);
 
   /** Returns true if the import can proceed; otherwise shows the limit-reached modal. */
   const checkImportAllowed = (): boolean => {
-    if (usage !== null && usage.remaining <= 0) {
+    // Only a confirmed answer blocks here; otherwise the server decides.
+    if (usageStatus === 'fresh' && usage !== null && usage.remaining <= 0) {
       setLimitModalVisible(true);
       return false;
     }
@@ -162,14 +164,12 @@ export function ImportScreen({ navigation }: Props) {
     setLoading(true);
     setImportError(null);
     try {
-      const { workout, usage: updated } = await extractWorkoutFromImage(imageBase64, imageMime);
+      const { workout } = await extractWorkoutFromImage(imageBase64, imageMime);
       if (!isMountedRef.current) return;
-      if (updated) setUsage(updated);
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
       if (e instanceof ImportLimitError) {
         if (isMountedRef.current) {
-          setUsage(e.usage);
           setLimitModalVisible(true);
         }
         return;
@@ -189,14 +189,12 @@ export function ImportScreen({ navigation }: Props) {
     setLoading(true);
     setImportError(null);
     try {
-      const { workout, usage: updated } = await extractWorkoutFromText(workoutText.trim());
+      const { workout } = await extractWorkoutFromText(workoutText.trim());
       if (!isMountedRef.current) return;
-      if (updated) setUsage(updated);
       navigation.replace('WorkoutEditor', { draftWorkout: workout });
     } catch (e: any) {
       if (e instanceof ImportLimitError) {
         if (isMountedRef.current) {
-          setUsage(e.usage);
           setLimitModalVisible(true);
         }
         return;
@@ -225,7 +223,7 @@ export function ImportScreen({ navigation }: Props) {
       if (!isMountedRef.current) return;
       setRewardPhase('idle');
       if (e instanceof RewardStartError && e.kind === 'cap_reached') {
-        setUsage(current => (current ? { ...current, rewards_remaining: 0 } : current));
+        patchUsage({ rewards_remaining: 0 });
         setLimitModalVisible(false);
         setRewardNotice({
           title: 'No more videos',
@@ -233,7 +231,7 @@ export function ImportScreen({ navigation }: Props) {
         });
       } else if (e instanceof RewardStartError && e.kind === 'not_needed') {
         setLimitModalVisible(false);
-        fetchUsage().then(fresh => isMountedRef.current && setUsage(fresh)).catch(() => {});
+        fetchUsage().catch(() => {});
       } else {
         setRewardNotice({
           title: "Couldn't start the video",
@@ -265,7 +263,6 @@ export function ImportScreen({ navigation }: Props) {
     if (!isMountedRef.current) return;
     setRewardPhase('idle');
     if (fresh) {
-      setUsage(fresh);
       setLimitModalVisible(false);
       setRewardNotice({
         title: `+${fresh.remaining - remainingBefore} imports added`,
@@ -285,7 +282,6 @@ export function ImportScreen({ navigation }: Props) {
     fetchUsage()
       .then(fresh => {
         if (!isMountedRef.current) return;
-        setUsage(fresh);
         if (fresh.remaining <= 0) setLimitModalVisible(true);
       })
       .catch(() => {});
@@ -304,7 +300,7 @@ export function ImportScreen({ navigation }: Props) {
 
   // ─── Derived ────────────────────────────────────────────────────────────────
 
-  const limitReached = usage !== null && usage.remaining <= 0;
+  const limitReached = usageStatus === 'fresh' && usage !== null && usage.remaining <= 0;
   const resetDate = usage?.resets_at
     ? new Date(usage.resets_at.replace(/(\.\d{3})\d+/, '$1')).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
@@ -347,7 +343,9 @@ export function ImportScreen({ navigation }: Props) {
           };
   const canImportText = workoutText.trim().length > 0 && !limitReached;
   const canImportImage = imageBase64 !== null && !limitReached;
-  const canImport = activeTab === 'image' ? canImportImage : canImportText;
+  // Held back until the server has answered (or 10s have passed), so an import is
+  // never started on a stale count. Building by hand is never held back.
+  const canImport = (activeTab === 'image' ? canImportImage : canImportText) && usageSettled;
   const activeLoadingMessages = LOADING_MESSAGES[activeTab];
   const loadingMessage = activeLoadingMessages[loadingMessageIndex % activeLoadingMessages.length];
   const processingSource = activeTab === 'image' ? 'Workout image' : 'Workout description';
@@ -366,14 +364,28 @@ export function ImportScreen({ navigation }: Props) {
         >
           <CloseIcon color={colors.ink} size={16} />
         </Pressable>
-        {usage !== null && (
-          <View style={styles.usageChip}>
-            <View style={[styles.usageDot, limitReached && styles.usageDotEmpty]} />
-            <Label style={styles.usageLabel}>
-              {limitReached ? 'No imports left' : `${usage.remaining} Imports left`}
-            </Label>
+        {usage !== null ? (
+          <View style={styles.usageColumn}>
+            <View style={styles.usageChip}>
+              <View
+                style={[
+                  styles.usageDot,
+                  limitReached && styles.usageDotEmpty,
+                  usageStatus !== 'fresh' && styles.usageDotPending,
+                ]}
+              />
+              <Label style={[styles.usageLabel, usageStatus !== 'fresh' && styles.usageLabelPending]}>
+                {limitReached ? 'No imports left' : `${usage.remaining} Imports left${usageStatus === 'checking' ? '…' : ''}`}
+              </Label>
+            </View>
+            {usageStatus === 'failed' && <Label style={styles.usageNote}>May be out of date</Label>}
           </View>
-        )}
+        ) : usageStatus !== 'failed' ? (
+          <View style={styles.usageChip}>
+            <View style={[styles.usageDot, styles.usageDotPending]} />
+            <Label style={[styles.usageLabel, styles.usageLabelPending]}>Checking…</Label>
+          </View>
+        ) : null}
       </View>
 
       <Display style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>Import</Display>
@@ -494,7 +506,9 @@ export function ImportScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityState={{ disabled: !canImport }}
           >
-            <Display style={[styles.primaryBarLabel, !canImport && styles.primaryBarLabelDisabled]}>Import</Display>
+            <Display style={[styles.primaryBarLabel, !canImport && styles.primaryBarLabelDisabled]}>
+              {usageSettled ? 'Import' : 'Checking imports…'}
+            </Display>
           </Pressable>
         </>
       )}
@@ -534,6 +548,10 @@ const styles = StyleSheet.create({
   squarePressed: {
     backgroundColor: colors.rowPress,
   },
+  usageColumn: {
+    alignItems: 'flex-end',
+    gap: space.hair,
+  },
   usageChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -549,6 +567,19 @@ const styles = StyleSheet.create({
   },
   usageLabel: {
     fontSize: label.small,
+  },
+  // Cached count, not yet confirmed by the server: hollow dot and dimmed text.
+  usageDotPending: {
+    backgroundColor: 'transparent',
+    borderWidth: rule.thin,
+    borderColor: colors.inkMuted,
+  },
+  usageLabelPending: {
+    color: colors.inkMuted,
+  },
+  usageNote: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
   },
   hero: {
     paddingHorizontal: space.gutter,

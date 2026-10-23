@@ -27,9 +27,17 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { loadHasSeenOnboarding, loadAdFreeStatus } from './src/storage';
 import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
-import { fetchUsage } from './src/api';
+import { fetchUsage, pingServer } from './src/api';
+import { hydrateUsageCache } from './src/usageStore';
 import { initInterstitials } from './src/ads/interstitialManager';
 import { colors } from './src/theme';
+
+// Runs when the app's code loads, before anything renders, so none of it waits on
+// fonts or navigation: load last time's import count, nudge the (possibly
+// sleeping) server awake, and ask for the real count, all in parallel.
+void hydrateUsageCache();
+pingServer();
+fetchUsage().catch(() => {});
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -64,12 +72,6 @@ export default function App() {
 
   useEffect(() => {
     loadAdFreeStatus().then(adsRemoved => console.log('[AdMob] adsRemoved =', adsRemoved));
-  }, []);
-
-  // Warm up the server and learn the import allowance at launch, so the Import
-  // screen already has it (and a sleeping free-tier server is awake) when opened.
-  useEffect(() => {
-    fetchUsage().catch(() => {});
   }, []);
 
   // Required once at startup before any ad can load. The shared interstitial
