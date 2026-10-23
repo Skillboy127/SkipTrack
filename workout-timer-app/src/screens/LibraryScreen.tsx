@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image, Animated, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { onLeftLibrary, onLibraryArrived } from '../ads/interstitialManager';
 import { RootStackParamList, Workout } from '../types';
@@ -67,24 +67,12 @@ export function LibraryScreen({ navigation }: Props) {
     return onLeftLibrary;
   }, [isFocused]);
 
-  // The hero is sized to fill the line, then collapses as the list scrolls so
-  // only the wordmark row stays pinned.
+  // The hero is sized to fill the line. It scrolls away with the list (it is part
+  // of the list's header) while the wordmark row stays pinned. It used to shrink
+  // via a JS-animated height tied to the scroll offset, which resized the list
+  // mid-scroll and made scrolling stutter.
   const { width } = useWindowDimensions();
   const heroSize = Math.min(104, Math.round((width - space.gutter * 2) / 3.75));
-  const heroHeight = Math.round(heroSize * leading.display) + space.tight;
-  const [scrollY] = useState(() => new Animated.Value(0));
-  const heroCollapse = {
-    height: scrollY.interpolate({
-      inputRange: [0, heroHeight],
-      outputRange: [heroHeight, 0],
-      extrapolate: 'clamp' as const,
-    }),
-    opacity: scrollY.interpolate({
-      inputRange: [0, heroHeight * 0.6],
-      outputRange: [1, 0],
-      extrapolate: 'clamp' as const,
-    }),
-  };
 
   useEffect(() => {
     if (isFocused) {
@@ -321,6 +309,100 @@ export function LibraryScreen({ navigation }: Props) {
     </View>
   );
 
+  // Everything between the pinned wordmark row and the list scrolls with the list.
+  const listHeader = (
+    <View>
+        <View style={styles.heroWrap}>
+          <Display
+            style={[styles.hero, { fontSize: heroSize, lineHeight: Math.round(heroSize * leading.display) }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            Workouts
+          </Display>
+        </View>
+
+        <View style={styles.filterBar}>
+          {FILTERS.map((filter, index) => {
+            const selected = filter.key === filterMode;
+            return (
+              <Pressable
+                key={filter.key}
+                style={[styles.filter, index > 0 && styles.filterDivider, selected && styles.filterActive]}
+                onPress={() => {
+                  setReorderMode(false);
+                  setFilterMode(filter.key);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+              >
+                <Label style={[styles.filterLabel, selected && styles.filterLabelActive]}>{filter.title}</Label>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={[styles.searchSquare, styles.filterDivider, searchOpen && styles.filterActive]}
+            onPress={toggleSearch}
+            accessibilityRole="button"
+            accessibilityLabel={searchOpen ? 'Close search' : 'Search workouts'}
+          >
+            {searchOpen
+              ? <CloseIcon color={colors.onInk} size={14} />
+              : <SearchIcon color={colors.ink} size={16} />}
+          </Pressable>
+        </View>
+
+        {searchOpen && (
+          <View style={styles.searchField}>
+            <SearchIcon color={colors.ink} size={16} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="SEARCH WORKOUTS"
+              placeholderTextColor={colors.placeholder}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoFocus
+              returnKeyType="search"
+            />
+          </View>
+        )}
+
+        {workouts.length > 0 && (
+          <View style={styles.sectionLine}>
+            <Label style={styles.sectionCount}>
+              {reordering
+                ? 'Hold a row, then drag'
+                : isFiltering
+                  ? `${displayedWorkouts.length} of ${workouts.length} Routines`
+                  : `${workouts.length} Routines`}
+            </Label>
+            <View style={styles.sectionActions}>
+              {!reordering && (
+                <Pressable onPress={cycleSortMode} hitSlop={10} accessibilityRole="button" accessibilityLabel="Change sort order">
+                  <Label style={styles.sortLabel}>Sort: {SORT_LABELS[sortMode]}</Label>
+                </Pressable>
+              )}
+              {workouts.length > 1 && !isFiltering && !searchOpen && (
+                <Pressable
+                  style={[styles.reorderBtn, reordering && styles.reorderBtnActive]}
+                  onPress={reordering ? () => setReorderMode(false) : startReordering}
+                  disabled={pendingDelete !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel={reordering ? 'Finish reordering' : 'Reorder workouts'}
+                >
+                  <Label style={[styles.reorderLabel, reordering && styles.reorderLabelActive]}>
+                    {reordering ? 'Done' : 'Reorder'}
+                  </Label>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
@@ -349,101 +431,12 @@ export function LibraryScreen({ navigation }: Props) {
         )}
       </View>
 
-      <Animated.View style={[styles.heroWrap, heroCollapse]}>
-        <Display
-          style={[styles.hero, { fontSize: heroSize, lineHeight: Math.round(heroSize * leading.display) }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
-          Workouts
-        </Display>
-      </Animated.View>
-
-      <View style={styles.filterBar}>
-        {FILTERS.map((filter, index) => {
-          const selected = filter.key === filterMode;
-          return (
-            <Pressable
-              key={filter.key}
-              style={[styles.filter, index > 0 && styles.filterDivider, selected && styles.filterActive]}
-              onPress={() => {
-                setReorderMode(false);
-                setFilterMode(filter.key);
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-            >
-              <Label style={[styles.filterLabel, selected && styles.filterLabelActive]}>{filter.title}</Label>
-            </Pressable>
-          );
-        })}
-        <Pressable
-          style={[styles.searchSquare, styles.filterDivider, searchOpen && styles.filterActive]}
-          onPress={toggleSearch}
-          accessibilityRole="button"
-          accessibilityLabel={searchOpen ? 'Close search' : 'Search workouts'}
-        >
-          {searchOpen
-            ? <CloseIcon color={colors.onInk} size={14} />
-            : <SearchIcon color={colors.ink} size={16} />}
-        </Pressable>
-      </View>
-
-      {searchOpen && (
-        <View style={styles.searchField}>
-          <SearchIcon color={colors.ink} size={16} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="SEARCH WORKOUTS"
-            placeholderTextColor={colors.placeholder}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            autoFocus
-            returnKeyType="search"
-          />
-        </View>
-      )}
-
-      {workouts.length > 0 && (
-        <View style={styles.sectionLine}>
-          <Label style={styles.sectionCount}>
-            {reordering
-              ? 'Hold a row, then drag'
-              : isFiltering
-                ? `${displayedWorkouts.length} of ${workouts.length} Routines`
-                : `${workouts.length} Routines`}
-          </Label>
-          <View style={styles.sectionActions}>
-            {!reordering && (
-              <Pressable onPress={cycleSortMode} hitSlop={10} accessibilityRole="button" accessibilityLabel="Change sort order">
-                <Label style={styles.sortLabel}>Sort: {SORT_LABELS[sortMode]}</Label>
-              </Pressable>
-            )}
-            {workouts.length > 1 && !isFiltering && !searchOpen && (
-              <Pressable
-                style={[styles.reorderBtn, reordering && styles.reorderBtnActive]}
-                onPress={reordering ? () => setReorderMode(false) : startReordering}
-                disabled={pendingDelete !== null}
-                accessibilityRole="button"
-                accessibilityLabel={reordering ? 'Finish reordering' : 'Reorder workouts'}
-              >
-                <Label style={[styles.reorderLabel, reordering && styles.reorderLabelActive]}>
-                  {reordering ? 'Done' : 'Reorder'}
-                </Label>
-              </Pressable>
-            )}
-          </View>
-        </View>
-      )}
-
       {reordering ? (
         <ReorderScrollView
           style={styles.list}
           contentContainerStyle={styles.listContainer}
-          onScroll={e => scrollY.setValue(e.nativeEvent.contentOffset.y)}
         >
+          {listHeader}
           <ReorderableList
             data={displayedWorkouts}
             keyExtractor={item => item.id}
@@ -458,10 +451,9 @@ export function LibraryScreen({ navigation }: Props) {
         keyExtractor={item => item.id}
         renderItem={renderItem}
         contentContainerStyle={displayedWorkouts.length === 0 ? styles.emptyListContainer : styles.listContainer}
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={emptyState}
         keyboardShouldPersistTaps="handled"
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
-        scrollEventThrottle={16}
       />
       )}
 
@@ -680,9 +672,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: rule.heavy,
     borderBottomColor: colors.ink,
   },
+  // The header scrolls with the list, so it stays on top and only the empty
+  // state itself is centred in the space left below it.
   emptyListContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
   },
   row: {
     flexDirection: 'row',
@@ -734,6 +727,8 @@ const styles = StyleSheet.create({
   },
   // ── Empty states ──────────────────────────────────────────────────────────
   emptyState: {
+    flex: 1,
+    justifyContent: 'center',
     paddingHorizontal: space.gutter,
     gap: space.block,
   },
