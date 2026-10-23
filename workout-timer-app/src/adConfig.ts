@@ -25,10 +25,8 @@ export const USE_GOOGLE_TEST_REWARDED_ADS = true;
 
 const TEST_REWARDED_AD_UNIT_ID = 'ca-app-pub-3940256099942544/5224354917';
 
-// Your own rewarded ad unit, e.g. 'ca-app-pub-9013066559297172/XXXXXXXXXX'.
-// Left empty until you create it: the watch-a-video option is then unavailable
-// whenever the sample units are off.
-const REAL_REWARDED_AD_UNIT_ID = '';
+// Your own rewarded ad unit (SSV callback: https://skiptrack-api.onrender.com/reward/callback).
+const REAL_REWARDED_AD_UNIT_ID = 'ca-app-pub-9013066559297172/4643744514';
 
 const useTestRewardedAds = USE_GOOGLE_TEST_REWARDED_ADS || __DEV__;
 
