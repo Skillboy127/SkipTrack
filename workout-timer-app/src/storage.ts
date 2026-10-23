@@ -180,6 +180,17 @@ export async function loadWeightUnit(): Promise<WeightUnit> {
   }
 }
 
+/** The saved weight unit, or null if the user has never chosen one (unlike loadWeightUnit, which falls back to a default). */
+export async function loadWeightUnitIfSet(): Promise<WeightUnit | null> {
+  try {
+    const value = await AsyncStorage.getItem(WEIGHT_UNIT_KEY);
+    return value === 'lb' || value === 'kg' ? value : null;
+  } catch (e) {
+    console.error('Failed to load weight unit setting', e);
+    return null;
+  }
+}
+
 export async function saveWeightUnit(unit: WeightUnit): Promise<void> {
   try {
     await AsyncStorage.setItem(WEIGHT_UNIT_KEY, unit);

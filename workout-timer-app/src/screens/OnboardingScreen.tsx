@@ -1,9 +1,18 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable, StatusBar, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RootStackParamList } from '../types';
-import { saveHasSeenOnboarding } from '../storage';
+import * as Speech from 'expo-speech';
+import { CountdownSoundMode, RootStackParamList, WeightUnit } from '../types';
+import {
+  loadCountdownSoundMode,
+  loadWeightUnitIfSet,
+  saveCountdownSoundMode,
+  saveHasSeenOnboarding,
+  saveWeightUnit,
+} from '../storage';
+import { useAudio } from '../useAudio';
+import { useSpeech } from '../useSpeech';
 import { Display, Label, Body } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
@@ -12,9 +21,20 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 type Slide = {
   title: string;
   body: string;
-  // Display-only info cards shown under the body text. Not tappable.
-  options?: { title: string; description: string }[];
+  // Shows the countdown-sound and weight-unit pickers under the body text.
+  preferences?: boolean;
 };
+
+const SOUND_OPTIONS: { id: CountdownSoundMode; title: string; description: string }[] = [
+  { id: 'speech', title: 'Spoken', description: 'Counts down out loud.' },
+  { id: 'beep', title: 'Beep', description: 'A short beep for the countdown.' },
+  { id: 'silent', title: 'Silent', description: 'Just the visual timer.' },
+];
+
+const UNIT_OPTIONS: { id: WeightUnit; title: string }[] = [
+  { id: 'kg', title: 'KG' },
+  { id: 'lb', title: 'LB' },
+];
 
 const SLIDES: Slide[] = [
   {
@@ -31,12 +51,8 @@ const SLIDES: Slide[] = [
   },
   {
     title: 'Choose your countdown',
-    body: 'Pick how Flex guides you. You can switch any time from Settings or the speaker icon during a workout.',
-    options: [
-      { title: 'Spoken', description: 'Counts down out loud and announces your next exercise.' },
-      { title: 'Beep', description: 'A short beep for the countdown and phase changes.' },
-      { title: 'Silent', description: 'No sound, just the visual timer.' },
-    ],
+    body: 'Pick how Flex guides you.',
+    preferences: true,
   },
   {
     title: 'Adjust on the fly',
@@ -54,6 +70,46 @@ export function OnboardingScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
   const isLast = index === SLIDES.length - 1;
+
+  // The choices are saved the moment they are made, under the same settings the
+  // Settings screen reads, so the two always agree. The defaults shown here are
+  // saved too, so skipping past this slide still leaves the app matching the screen.
+  const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>('kg');
+  const soundTouchedRef = useRef(false);
+  const unitTouchedRef = useRef(false);
+  const { playBeep } = useAudio();
+  const { speak } = useSpeech(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([loadCountdownSoundMode(), loadWeightUnitIfSet()]).then(([savedMode, savedUnit]) => {
+      if (cancelled) return;
+      if (!soundTouchedRef.current) setSoundMode(savedMode);
+      if (unitTouchedRef.current) return;
+      if (savedUnit) setWeightUnit(savedUnit);
+      else void saveWeightUnit('kg'); // nothing chosen yet: make the KG default real
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A short preview of what was picked, using the same sounds a workout uses.
+  const chooseSound = (mode: CountdownSoundMode) => {
+    soundTouchedRef.current = true;
+    setSoundMode(mode);
+    void saveCountdownSoundMode(mode);
+    Speech.stop();
+    if (mode === 'speech') speak('three, two, one');
+    else if (mode === 'beep') playBeep();
+  };
+
+  const chooseUnit = (unit: WeightUnit) => {
+    unitTouchedRef.current = true;
+    setWeightUnit(unit);
+    void saveWeightUnit(unit);
+  };
 
   const finish = async () => {
     await saveHasSeenOnboarding();
@@ -100,23 +156,78 @@ export function OnboardingScreen({ navigation }: Props) {
           <ScrollView
             key={slide.title}
             style={{ width }}
-            contentContainerStyle={styles.slide}
+            contentContainerStyle={[styles.slide, slide.preferences && styles.slideCompact]}
             showsVerticalScrollIndicator={false}
           >
             <Label style={styles.slideNumber}>
               {String(slideIndex + 1).padStart(2, '0')} / {String(SLIDES.length).padStart(2, '0')}
             </Label>
-            <Display style={styles.title} numberOfLines={3} adjustsFontSizeToFit>{slide.title}</Display>
-            <Body style={styles.body}>{slide.body}</Body>
-            {slide.options && (
-              <View style={styles.options}>
-                {slide.options.map(option => (
-                  <View key={option.title} style={styles.optionCard}>
-                    <Label style={styles.optionTitle}>{option.title}</Label>
-                    <Body style={styles.optionDescription}>{option.description}</Body>
+            <Display
+              style={[styles.title, slide.preferences && styles.titleCompact]}
+              numberOfLines={3}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={1.2}
+            >
+              {slide.title}
+            </Display>
+            <Body style={[styles.body, slide.preferences && styles.bodyCompact]}>{slide.body}</Body>
+            {slide.preferences && (
+              <>
+                <View style={styles.options} accessibilityRole="radiogroup">
+                  {SOUND_OPTIONS.map(option => {
+                    const selected = soundMode === option.id;
+                    return (
+                      <Pressable
+                        key={option.id}
+                        style={({ pressed }) => [
+                          styles.optionCard,
+                          selected && styles.optionCardSelected,
+                          pressed && !selected && styles.pressed,
+                        ]}
+                        onPress={() => chooseSound(option.id)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={`${option.title} countdown. ${option.description}`}
+                      >
+                        <View style={styles.optionText}>
+                          <Label style={[styles.optionTitle, selected && styles.onInkText]}>{option.title}</Label>
+                          <Body style={[styles.optionDescription, selected && styles.onInkText]}>
+                            {option.description}
+                          </Body>
+                        </View>
+                        <View style={[styles.marker, selected && styles.markerSelected]} />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.unitRow}>
+                  <Label style={styles.unitLabel}>Weight unit</Label>
+                  <View style={styles.unitOptions} accessibilityRole="radiogroup">
+                    {UNIT_OPTIONS.map(option => {
+                      const selected = weightUnit === option.id;
+                      return (
+                        <Pressable
+                          key={option.id}
+                          style={({ pressed }) => [
+                            styles.unitButton,
+                            selected && styles.unitButtonSelected,
+                            pressed && !selected && styles.pressed,
+                          ]}
+                          onPress={() => chooseUnit(option.id)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`Weight unit ${option.title}`}
+                        >
+                          <Label style={[styles.unitButtonLabel, selected && styles.onInkText]}>{option.title}</Label>
+                        </Pressable>
+                      );
+                    })}
                   </View>
-                ))}
-              </View>
+                </View>
+
+                <Body style={styles.note}>You can change these anytime in Settings.</Body>
+              </>
             )}
           </ScrollView>
         ))}
@@ -193,22 +304,97 @@ const styles = StyleSheet.create({
     lineHeight: label.cue * 1.5,
     color: colors.inkMuted,
   },
+  // This slide carries interactive controls, so it is tightened to fit a small
+  // phone without scrolling.
+  slideCompact: {
+    paddingVertical: space.tight,
+  },
+  titleCompact: {
+    fontSize: 44,
+    lineHeight: Math.round(44 * leading.display),
+  },
+  bodyCompact: {
+    marginTop: space.tight,
+  },
   options: {
-    marginTop: space.block,
-    gap: space.tight,
+    marginTop: space.row,
+    gap: space.hair,
   },
   optionCard: {
+    minHeight: band.control + space.tight,
     borderWidth: rule.heavy,
     borderColor: colors.ink,
-    padding: space.row,
-    gap: space.hair,
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.row,
+  },
+  optionCardSelected: {
+    backgroundColor: colors.ink,
+  },
+  optionText: {
+    flex: 1,
   },
   optionTitle: {
     fontSize: label.base,
+    letterSpacing: tracking.wide,
   },
   optionDescription: {
     fontSize: label.micro,
-    lineHeight: label.micro * 1.5,
+    lineHeight: label.micro * 1.4,
+    color: colors.inkMuted,
+  },
+  onInkText: {
+    color: colors.onInk,
+  },
+  // Square marker: hollow when unselected, an orange block when selected.
+  marker: {
+    width: 16,
+    height: 16,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  markerSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  unitRow: {
+    marginTop: space.row,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.row,
+  },
+  unitLabel: {
+    fontSize: label.base,
+    letterSpacing: tracking.wide,
+  },
+  unitOptions: {
+    flexDirection: 'row',
+    gap: space.hair,
+  },
+  unitButton: {
+    minWidth: 76,
+    minHeight: band.control,
+    paddingHorizontal: space.row,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unitButtonSelected: {
+    backgroundColor: colors.ink,
+  },
+  unitButtonLabel: {
+    fontSize: label.base,
+    letterSpacing: tracking.wide,
+  },
+  note: {
+    marginTop: space.tight,
+    fontSize: label.micro,
+    lineHeight: label.micro * 1.4,
     color: colors.inkMuted,
   },
   footer: {
