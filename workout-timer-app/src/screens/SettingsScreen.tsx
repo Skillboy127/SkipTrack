@@ -18,7 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 // real purchase can succeed.
 const REMOVE_ADS_SKU = 'remove_ads';
 
-const PRIVACY_POLICY_URL = 'https://skillboy127.github.io/flex/privacy/';
+const PRIVACY_POLICY_URL = 'https://harshtalnikar.github.io/flex/privacy/';
 const CONTACT_EMAIL = 'harshtalnikar@gmail.com';
 
 const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string }[] = [
