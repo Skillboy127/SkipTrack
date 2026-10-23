@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, StyleSheet, Pressable, ScrollView, StatusBar } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList, WeightUnit } from '../types';
 import { addHistoryEntry, loadWeightUnit } from '../storage';
-import { CheckIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
-import { AdBanner } from '../components/AdBanner';
+import { Display, Label } from '../components/PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Completion'>;
 
@@ -21,6 +22,7 @@ export function CompletionScreen({ route, navigation }: Props) {
   const { totalElapsed, workout, repLogs = [] } = route.params;
   const groupedLogs = useMemo(() => groupRepLogs(repLogs), [repLogs]);
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     loadWeightUnit().then(setWeightUnit);
@@ -40,62 +42,161 @@ export function CompletionScreen({ route, navigation }: Props) {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const summary = (
-    <>
-      <View style={styles.checkmarkBadge}><CheckIcon color="#CCFF00" size={30} /></View>
-      <View style={styles.titlesGroup}>
-        <Text style={styles.title}>Workout Complete</Text>
-        <Text style={styles.subtitle} numberOfLines={1}>{workout.name || 'Workout'}</Text>
-      </View>
-      <View style={styles.timeGroup}>
-        <Text style={styles.elapsedTime}>{formatTime(totalElapsed)}</Text>
-        <Text style={styles.timeLabel}>Total Elapsed Time</Text>
-      </View>
-    </>
-  );
+  const exerciseCount = workout.exercises.length;
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.accent} />
       <View style={styles.statusBarSpacer} />
-      {groupedLogs.length > 0 ? (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.centerContentScroll}>{summary}</View>
-          <View style={styles.logsSection}>
-            <Text style={styles.logsSectionTitle}>SETS LOGGED</Text>
+
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Display style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>Done</Display>
+        <Label style={styles.workoutName} numberOfLines={2}>{workout.name || 'Workout'}</Label>
+
+        <View style={styles.timeBlock}>
+          <Display style={styles.time} numberOfLines={1} adjustsFontSizeToFit>{formatTime(totalElapsed)}</Display>
+          <Label style={styles.timeLabel}>Total time</Label>
+        </View>
+
+        <View style={styles.statRow}>
+          <View style={styles.stat}>
+            <Display style={styles.statValue}>{exerciseCount}</Display>
+            <Label style={styles.statLabel}>Exercise{exerciseCount !== 1 ? 's' : ''}</Label>
+          </View>
+          {workout.rounds && workout.rounds > 1 ? (
+            <View style={[styles.stat, styles.statDivider]}>
+              <Display style={styles.statValue}>{workout.rounds}</Display>
+              <Label style={styles.statLabel}>Rounds</Label>
+            </View>
+          ) : null}
+          {groupedLogs.length > 0 && (
+            <View style={[styles.stat, styles.statDivider]}>
+              <Display style={styles.statValue}>{repLogs.length}</Display>
+              <Label style={styles.statLabel}>Sets logged</Label>
+            </View>
+          )}
+        </View>
+
+        {groupedLogs.length > 0 && (
+          <View style={styles.logs}>
+            <Label style={styles.logsTitle}>Sets logged</Label>
             {groupedLogs.map(group => (
-              <ExerciseLogCard key={group.exerciseName} exerciseName={group.exerciseName} sets={group.sets} weightUnit={weightUnit} />
+              <ExerciseLogCard
+                key={group.exerciseName}
+                exerciseName={group.exerciseName}
+                sets={group.sets}
+                weightUnit={weightUnit}
+              />
             ))}
           </View>
-        </ScrollView>
-      ) : (
-        <View style={styles.centerContent}>{summary}</View>
-      )}
-      <View style={styles.footerWrapper}>
-        <TouchableOpacity style={styles.doneButton} onPress={() => navigation.popToTop()}>
-          <CheckIcon color="#09090A" size={22} /><Text style={styles.doneLabel}>Done</Text>
-        </TouchableOpacity>
+        )}
+      </ScrollView>
+
+      <View style={[styles.footer, { paddingBottom: space.row + insets.bottom }]}>
+        <Pressable
+          style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
+          onPress={() => navigation.popToTop()}
+          accessibilityRole="button"
+          accessibilityLabel="Finish and go to workouts"
+        >
+          <Display style={styles.ctaLabel}>Done</Display>
+        </Pressable>
       </View>
-      <AdBanner />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#09090A' },
-  statusBarSpacer: { height: 44 },
-  centerContent: { flex: 1, paddingHorizontal: 24, paddingVertical: 20, alignItems: 'center', justifyContent: 'center', gap: 36 },
-  scrollContent: { flexGrow: 1, paddingBottom: 24 },
-  centerContentScroll: { width: '100%', paddingHorizontal: 24, paddingVertical: 20, alignItems: 'center', gap: 36 },
-  checkmarkBadge: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, borderColor: '#CCFF00', backgroundColor: 'rgba(204, 255, 0, 0.1)', alignItems: 'center', justifyContent: 'center' },
-  titlesGroup: { width: '100%', alignItems: 'center', gap: 8 },
-  title: { color: '#FFFFFF', fontSize: 28, fontWeight: '800', lineHeight: 36, textAlign: 'center' },
-  subtitle: { width: '100%', color: '#94A3B8', fontSize: 16, fontWeight: '500', lineHeight: 21, textAlign: 'center' },
-  timeGroup: { alignItems: 'center', gap: 4 },
-  elapsedTime: { color: '#CCFF00', fontFamily: 'monospace', fontSize: 72, fontWeight: '800', lineHeight: 72, fontVariant: ['tabular-nums'] },
-  timeLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '700', lineHeight: 16, textTransform: 'uppercase' },
-  footerWrapper: { height: 112, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 8, borderTopWidth: 1, borderTopColor: '#1F1F24', backgroundColor: '#09090A' },
-  doneButton: { height: 54, borderRadius: 12, backgroundColor: '#CCFF00', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  doneLabel: { color: '#09090A', fontSize: 18, fontWeight: '700', lineHeight: 23, textTransform: 'uppercase' },
-  logsSection: { paddingHorizontal: 24, gap: 12 },
-  logsSectionTitle: { color: '#94A3B8', fontSize: 11, fontWeight: '700', lineHeight: 14, textTransform: 'uppercase' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.accent,
+  },
+  statusBarSpacer: {
+    height: band.statusBar,
+  },
+  scroll: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
+    paddingBottom: space.block,
+  },
+  hero: {
+    fontSize: 150,
+    lineHeight: Math.round(150 * leading.display),
+    letterSpacing: tracking.display,
+  },
+  workoutName: {
+    marginTop: space.hair,
+    fontSize: label.cue,
+    letterSpacing: tracking.label,
+  },
+  timeBlock: {
+    marginTop: space.block,
+    borderTopWidth: rule.heavy,
+    borderBottomWidth: rule.heavy,
+    borderColor: colors.ink,
+    paddingVertical: space.row,
+  },
+  time: {
+    fontSize: 104,
+    lineHeight: Math.round(104 * leading.tight),
+    fontVariant: ['tabular-nums'],
+  },
+  timeLabel: {
+    marginTop: space.hair,
+    fontSize: label.base,
+    letterSpacing: tracking.wide,
+  },
+  statRow: {
+    flexDirection: 'row',
+    marginTop: space.block,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  stat: {
+    flex: 1,
+    padding: space.row,
+  },
+  statDivider: {
+    borderLeftWidth: rule.heavy,
+    borderLeftColor: colors.ink,
+  },
+  statValue: {
+    fontSize: display.stat,
+    lineHeight: display.stat * leading.snug,
+    fontVariant: ['tabular-nums'],
+  },
+  statLabel: {
+    marginTop: space.hair,
+    fontSize: label.micro,
+  },
+  logs: {
+    marginTop: space.block,
+    gap: space.tight,
+  },
+  logsTitle: {
+    fontSize: label.micro,
+    marginBottom: space.hair,
+  },
+  footer: {
+    paddingTop: space.block,
+    paddingHorizontal: space.gutter,
+    backgroundColor: colors.accent,
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
+  },
+  cta: {
+    height: band.cta,
+    backgroundColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaPressed: {
+    backgroundColor: colors.inkPress,
+  },
+  ctaLabel: {
+    color: colors.onInk,
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
+    letterSpacing: 0.6,
+  },
 });

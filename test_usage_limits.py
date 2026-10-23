@@ -103,7 +103,8 @@ check("other device unaffected", post(other).status_code == 200)
 
 # --- "reinstall": same device id -> same hash -> same count
 check("same device id keeps its count", usage(d)["used"] == 2)
-raw_stored = usage_limits._connect().execute("SELECT count(*) FROM usage WHERE device_hash = %s", (d,)).fetchone()[0]
+with usage_limits._connect() as conn:
+    raw_stored = conn.execute("SELECT count(*) FROM usage WHERE device_hash = %s", (d,)).fetchone()[0]
 check("raw device id is never stored", raw_stored == 0)
 
 # --- window rollover (3s window)

@@ -36,10 +36,13 @@ export function useAudio() {
   // Track when each player last actually played a real (audible) cue, so the
   // warm-up loop below can avoid stepping on one that just fired.
   const lastRealPlayAt = useRef(new WeakMap<object, number>());
-
+  // A warm-up finishes by pausing the player 100ms after it starts. If a real
+  // cue begins inside that window the pause would silence it, so each warm-up
+  // remembers when it started and bails out if a real play happened since.
   const warmUp = (source: ReturnType<typeof useAudioPlayer>) => {
     if (!source) return;
     try {
+      const startedAt = Date.now();
       source.volume = 0;
       source.play();
       // Give the native player a moment to actually start (play/pause back
@@ -47,6 +50,11 @@ export function useAudio() {
       // playback has really engaged, since the bridge call is async).
       setTimeout(() => {
         try {
+          const lastReal = lastRealPlayAt.current.get(source) ?? 0;
+          if (lastReal >= startedAt) {
+            // A real cue took over mid-warm-up — leave it playing.
+            return;
+          }
           source.pause();
           source.seekTo(0).catch(() => {});
           source.volume = 1.0;
@@ -94,6 +102,8 @@ export function useAudio() {
         // and get truncated or silently dropped.
         source.pause();
         await source.seekTo(0);
+        // Always restore full volume: a warm-up that was interrupted may have
+        // left this player silent.
         source.volume = 1.0;
         source.play();
       } catch (e) {

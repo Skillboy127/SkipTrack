@@ -1,13 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, TextInput } from 'react-native';
+import { View, StyleSheet, FlatList, Pressable, StatusBar, TextInput, Image, Animated, useWindowDimensions } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, Workout } from '../types';
-import { loadWorkouts, deleteWorkout, saveWorkout } from '../storage';
+import { RootStackParamList, ServerUsage, Workout } from '../types';
+import { loadWorkouts, deleteWorkout, saveWorkout, saveWorkouts } from '../storage';
 import { useIsFocused } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
-import { PencilIcon, DumbbellIcon, ClockIcon, ChevronIcon, DownloadIcon, PlusIcon, SearchIcon, CloseIcon, SettingsIcon } from '../components/WorkoutIcons';
+import { getLastKnownUsage } from '../api';
+import { PlayIcon, PlusIcon, DownloadIcon, SearchIcon, CloseIcon, DragHandleIcon } from '../components/WorkoutIcons';
+import { ReorderableList, ReorderItemInfo, ReorderScrollView } from '../components/ReorderableList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { AdBanner } from '../components/AdBanner';
+import { BottomTabBar } from '../components/BottomTabBar';
+import { Display, Label, Body } from '../components/PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -15,15 +20,22 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Library'>;
 
 type PendingDelete = { workout: Workout; index: number };
 type FilterMode = 'all' | 'timed' | 'reps';
-type SortMode = 'recent' | 'name' | 'duration' | 'exercises';
+type SortMode = 'recent' | 'custom' | 'name' | 'duration' | 'exercises';
 
-const SORT_ORDER: SortMode[] = ['recent', 'name', 'duration', 'exercises'];
+const SORT_ORDER: SortMode[] = ['recent', 'custom', 'name', 'duration', 'exercises'];
 const SORT_LABELS: Record<SortMode, string> = {
   recent: 'Recent',
+  custom: 'Custom',
   name: 'Name A–Z',
   duration: 'Duration',
-  exercises: 'Most Exercises',
+  exercises: 'Most',
 };
+
+const FILTERS: { key: FilterMode; title: string }[] = [
+  { key: 'all', title: 'All' },
+  { key: 'timed', title: 'Timed' },
+  { key: 'reps', title: 'Reps' },
+];
 
 export function LibraryScreen({ navigation }: Props) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -31,15 +43,39 @@ export function LibraryScreen({ navigation }: Props) {
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<Workout | null>(null);
   const [actionMenuTarget, setActionMenuTarget] = useState<Workout | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [reorderMode, setReorderMode] = useState(false);
+  const [usage, setUsage] = useState<ServerUsage | null>(getLastKnownUsage());
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocused = useIsFocused();
 
+  // The hero is sized to fill the line, then collapses as the list scrolls so
+  // only the wordmark row stays pinned.
+  const { width } = useWindowDimensions();
+  const heroSize = Math.min(104, Math.round((width - space.gutter * 2) / 3.75));
+  const heroHeight = Math.round(heroSize * leading.display) + space.tight;
+  const [scrollY] = useState(() => new Animated.Value(0));
+  const heroCollapse = {
+    height: scrollY.interpolate({
+      inputRange: [0, heroHeight],
+      outputRange: [heroHeight, 0],
+      extrapolate: 'clamp' as const,
+    }),
+    opacity: scrollY.interpolate({
+      inputRange: [0, heroHeight * 0.6],
+      outputRange: [1, 0],
+      extrapolate: 'clamp' as const,
+    }),
+  };
+
   useEffect(() => {
     if (isFocused) {
       loadData();
+      // Whatever the server last told us; the Import screen owns fetching it.
+      setUsage(getLastKnownUsage());
     }
   }, [isFocused]);
 
@@ -67,6 +103,9 @@ export function LibraryScreen({ navigation }: Props) {
       case 'exercises':
         withDuration.sort((a, b) => b.workout.exercises.length - a.workout.exercises.length);
         break;
+      case 'custom':
+        // The stored order is the user's own arrangement; leave it untouched.
+        break;
       case 'recent':
       default:
         withDuration.sort((a, b) => (b.workout.createdAt ?? 0) - (a.workout.createdAt ?? 0));
@@ -76,6 +115,27 @@ export function LibraryScreen({ navigation }: Props) {
   }, [workouts, filterMode, searchQuery, sortMode]);
 
   const isFiltering = searchQuery.trim().length > 0 || filterMode !== 'all';
+  // Reordering only makes sense on the full, unfiltered list.
+  const reordering = reorderMode && !isFiltering;
+
+  const startReordering = () => {
+    // Switching to Custom keeps what's on screen: freeze the current order as the
+    // stored one, so nothing jumps when the mode changes.
+    if (sortMode !== 'custom') {
+      setWorkouts(displayedWorkouts);
+      saveWorkouts(displayedWorkouts);
+      setSortMode('custom');
+    }
+    setReorderMode(true);
+  };
+
+  const handleReorder = (from: number, to: number) => {
+    const next = [...workouts];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setWorkouts(next);
+    saveWorkouts(next);
+  };
 
   const cycleSortMode = () => {
     const currentIndex = SORT_ORDER.indexOf(sortMode);
@@ -85,6 +145,14 @@ export function LibraryScreen({ navigation }: Props) {
   const clearSearchAndFilters = () => {
     setSearchQuery('');
     setFilterMode('all');
+  };
+
+  const toggleSearch = () => {
+    setReorderMode(false);
+    setSearchOpen(open => {
+      if (open) setSearchQuery('');
+      return !open;
+    });
   };
 
   const handleDelete = (workout: Workout) => {
@@ -125,6 +193,12 @@ export function LibraryScreen({ navigation }: Props) {
     if (workout) handleDuplicate(workout);
   };
 
+  const handleEditFromMenu = () => {
+    const workout = actionMenuTarget;
+    setActionMenuTarget(null);
+    if (workout) navigation.navigate('WorkoutEditor', { workoutId: workout.id });
+  };
+
   const handleDeleteFromMenu = () => {
     const workout = actionMenuTarget;
     setActionMenuTarget(null);
@@ -143,213 +217,268 @@ export function LibraryScreen({ navigation }: Props) {
     setPendingDelete(null);
   };
 
-  const renderItem = ({ item }: { item: Workout }) => {
+  const renderItem = ({ item, index }: { item: Workout; index: number }) => {
     const exerciseCount = item.exercises.length;
-    const hasReps = workoutHasReps(item);
+    const rounds = item.rounds && item.rounds > 1 ? ` / ${item.rounds} Rounds` : '';
+    const reps = workoutHasReps(item) ? ' / Reps' : '';
 
     return (
-      <TouchableOpacity
-        style={styles.card}
+      <Pressable
+        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
         onPress={() => navigation.navigate('WorkoutPreview', { workout: item })}
-        onLongPress={() => setActionMenuTarget(item)}
-        delayLongPress={500}
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          setActionMenuTarget(item);
+        }}
+        delayLongPress={280}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.name}. ${exerciseCount} exercises. Long press for more actions.`}
       >
-        <View style={styles.cardInfo}>
-          <View style={styles.workoutNameRow}>
-            <Text style={styles.workoutName} numberOfLines={1}>{item.name}</Text>
-            {hasReps && (
-              <View style={styles.repsBadge} accessibilityLabel="Contains rep-based exercises">
-                <DumbbellIcon size={13} color="#CCFF00" />
-              </View>
-            )}
-          </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.exerciseCount}>
-              {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
-              {item.rounds && item.rounds > 1 ? ` • ${item.rounds} rounds` : ''}
-            </Text>
-          </View>
+        <View style={styles.numeralCol}>
+          <Display style={styles.numeral}>{String(index + 1).padStart(2, '0')}</Display>
         </View>
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('WorkoutEditor', { workoutId: item.id })}
-            hitSlop={8}
-            accessibilityLabel={`Edit ${item.name}`}
-          >
-            <PencilIcon />
-          </TouchableOpacity>
+        <View style={styles.rowBody}>
+          <Display style={styles.rowTitle} numberOfLines={1}>{item.name}</Display>
+          <Label style={styles.rowMeta} numberOfLines={1}>
+            {exerciseCount} Exercise{exerciseCount !== 1 ? 's' : ''}{rounds}{reps}
+          </Label>
         </View>
-      </TouchableOpacity>
+        <View style={styles.playSquare}>
+          <PlayIcon color={colors.ink} size={20} />
+        </View>
+      </Pressable>
     );
   };
 
+  const renderReorderItem = ({ item, index, active, dragProps }: ReorderItemInfo<Workout>) => {
+    const exerciseCount = item.exercises.length;
+    const rounds = item.rounds && item.rounds > 1 ? ` / ${item.rounds} Rounds` : '';
+    const reps = workoutHasReps(item) ? ' / Reps' : '';
+
+    return (
+      <View
+        style={[styles.row, styles.rowReorder, active && styles.rowActive]}
+        {...dragProps()}
+        accessibilityLabel={`${item.name}. Hold and drag to reorder.`}
+      >
+        <View style={styles.numeralCol}>
+          <Display style={styles.numeral}>{String(index + 1).padStart(2, '0')}</Display>
+        </View>
+        <View style={styles.rowBody}>
+          <Display style={styles.rowTitle} numberOfLines={1}>{item.name}</Display>
+          <Label style={styles.rowMeta} numberOfLines={1}>
+            {exerciseCount} Exercise{exerciseCount !== 1 ? 's' : ''}{rounds}{reps}
+          </Label>
+        </View>
+        {/* The handle lifts the row the moment it's touched. */}
+        <View style={styles.playSquare} {...dragProps(0)} accessibilityLabel="Drag to reorder">
+          <DragHandleIcon color={colors.ink} size={22} />
+        </View>
+      </View>
+    );
+  };
+
+  const emptyState = workouts.length === 0 ? (
+    <View style={styles.emptyState}>
+      <Display style={styles.emptyTitle}>No{'\n'}workouts{'\n'}yet</Display>
+      <Body style={styles.emptyBody}>
+        Import a workout from a photo or text, or build your exercises by hand.
+      </Body>
+      <Pressable
+        style={({ pressed }) => [styles.emptyAction, pressed && styles.emptyActionPressed]}
+        onPress={() => navigation.navigate('WorkoutEditor', {})}
+        accessibilityRole="button"
+      >
+        <Label style={styles.emptyActionLabel}>+ Build a workout</Label>
+      </Pressable>
+    </View>
+  ) : (
+    <View style={styles.emptyState}>
+      <Display style={styles.emptyTitle}>No{'\n'}matches</Display>
+      <Body style={styles.emptyBody}>Try a different search term, or clear your filters.</Body>
+      <Pressable
+        style={({ pressed }) => [styles.emptyAction, pressed && styles.emptyActionPressed]}
+        onPress={clearSearchAndFilters}
+        accessibilityRole="button"
+      >
+        <Label style={styles.emptyActionLabel}>Clear search &amp; filters</Label>
+      </Pressable>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
-      <View style={styles.topSection}>
-        <View style={styles.statusBarSpacer} />
-        <View style={styles.screenHeader}>
-          <View style={styles.titleGroup}>
-            <DumbbellIcon color="#CCFF00" size={22} />
-            <Text style={styles.title}>My Workouts</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.historyHeaderBtn}
-              onPress={() => navigation.navigate('History')}
-              hitSlop={8}
-              accessibilityLabel="View workout history"
-            >
-              <ClockIcon color="#94A3B8" size={14} />
-              <Text style={styles.historyHeaderLabel}>History</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.settingsHeaderBtn}
-              onPress={() => navigation.navigate('Settings')}
-              hitSlop={8}
-              accessibilityLabel="Open settings"
-            >
-              <SettingsIcon color="#94A3B8" size={16} />
-            </TouchableOpacity>
-          </View>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
+      <View style={styles.statusBarSpacer} />
+
+      <View style={styles.header}>
+        <View style={styles.brand}>
+          <Image source={require('../../assets/flex-mark.png')} style={styles.mark} />
+          <Display style={styles.wordmark}>Flex</Display>
         </View>
-        {workouts.length > 0 && (
-          <View style={styles.searchSection}>
-            <View style={styles.searchBar}>
-              <SearchIcon color="#64748B" size={15} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search workouts"
-                placeholderTextColor="#64748B"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8} accessibilityLabel="Clear search">
-                  <CloseIcon color="#64748B" size={13} />
-                </TouchableOpacity>
-              )}
-            </View>
-            <View style={styles.filterSortRow}>
-              <View style={styles.chipGroup}>
-                {(['all', 'timed', 'reps'] as const).map(mode => (
-                  <TouchableOpacity
-                    key={mode}
-                    style={[styles.chip, filterMode === mode && styles.chipActive]}
-                    onPress={() => setFilterMode(mode)}
-                  >
-                    <Text style={[styles.chipText, filterMode === mode && styles.chipTextActive]}>
-                      {mode === 'all' ? 'All' : mode === 'timed' ? 'Timed' : 'Reps'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TouchableOpacity style={styles.sortButton} onPress={cycleSortMode} accessibilityLabel="Change sort order">
-                <Text style={styles.sortButtonText}>{SORT_LABELS[sortMode]}</Text>
-                <ChevronIcon color="#94A3B8" size={10} direction="down" />
-              </TouchableOpacity>
-            </View>
+        {usage !== null && (
+          <View style={styles.importsLeft}>
+            <View style={styles.importsDot} />
+            <Label style={styles.importsLabel}>{usage.remaining} Imports Left</Label>
           </View>
         )}
       </View>
-      <AdBanner />
+
+      <Animated.View style={[styles.heroWrap, heroCollapse]}>
+        <Display
+          style={[styles.hero, { fontSize: heroSize, lineHeight: Math.round(heroSize * leading.display) }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          Workouts
+        </Display>
+      </Animated.View>
+
+      <View style={styles.filterBar}>
+        {FILTERS.map((filter, index) => {
+          const selected = filter.key === filterMode;
+          return (
+            <Pressable
+              key={filter.key}
+              style={[styles.filter, index > 0 && styles.filterDivider, selected && styles.filterActive]}
+              onPress={() => {
+                setReorderMode(false);
+                setFilterMode(filter.key);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+            >
+              <Label style={[styles.filterLabel, selected && styles.filterLabelActive]}>{filter.title}</Label>
+            </Pressable>
+          );
+        })}
+        <Pressable
+          style={[styles.searchSquare, styles.filterDivider, searchOpen && styles.filterActive]}
+          onPress={toggleSearch}
+          accessibilityRole="button"
+          accessibilityLabel={searchOpen ? 'Close search' : 'Search workouts'}
+        >
+          {searchOpen
+            ? <CloseIcon color={colors.onInk} size={14} />
+            : <SearchIcon color={colors.ink} size={16} />}
+        </Pressable>
+      </View>
+
+      {searchOpen && (
+        <View style={styles.searchField}>
+          <SearchIcon color={colors.ink} size={16} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="SEARCH WORKOUTS"
+            placeholderTextColor={colors.placeholder}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            autoFocus
+            returnKeyType="search"
+          />
+        </View>
+      )}
+
+      {workouts.length > 0 && (
+        <View style={styles.sectionLine}>
+          <Label style={styles.sectionCount}>
+            {reordering
+              ? 'Hold a row, then drag'
+              : isFiltering
+                ? `${displayedWorkouts.length} of ${workouts.length} Routines`
+                : `${workouts.length} Routines`}
+          </Label>
+          <View style={styles.sectionActions}>
+            {!reordering && (
+              <Pressable onPress={cycleSortMode} hitSlop={10} accessibilityRole="button" accessibilityLabel="Change sort order">
+                <Label style={styles.sortLabel}>Sort: {SORT_LABELS[sortMode]}</Label>
+              </Pressable>
+            )}
+            {workouts.length > 1 && !isFiltering && !searchOpen && (
+              <Pressable
+                style={[styles.reorderBtn, reordering && styles.reorderBtnActive]}
+                onPress={reordering ? () => setReorderMode(false) : startReordering}
+                disabled={pendingDelete !== null}
+                accessibilityRole="button"
+                accessibilityLabel={reordering ? 'Finish reordering' : 'Reorder workouts'}
+              >
+                <Label style={[styles.reorderLabel, reordering && styles.reorderLabelActive]}>
+                  {reordering ? 'Done' : 'Reorder'}
+                </Label>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      )}
+
+      {reordering ? (
+        <ReorderScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listContainer}
+          onScroll={e => scrollY.setValue(e.nativeEvent.contentOffset.y)}
+        >
+          <ReorderableList
+            data={displayedWorkouts}
+            keyExtractor={item => item.id}
+            onReorder={handleReorder}
+            renderItem={renderReorderItem}
+          />
+        </ReorderScrollView>
+      ) : (
       <FlatList
         style={styles.list}
         data={displayedWorkouts}
         keyExtractor={item => item.id}
         renderItem={renderItem}
         contentContainerStyle={displayedWorkouts.length === 0 ? styles.emptyListContainer : styles.listContainer}
-        ListHeaderComponent={
-          workouts.length > 0 ? (
-            <Text style={styles.sectionTitle}>
-              {isFiltering ? `${displayedWorkouts.length} OF ${workouts.length} ROUTINES` : `Saved Routines (${workouts.length})`}
-            </Text>
-          ) : null
-        }
-        ListEmptyComponent={
-          workouts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.illustration}>
-                <View style={styles.dumbbell}>
-                  <View style={styles.dumbbellPlate} />
-                  <View style={styles.dumbbellBar} />
-                  <View style={[styles.dumbbellPlate, styles.dumbbellPlateRight]} />
-                </View>
-              </View>
-              <View style={styles.textGroup}>
-                <Text style={styles.emptyTitle}>No workouts yet</Text>
-                <Text style={styles.emptyDescription}>
-                  Import a workout from a photo or text, or craft your exercises manually.
-                </Text>
-              </View>
-              <View style={styles.buttonWrap}>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={() => navigation.navigate('Import')}
-                >
-                  <DownloadIcon color="#09090A" size={20} />
-                  <Text style={styles.primaryButtonLabel}>Import Workout</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={() => navigation.navigate('WorkoutEditor', {})}
-                >
-                  <Text style={styles.secondaryButtonLabel}>+ Build Custom Workout</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <View style={styles.illustration}>
-                <SearchIcon color="#94A3B8" size={30} />
-              </View>
-              <View style={styles.textGroup}>
-                <Text style={styles.emptyTitle}>No matches</Text>
-                <Text style={styles.emptyDescription}>Try a different search term or clear your filters.</Text>
-              </View>
-              <TouchableOpacity style={styles.secondaryButton} onPress={clearSearchAndFilters}>
-                <Text style={styles.secondaryButtonLabel}>Clear Search & Filters</Text>
-              </TouchableOpacity>
-            </View>
-          )
-        }
+        ListEmptyComponent={emptyState}
+        keyboardShouldPersistTaps="handled"
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+        scrollEventThrottle={16}
       />
-      <View style={styles.floatingAndFooter}>
-        <View style={styles.fabRow}>
-          <TouchableOpacity
-            style={styles.fabImport}
-            onPress={() => navigation.navigate('Import')}
-            accessibilityLabel="Import workout"
-          >
-            <DownloadIcon color="#CCFF00" size={16} />
-            <Text style={styles.fabImportLabel}>Import</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => navigation.navigate('WorkoutEditor', {})}
-            accessibilityLabel="Create new workout"
-          >
-            <PlusIcon color="#09090A" size={26} />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.footerSpace} />
+      )}
+
+      {/* Two separate, equally weighted buttons: each has its own box, icon and label. */}
+      <View style={styles.ctaRow}>
+        <Pressable
+          style={({ pressed }) => [styles.ctaButton, styles.ctaImport, pressed && styles.ctaImportPressed]}
+          onPress={() => navigation.navigate('Import')}
+          accessibilityRole="button"
+          accessibilityLabel="Import a workout from a photo or text"
+        >
+          <DownloadIcon color={colors.accent} size={22} />
+          <Display style={[styles.ctaLabel, styles.ctaImportLabel]}>Import</Display>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.ctaButton, styles.ctaBuild, pressed && styles.ctaBuildPressed]}
+          onPress={() => navigation.navigate('WorkoutEditor', {})}
+          accessibilityRole="button"
+          accessibilityLabel="Build a workout by hand"
+        >
+          <PlusIcon color={colors.ink} size={22} />
+          <Display style={[styles.ctaLabel, styles.ctaBuildLabel]}>Build</Display>
+        </Pressable>
       </View>
+
       {pendingDelete && (
         <View style={styles.snackbar}>
-          <Text style={styles.snackbarText} numberOfLines={1}>"{pendingDelete.workout.name}" removed</Text>
-          <TouchableOpacity onPress={handleUndoDelete}>
-            <Text style={styles.undoText}>UNDO</Text>
-          </TouchableOpacity>
+          <Label style={styles.snackbarText} numberOfLines={1}>{pendingDelete.workout.name} removed</Label>
+          <Pressable onPress={handleUndoDelete} hitSlop={10} accessibilityRole="button">
+            <Label style={styles.undo}>Undo</Label>
+          </Pressable>
         </View>
       )}
+
+      <BottomTabBar active="workouts" />
+
       <ConfirmDialog
         visible={actionMenuTarget !== null}
         title={actionMenuTarget?.name ?? 'Workout'}
         onRequestClose={() => setActionMenuTarget(null)}
         actions={[
+          { label: 'Edit', variant: 'primary', onPress: handleEditFromMenu },
           { label: 'Duplicate', variant: 'neutral', onPress: handleDuplicateFromMenu },
           { label: 'Delete', variant: 'destructive', onPress: handleDeleteFromMenu },
           { label: 'Cancel', variant: 'neutral', onPress: () => setActionMenuTarget(null) },
@@ -372,393 +501,294 @@ export function LibraryScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B0B',
-  },
-  topSection: {
-    alignSelf: 'stretch',
-  },
-  list: {
-    flex: 1,
+    backgroundColor: colors.paper,
   },
   statusBarSpacer: {
-    height: 44,
+    height: band.statusBar,
   },
-  screenHeader: {
-    height: 62,
-    paddingTop: 12,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+  // ── Header ────────────────────────────────────────────────────────────────
+  header: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  titleGroup: {
+  brand: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.tight,
   },
-  title: {
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 31,
+  mark: {
+    width: 26,
+    height: 26,
   },
-  listContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-    gap: 12,
+  wordmark: {
+    fontSize: display.wordmark,
+    letterSpacing: 0.4,
   },
-  emptyListContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 32,
-    justifyContent: 'center',
-  },
-  card: {
-    height: 76,
-    backgroundColor: '#121214',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
+  importsLeft: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: space.hair + 2,
   },
-  sectionTitle: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-    textTransform: 'uppercase',
+  importsDot: {
+    width: 10,
+    height: 10,
+    backgroundColor: colors.accent,
   },
-  cardInfo: {
+  importsLabel: {
+    fontSize: label.small,
+  },
+  // ── Hero ──────────────────────────────────────────────────────────────────
+  heroWrap: {
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  hero: {
+    paddingHorizontal: space.gutter,
+    letterSpacing: tracking.display,
+  },
+  // ── Filter bar ────────────────────────────────────────────────────────────
+  filterBar: {
+    marginHorizontal: space.gutter,
+    marginTop: space.block,
+    flexDirection: 'row',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  filter: {
     flex: 1,
-    gap: 6,
-    minWidth: 0,
-  },
-  workoutNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  workoutName: {
-    flexShrink: 1,
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 21,
-  },
-  repsBadge: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(204, 255, 0, 0.12)',
+    paddingVertical: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  filterDivider: {
+    borderLeftWidth: rule.heavy,
+    borderLeftColor: colors.ink,
   },
-  exerciseCount: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 13,
-    fontWeight: '400',
-    lineHeight: 17,
+  filterActive: {
+    backgroundColor: colors.ink,
   },
-  cardActions: {
-    marginLeft: 12,
+  filterLabel: {
+    fontSize: label.base,
+    letterSpacing: tracking.label,
   },
-  emptyState: {
-    alignItems: 'center',
-    gap: 32,
+  filterLabelActive: {
+    color: colors.onInk,
   },
-  illustration: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
+  searchSquare: {
+    width: band.search,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dumbbell: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    transform: [{ rotate: '-45deg' }],
-  },
-  dumbbellBar: {
-    height: 4,
-    marginHorizontal: 5,
-    backgroundColor: '#94A3B8',
-    borderRadius: 2,
-  },
-  dumbbellPlate: {
-    position: 'absolute',
-    left: 4,
-    width: 7,
-    height: 28,
-    borderWidth: 2,
-    borderColor: '#94A3B8',
-    borderRadius: 3,
-  },
-  dumbbellPlateRight: {
-    left: undefined,
-    right: 4,
-  },
-  textGroup: {
-    alignItems: 'center',
-    gap: 12,
-    height: 80,
-    alignSelf: 'stretch',
-  },
-  emptyTitle: {
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 20,
-    fontWeight: '800',
-    lineHeight: 26,
-    textAlign: 'center',
-  },
-  emptyDescription: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 14,
-    fontWeight: '400',
-    height: 42,
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-  buttonWrap: {
-    alignSelf: 'stretch',
-    paddingTop: 8,
-    gap: 12,
-  },
-  primaryButton: {
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#CCFF00',
+  searchField: {
+    marginHorizontal: space.gutter,
+    marginTop: space.tight,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  primaryButtonLabel: {
-    color: '#09090A',
-    fontFamily: 'Geist',
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 21,
-  },
-  secondaryButton: {
-    height: 50,
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonLabel: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-  floatingAndFooter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 106,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  searchSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    gap: 10,
-  },
-  searchBar: {
-    height: 42,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: space.tight,
+    paddingHorizontal: space.row,
   },
   searchInput: {
     flex: 1,
     padding: 0,
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 14,
+    color: colors.ink,
+    fontSize: label.base,
+    letterSpacing: tracking.label,
   },
-  filterSortRow: {
+  // ── Section line ──────────────────────────────────────────────────────────
+  sectionLine: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.block,
+    paddingBottom: space.tight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
   },
-  chipGroup: {
+  sectionCount: {
+    fontSize: label.micro,
+  },
+  sortLabel: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
+  },
+  sectionActions: {
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    gap: space.row,
   },
-  chip: {
-    height: 30,
-    paddingHorizontal: 12,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
+  reorderBtn: {
+    minHeight: band.control,
+    paddingHorizontal: space.row,
+    justifyContent: 'center',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  reorderBtnActive: {
+    backgroundColor: colors.ink,
+  },
+  reorderLabel: {
+    fontSize: label.micro,
+    letterSpacing: tracking.wide,
+  },
+  reorderLabelActive: {
+    color: colors.onInk,
+  },
+  // ── Rows ──────────────────────────────────────────────────────────────────
+  list: {
+    flex: 1,
+  },
+  listContainer: {
+    borderBottomWidth: rule.heavy,
+    borderBottomColor: colors.ink,
+  },
+  emptyListContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
+    height: band.row,
+  },
+  rowPressed: {
+    backgroundColor: colors.rowPress,
+  },
+  // Rows in reorder mode need an opaque face so a lifted row covers its neighbours.
+  rowReorder: {
+    backgroundColor: colors.paper,
+  },
+  rowActive: {
+    backgroundColor: colors.rowPress,
+  },
+  numeralCol: {
+    width: band.numeralCol,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chipActive: {
-    borderColor: '#CCFF00',
-    backgroundColor: 'rgba(204, 255, 0, 0.12)',
+  numeral: {
+    fontSize: display.rowNumeral,
+    lineHeight: display.rowNumeral * leading.snug,
   },
-  chipText: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 12,
-    fontWeight: '700',
+  rowBody: {
+    flex: 1,
+    paddingVertical: space.tight,
+    paddingRight: space.row,
+    justifyContent: 'center',
+    minWidth: 0,
   },
-  chipTextActive: {
-    color: '#CCFF00',
+  rowTitle: {
+    fontSize: display.entryTitle,
+    lineHeight: display.entryTitle * leading.snug,
   },
-  sortButton: {
-    height: 30,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+  rowMeta: {
+    fontSize: label.small,
+    marginTop: space.hair,
   },
-  sortButtonText: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  historyHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-  },
-  historyHeaderLabel: {
-    color: '#94A3B8',
-    fontFamily: 'Geist',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  settingsHeaderBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#1F1F24',
+  playSquare: {
+    width: band.play,
     alignItems: 'center',
     justifyContent: 'center',
+    borderLeftWidth: rule.heavy,
+    borderLeftColor: colors.ink,
   },
-  fabRow: {
-    height: 56,
+  // ── Empty states ──────────────────────────────────────────────────────────
+  emptyState: {
+    paddingHorizontal: space.gutter,
+    gap: space.block,
+  },
+  emptyTitle: {
+    fontSize: 56,
+    lineHeight: 56 * leading.display,
+    letterSpacing: tracking.display,
+  },
+  emptyBody: {
+    fontSize: label.base,
+    lineHeight: label.base * 1.5,
+    color: colors.inkMuted,
+  },
+  emptyAction: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: space.block,
+    paddingVertical: space.row,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  emptyActionPressed: {
+    backgroundColor: colors.rowPress,
+  },
+  emptyActionLabel: {
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+  },
+  // ── Call to action ────────────────────────────────────────────────────────
+  ctaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingRight: 20,
-    gap: 12,
+    gap: space.tight,
+    marginHorizontal: space.gutter,
+    marginVertical: space.row,
   },
-  fabImport: {
-    height: 44,
-    paddingHorizontal: 16,
-    borderRadius: 22,
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#CCFF00',
+  ctaButton: {
+    flex: 1,
+    height: band.cta,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  fabImportLabel: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#CCFF00',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 5,
+    gap: space.tight,
   },
-  footerSpace: {
-    height: 50,
+  ctaImport: {
+    backgroundColor: colors.ink,
   },
+  ctaImportPressed: {
+    backgroundColor: colors.inkPress,
+  },
+  ctaBuild: {
+    backgroundColor: colors.accent,
+  },
+  ctaBuildPressed: {
+    opacity: 0.85,
+  },
+  ctaLabel: {
+    fontSize: display.cta,
+    lineHeight: display.cta * leading.snug,
+    letterSpacing: 0.6,
+  },
+  ctaImportLabel: {
+    color: colors.onInk,
+  },
+  ctaBuildLabel: {
+    color: colors.ink,
+  },
+  // ── Snackbar ──────────────────────────────────────────────────────────────
   snackbar: {
     position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 118,
-    minHeight: 48,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: '#1F1F24',
+    left: space.gutter,
+    right: space.gutter,
+    bottom: band.tabBar + band.cta + space.block,
+    minHeight: band.actionHeight,
+    paddingHorizontal: space.block,
+    backgroundColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    gap: space.row,
   },
   snackbarText: {
     flex: 1,
-    marginRight: 12,
-    color: '#FFFFFF',
-    fontFamily: 'Geist',
-    fontSize: 14,
-    lineHeight: 18,
+    color: colors.onInk,
+    fontSize: label.small,
   },
-  undoText: {
-    color: '#CCFF00',
-    fontFamily: 'Geist',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
+  undo: {
+    color: colors.accent,
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
   },
 });

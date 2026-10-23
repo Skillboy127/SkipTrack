@@ -14,24 +14,31 @@
         "UIBackgroundModes": [
           "audio"
         ]
-      }
+      },
+      "bundleIdentifier": "in.harshtalnikar.flex"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0E0E0E",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "in.harshtalnikar.flex",
+      "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES"
-      ],
-      "package": "com.anonymous.workouttimerapp"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,23 +47,17 @@
       [
         "expo-audio",
         {
-          "enableBackgroundPlayback": true
+          "enableBackgroundPlayback": false,
+          "recordAudioAndroid": false
         }
       ],
       "expo-asset",
       [
         "expo-image-picker",
         {
-          "photosPermission": "The app accesses your photos to let you import workouts from images."
-        }
-      ],
-      [
-        "expo-share-intent",
-        {
-          "androidIntentFilters": [
-            "text/*"
-          ],
-          "disableIOS": true
+          "photosPermission": "The app accesses your photos to let you import workouts from images.",
+          "microphonePermission": false,
+          "cameraPermission": false
         }
       ],
       [
@@ -65,6 +66,15 @@
           "androidAppId": "ca-app-pub-9013066559297172~2675751837",
           "iosAppId": "ca-app-pub-3940256099942544~1458002511",
           "userTrackingUsageDescription": "This identifier is used to show relevant ads."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#F2EEE3"
         }
       ]
     ],

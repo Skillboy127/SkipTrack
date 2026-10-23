@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, TextInput } from 'react-native';
+import { View, StyleSheet, Pressable, ScrollView, StatusBar, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList, Workout, WorkoutHistoryEntry, WeightUnit } from '../types';
 import { loadHistory, deleteHistoryEntry, loadWeightUnit } from '../storage';
-import { ChevronIcon, DumbbellIcon, PlayIcon, TrashIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
+import { PlayIcon, TrashIcon, SearchIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ExerciseLogCard, groupRepLogs } from '../components/ExerciseLogCard';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { BottomTabBar } from '../components/BottomTabBar';
+import { Display, Label, Body } from '../components/PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
 type Section = { header: string; entries: WorkoutHistoryEntry[] };
@@ -71,34 +74,43 @@ function HistoryEntryCard({
   const [expanded, setExpanded] = useState(false);
   const groupedLogs = useMemo(() => groupRepLogs(entry.repLogs), [entry.repLogs]);
   const hasLogs = groupedLogs.length > 0;
+  // No hour12 option, so this follows the device's 12/24-hour setting.
   const time = new Date(entry.completedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const exerciseCount = entry.workout.exercises.length;
 
   return (
-    <View style={styles.entryCard}>
-      <View style={styles.entryHeader}>
-        <TouchableOpacity
-          style={styles.entryHeaderMain}
-          onPress={() => { if (hasLogs) setExpanded(e => !e); }}
-          accessibilityLabel={hasLogs ? `Toggle log for ${entry.workout.name}` : undefined}
-        >
-          <View style={styles.entryInfo}>
-            <Text style={styles.entryName} numberOfLines={1}>{entry.workout.name || 'Workout'}</Text>
-            <Text style={styles.entryMeta}>
-              {time} · {formatTime(entry.totalElapsedSeconds)} · {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
-            </Text>
-          </View>
-          {hasLogs && <ChevronIcon color="#94A3B8" size={14} direction={expanded ? 'up' : 'down'} />}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.entryDeleteBtn}
+    <View style={styles.entry}>
+      <View style={styles.entryTop}>
+        {/* Time of day reads as a filled chip; duration is labelled DUR. */}
+        <View style={styles.timeChip}>
+          <Label style={styles.timeChipText}>{time}</Label>
+        </View>
+        <View style={styles.durationGroup}>
+          <Label style={styles.durationLabel}>Dur</Label>
+          <Display style={styles.durationValue}>{formatTime(entry.totalElapsedSeconds)}</Display>
+        </View>
+        <Pressable
+          style={styles.entryDelete}
           onPress={() => onDelete(entry)}
-          hitSlop={8}
+          hitSlop={6}
+          accessibilityRole="button"
           accessibilityLabel={`Delete ${entry.workout.name} from history`}
         >
-          <TrashIcon color="#475569" size={16} />
-        </TouchableOpacity>
+          <TrashIcon color={colors.inkMuted} size={18} />
+        </Pressable>
       </View>
+
+      <Pressable
+        onPress={() => { if (hasLogs) setExpanded(e => !e); }}
+        disabled={!hasLogs}
+        accessibilityRole={hasLogs ? 'button' : undefined}
+        accessibilityLabel={hasLogs ? `Toggle logged sets for ${entry.workout.name}` : undefined}
+      >
+        <Display style={styles.entryName} numberOfLines={2}>{entry.workout.name || 'Workout'}</Display>
+        <Label style={styles.entryMeta}>
+          {exerciseCount} Exercise{exerciseCount !== 1 ? 's' : ''}{hasLogs ? ` · ${expanded ? 'Hide' : 'Show'} sets` : ''}
+        </Label>
+      </Pressable>
 
       {expanded && hasLogs && (
         <View style={styles.entryLogs}>
@@ -108,10 +120,15 @@ function HistoryEntryCard({
         </View>
       )}
 
-      <TouchableOpacity style={styles.repeatButton} onPress={() => onRepeat(entry.workout)} accessibilityLabel={`Repeat ${entry.workout.name}`}>
-        <PlayIcon color="#CCFF00" size={12} />
-        <Text style={styles.repeatButtonText}>Repeat Workout</Text>
-      </TouchableOpacity>
+      <Pressable
+        style={({ pressed }) => [styles.goAgain, pressed && styles.goAgainPressed]}
+        onPress={() => onRepeat(entry.workout)}
+        accessibilityRole="button"
+        accessibilityLabel={`Repeat ${entry.workout.name}`}
+      >
+        <PlayIcon color={colors.ink} size={13} />
+        <Label style={styles.goAgainLabel}>Go again</Label>
+      </Pressable>
     </View>
   );
 }
@@ -123,6 +140,7 @@ export function HistoryScreen({ navigation }: Props) {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<WorkoutHistoryEntry | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -184,81 +202,112 @@ export function HistoryScreen({ navigation }: Props) {
     setPendingDelete(null);
   };
 
+  const toggleSearch = () => {
+    setSearchOpen(open => {
+      if (open) setSearchQuery('');
+      return !open;
+    });
+  };
+
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
       <View style={styles.statusBarSpacer} />
-      <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backAction} onPress={() => navigation.goBack()} accessibilityLabel="Go back">
-          <ChevronIcon color="#94A3B8" size={18} direction="left" />
-          <Text style={styles.backLabel}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.screenTitle}>History</Text>
-        <View style={styles.headerSpacer} />
+
+      <View style={styles.header}>
+        <Display style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>The Log</Display>
+        {history.length > 0 && (
+          <Pressable
+            style={[styles.searchSquare, searchOpen && styles.searchSquareActive]}
+            onPress={toggleSearch}
+            accessibilityRole="button"
+            accessibilityLabel={searchOpen ? 'Close search' : 'Search history'}
+          >
+            {searchOpen
+              ? <CloseIcon color={colors.onInk} size={14} />
+              : <SearchIcon color={colors.ink} size={16} />}
+          </Pressable>
+        )}
       </View>
 
       {history.length === 0 ? (
         <View style={styles.emptyState}>
-          <View style={styles.illustration}>
-            <DumbbellIcon color="#94A3B8" size={36} />
-          </View>
-          <Text style={styles.emptyTitle}>No workouts completed yet</Text>
-          <Text style={styles.emptyDescription}>Finish a workout and it'll show up here, with your streak and progress over time.</Text>
+          <Display style={styles.emptyTitle}>Nothing{'\n'}logged{'\n'}yet</Display>
+          <Body style={styles.emptyBody}>
+            Finish a workout and it lands here, with your streak and total time.
+          </Body>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.statsRow}>
-            <View style={styles.statColumn}><Text style={styles.statValue}>{totalWorkouts}</Text><Text style={styles.statLabel}>Workouts</Text></View>
-            <View style={styles.statDivider} />
-            <View style={styles.statColumn}><Text style={styles.statValue}>{streak}</Text><Text style={styles.statLabel}>Day Streak</Text></View>
-            <View style={styles.statDivider} />
-            <View style={styles.statColumn}><Text style={styles.statValue}>{formatTime(totalActiveSeconds)}</Text><Text style={styles.statLabel}>Total Time</Text></View>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.stats}>
+            <View style={styles.stat}>
+              <Display style={styles.statValue}>{totalWorkouts}</Display>
+              <Label style={styles.statLabel}>Workouts</Label>
+            </View>
+            <View style={[styles.stat, styles.statDivider]}>
+              <Display style={styles.statValue}>{formatTime(totalActiveSeconds)}</Display>
+              <Label style={styles.statLabel}>Total time</Label>
+            </View>
+            <View style={[styles.stat, styles.statDivider, styles.statAccent]}>
+              <Display style={styles.statValue}>{streak}</Display>
+              <Label style={styles.statLabel}>Day streak</Label>
+            </View>
           </View>
 
-          <View style={styles.searchBar}>
-            <SearchIcon color="#64748B" size={15} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search history"
-              placeholderTextColor="#64748B"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8} accessibilityLabel="Clear search">
-                <CloseIcon color="#64748B" size={13} />
-              </TouchableOpacity>
-            )}
-          </View>
+          {searchOpen && (
+            <View style={styles.searchField}>
+              <SearchIcon color={colors.ink} size={16} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="SEARCH THE LOG"
+                placeholderTextColor={colors.placeholder}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                autoFocus
+                returnKeyType="search"
+              />
+            </View>
+          )}
 
           {filteredHistory.length === 0 ? (
             <View style={styles.noMatches}>
-              <Text style={styles.emptyTitle}>No matches</Text>
-              <Text style={styles.emptyDescription}>Try a different search term.</Text>
+              <Display style={styles.noMatchesTitle}>No matches</Display>
+              <Body style={styles.emptyBody}>Try a different search term.</Body>
             </View>
           ) : (
             sections.map(section => (
               <View key={section.header} style={styles.section}>
-                <Text style={styles.sectionHeader}>{section.header}</Text>
+                <Label style={styles.sectionHeader}>{section.header}</Label>
                 {section.entries.map(entry => (
-                  <HistoryEntryCard key={entry.id} entry={entry} onRepeat={handleRepeat} onDelete={handleDeleteEntry} weightUnit={weightUnit} />
+                  <HistoryEntryCard
+                    key={entry.id}
+                    entry={entry}
+                    onRepeat={handleRepeat}
+                    onDelete={handleDeleteEntry}
+                    weightUnit={weightUnit}
+                  />
                 ))}
               </View>
             ))
           )}
         </ScrollView>
       )}
+
       {pendingDelete && (
         <View style={styles.snackbar}>
-          <Text style={styles.snackbarText} numberOfLines={1}>"{pendingDelete.entry.workout.name || 'Workout'}" removed</Text>
-          <TouchableOpacity onPress={handleUndoDeleteEntry}>
-            <Text style={styles.undoText}>UNDO</Text>
-          </TouchableOpacity>
+          <Label style={styles.snackbarText} numberOfLines={1}>
+            {pendingDelete.entry.workout.name || 'Workout'} removed
+          </Label>
+          <Pressable onPress={handleUndoDeleteEntry} hitSlop={10} accessibilityRole="button">
+            <Label style={styles.undo}>Undo</Label>
+          </Pressable>
         </View>
       )}
+
+      <BottomTabBar active="history" />
+
       <ConfirmDialog
         visible={deleteConfirmTarget !== null}
         title="Delete this session?"
@@ -274,150 +323,218 @@ export function HistoryScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#09090A' },
-  statusBarSpacer: { height: 44 },
-  headerRow: {
-    height: 48,
-    paddingHorizontal: 20,
+  container: {
+    flex: 1,
+    backgroundColor: colors.paper,
+  },
+  statusBarSpacer: {
+    height: band.statusBar,
+  },
+  header: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
+    gap: space.row,
   },
-  backAction: { width: 64, height: 20, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  backLabel: { color: '#94A3B8', fontSize: 15, lineHeight: 20 },
-  screenTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', lineHeight: 23 },
-  headerSpacer: { width: 64 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 32, gap: 20 },
-  statsRow: {
-    height: 74,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
+  hero: {
+    flex: 1,
+    fontSize: display.hero,
+    lineHeight: Math.round(display.hero * leading.display),
+    letterSpacing: tracking.display,
+  },
+  searchSquare: {
+    width: band.control,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space.tight,
+  },
+  searchSquareActive: {
+    backgroundColor: colors.ink,
+  },
+  scroll: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.block,
+    paddingBottom: space.block,
+  },
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  stats: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
   },
-  statColumn: { flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { color: '#FFFFFF', fontFamily: 'monospace', fontSize: 18, fontWeight: '700', lineHeight: 24 },
-  statLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '600', lineHeight: 14, textTransform: 'uppercase' },
-  statDivider: { width: 1, height: 24, backgroundColor: '#1F1F24', marginTop: 2 },
-  searchBar: {
-    height: 42,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
+  stat: {
+    flex: 1,
+    padding: space.row,
+  },
+  statDivider: {
+    borderLeftWidth: rule.heavy,
+    borderLeftColor: colors.ink,
+  },
+  statAccent: {
+    backgroundColor: colors.accent,
+  },
+  statValue: {
+    fontSize: display.stat,
+    lineHeight: display.stat * leading.snug,
+    fontVariant: ['tabular-nums'],
+  },
+  statLabel: {
+    marginTop: space.hair,
+    fontSize: label.micro,
+  },
+  // ── Search ────────────────────────────────────────────────────────────────
+  searchField: {
+    marginTop: space.row,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.tight,
+    paddingHorizontal: space.row,
   },
   searchInput: {
     flex: 1,
     padding: 0,
-    color: '#FFFFFF',
-    fontSize: 14,
+    color: colors.ink,
+    fontSize: label.base,
+    letterSpacing: tracking.label,
   },
-  noMatches: {
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 32,
+  // ── Entries ───────────────────────────────────────────────────────────────
+  section: {
+    marginTop: space.block,
   },
-  section: { gap: 10 },
-  sectionHeader: { color: '#94A3B8', fontSize: 11, fontWeight: '700', lineHeight: 14, textTransform: 'uppercase' },
-  entryCard: {
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    overflow: 'hidden',
+  sectionHeader: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
+    marginBottom: space.tight,
   },
-  entryHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  entry: {
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
+    paddingVertical: space.row,
+  },
+  entryTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.row,
   },
-  entryHeaderMain: {
+  timeChip: {
+    backgroundColor: colors.ink,
+    paddingHorizontal: space.tight,
+    paddingVertical: space.hair + 1,
+  },
+  timeChipText: {
+    color: colors.onInk,
+    fontSize: label.small,
+    letterSpacing: tracking.label,
+  },
+  durationGroup: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    minWidth: 0,
+    gap: space.hair + 2,
   },
-  entryDeleteBtn: {
-    width: 28,
-    height: 28,
+  durationLabel: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
+  },
+  durationValue: {
+    fontSize: display.entryTitle,
+    lineHeight: display.entryTitle * leading.snug,
+    fontVariant: ['tabular-nums'],
+  },
+  entryDelete: {
+    width: band.control,
+    height: band.control,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: -space.row,
   },
-  entryInfo: { flex: 1, gap: 4, minWidth: 0 },
-  entryName: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  entryMeta: { color: '#94A3B8', fontSize: 12 },
-  entryLogs: { paddingHorizontal: 12, paddingBottom: 12, gap: 8, borderTopWidth: 1, borderTopColor: '#1F1F24', paddingTop: 12 },
-  repeatButton: {
-    height: 40,
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
+  entryName: {
+    marginTop: space.tight,
+    fontSize: display.rowTitle,
+    lineHeight: display.rowTitle * leading.snug,
+  },
+  entryMeta: {
+    marginTop: space.hair,
+    fontSize: label.micro,
+    color: colors.inkMuted,
+  },
+  entryLogs: {
+    marginTop: space.row,
+    gap: space.tight,
+  },
+  goAgain: {
+    alignSelf: 'flex-start',
+    marginTop: space.row,
+    minHeight: band.control,
+    paddingHorizontal: space.block,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    gap: space.tight,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
   },
-  repeatButtonText: { color: '#CCFF00', fontSize: 13, fontWeight: '700' },
+  goAgainPressed: {
+    backgroundColor: colors.rowPress,
+  },
+  goAgainLabel: {
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+  },
+  // ── Empty ─────────────────────────────────────────────────────────────────
   emptyState: {
     flex: 1,
-    alignItems: 'center',
+    paddingHorizontal: space.gutter,
     justifyContent: 'center',
-    paddingHorizontal: 40,
-    gap: 20,
+    gap: space.block,
   },
-  illustration: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    backgroundColor: '#121214',
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptyTitle: {
+    fontSize: 56,
+    lineHeight: 56 * leading.display,
+    letterSpacing: tracking.display,
   },
-  emptyTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', textAlign: 'center' },
-  emptyDescription: { color: '#94A3B8', fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  emptyBody: {
+    fontSize: label.base,
+    lineHeight: label.base * 1.5,
+    color: colors.inkMuted,
+  },
+  noMatches: {
+    paddingTop: space.block * 2,
+    gap: space.tight,
+  },
+  noMatchesTitle: {
+    fontSize: display.rowTitle,
+    lineHeight: display.rowTitle * leading.snug,
+  },
+  // ── Snackbar ──────────────────────────────────────────────────────────────
   snackbar: {
     position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 24,
-    minHeight: 48,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: '#1F1F24',
+    left: space.gutter,
+    right: space.gutter,
+    bottom: band.tabBar + space.block,
+    minHeight: band.actionHeight,
+    paddingHorizontal: space.block,
+    backgroundColor: colors.ink,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    gap: space.row,
   },
   snackbarText: {
     flex: 1,
-    marginRight: 12,
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 18,
+    color: colors.onInk,
+    fontSize: label.small,
   },
-  undoText: {
-    color: '#CCFF00',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 17,
+  undo: {
+    color: colors.accent,
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
   },
 });

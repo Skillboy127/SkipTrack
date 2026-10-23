@@ -141,9 +141,88 @@ export function getLastKnownUsage(): ServerUsage | null {
 
 function parseUsage(value: any): ServerUsage | null {
   if (!value || typeof value !== 'object') return null;
-  const { limit, used, remaining, resets_at } = value;
+  const { limit, used, remaining, resets_at, bonus, rewards_remaining } = value;
   if (![limit, used, remaining].every(n => typeof n === 'number' && Number.isFinite(n))) return null;
-  return { limit, used, remaining, resets_at: typeof resets_at === 'string' ? resets_at : null };
+  return {
+    limit,
+    used,
+    remaining,
+    resets_at: typeof resets_at === 'string' ? resets_at : null,
+    bonus: typeof bonus === 'number' ? bonus : undefined,
+    rewards_remaining: typeof rewards_remaining === 'number' ? rewards_remaining : undefined,
+  };
+}
+
+/** Why a rewarded-video request was refused or failed. Nothing is ever granted client-side. */
+export class RewardStartError extends Error {
+  kind: 'cap_reached' | 'not_needed' | 'unavailable';
+  constructor(kind: RewardStartError['kind']) {
+    super(kind);
+    this.kind = kind;
+  }
+}
+
+/**
+ * Asks the server for a one-time token to attach to a rewarded ad. The server
+ * later receives AdMob's signed callback carrying this token and is the only
+ * thing that can add imports.
+ */
+export async function startReward(): Promise<string> {
+  const deviceId = getDeviceId();
+  if (!deviceId) throw new RewardStartError('unavailable');
+
+  let response: Response | null = null;
+  // Two attempts, for the free-tier server's cold start.
+  for (let attempt = 1; attempt <= 2 && !response; attempt++) {
+    try {
+      response = await fetchWithTimeout(
+        `${API_BASE}/reward/start`,
+        { method: 'POST', headers: { 'X-Device-Id': deviceId } },
+        40000,
+      );
+    } catch {
+      if (attempt === 1) await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  if (!response) throw new RewardStartError('unavailable');
+
+  const payload = await response.json().catch(() => null);
+  if (response.status === 403) throw new RewardStartError('cap_reached');
+  if (response.status === 409) throw new RewardStartError('not_needed');
+  if (!response.ok || typeof payload?.token !== 'string' || !payload.token) throw new RewardStartError('unavailable');
+  return payload.token;
+}
+
+/**
+ * After a rewarded ad, waits for the server to report a bigger allowance than
+ * `remainingBefore`. AdMob's callback can reach the server a few seconds after the
+ * ad closes, so this polls /usage. Resolves with the fresh usage, or null if the
+ * allowance didn't change in time.
+ */
+export async function waitForAllowanceIncrease(
+  remainingBefore: number,
+  totalMs = 12000,
+  intervalMs = 1500,
+): Promise<ServerUsage | null> {
+  const deviceId = getDeviceId();
+  if (!deviceId) return null;
+  const deadline = Date.now() + totalMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE}/usage`, { headers: { 'X-Device-Id': deviceId } }, 8000);
+      if (response.ok) {
+        const usage = parseUsage(await response.json().catch(() => null));
+        if (usage) {
+          lastKnownUsage = usage;
+          if (usage.remaining > remainingBefore) return usage;
+        }
+      }
+    } catch {
+      // keep polling until the deadline
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return null;
 }
 
 let usageRequest: Promise<ServerUsage> | null = null;
@@ -232,6 +311,7 @@ async function postJson(path: string, body: Record<string, string>, timeoutMs = 
         used: Number(payload.used) || 0,
         remaining: 0,
         resets_at: typeof payload.resets_at === 'string' ? payload.resets_at : null,
+        rewards_remaining: typeof payload.rewards_remaining === 'number' ? payload.rewards_remaining : undefined,
       };
       lastKnownUsage = usage;
       throw new ImportLimitError(usage);

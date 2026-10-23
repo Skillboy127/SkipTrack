@@ -1,10 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Phase } from './types';
 
-// A 3-2-1 countdown cue that is detected more than this long after it was due is
-// skipped instead of spoken out of sync (e.g. after the app was stalled).
-const STALE_CUE_SECONDS = 0.6;
-
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 
 type CountdownListener = (secondsRemaining: number) => void;
@@ -183,15 +179,13 @@ export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?
       // Cue N is due the moment `remaining` hits N, so lateness is N - remaining. A
       // cue that is already stale (this tick arrived well after it was due) is
       // dropped rather than spoken out of sync; phase changes below are never dropped.
+      // Each of 3, 2 and 1 fires exactly once per phase. There is deliberately
+      // no "too late to bother" test: dropping a cue leaves an audible hole in
+      // the countdown, which is worse than one arriving slightly late.
       const ceilRemaining = Math.ceil(remaining);
       if (ceilRemaining <= 3 && ceilRemaining > 0 && ceilRemaining !== lastBeepTimeRef.current) {
         lastBeepTimeRef.current = ceilRemaining;
-        const lateness = ceilRemaining - remaining;
-        if (lateness <= STALE_CUE_SECONDS) {
-          // Fallback: uncomment to use the beep sound instead of the spoken countdown.
-          // onBeepRef.current();
-          onCountdownRef.current?.(ceilRemaining);
-        }
+        onCountdownRef.current?.(ceilRemaining);
       }
 
       if (remaining > 0) {

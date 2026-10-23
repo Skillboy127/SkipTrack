@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { colors } from '../theme';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -12,7 +13,7 @@ type DirectionalIconProps = IconProps & {
 };
 
 /** Lightweight icons drawn from native views so they render consistently without an icon package. */
-export function PencilIcon({ color = '#94A3B8', size = 20 }: IconProps) {
+export function PencilIcon({ color = colors.ink, size = 20 }: IconProps) {
   const thickness = Math.max(3, Math.round(size * 0.22));
   const bodyLength = size * 0.6;
 
@@ -45,7 +46,7 @@ export function PencilIcon({ color = '#94A3B8', size = 20 }: IconProps) {
   );
 }
 
-export function TrashIcon({ color = '#475569', size = 18 }: IconProps) {
+export function TrashIcon({ color = colors.inkMuted, size = 18 }: IconProps) {
   const line = Math.max(1.3, Math.round(size * 0.09));
 
   return (
@@ -60,7 +61,7 @@ export function TrashIcon({ color = '#475569', size = 18 }: IconProps) {
   );
 }
 
-export function DumbbellIcon({ color = '#94A3B8', size = 16 }: IconProps) {
+export function DumbbellIcon({ color = colors.ink, size = 16 }: IconProps) {
   const barThickness = Math.max(2, Math.round(size * 0.18));
   const plateWidth = Math.max(2, Math.round(size * 0.2));
 
@@ -74,7 +75,7 @@ export function DumbbellIcon({ color = '#94A3B8', size = 16 }: IconProps) {
 }
 
 /** A checkmark drawn from a rotated corner box — crisp at any size, no font-glyph misalignment. */
-export function CheckIcon({ color = '#09090A', size = 20 }: IconProps) {
+export function CheckIcon({ color = colors.ink, size = 20 }: IconProps) {
   const thickness = Math.max(2, Math.round(size * 0.14));
 
   return (
@@ -95,7 +96,7 @@ export function CheckIcon({ color = '#09090A', size = 20 }: IconProps) {
 }
 
 /** A "sliders" glyph (three tracks with offset knobs) used for the Settings entry point. */
-export function SettingsIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+export function SettingsIcon({ color = colors.ink, size = 18 }: IconProps) {
   const lineHeight = Math.max(1.4, size * 0.1);
   const knobSize = size * 0.26;
   const knobPositions = [0.12, 0.5, 0.28];
@@ -121,7 +122,7 @@ export function SettingsIcon({ color = '#94A3B8', size = 18 }: IconProps) {
   );
 }
 
-export function SearchIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+export function SearchIcon({ color = colors.ink, size = 18 }: IconProps) {
   const ringSize = size * 0.66;
   const border = Math.max(1.4, size * 0.12);
   const handleLength = size * 0.36;
@@ -156,7 +157,7 @@ export function SearchIcon({ color = '#94A3B8', size = 18 }: IconProps) {
   );
 }
 
-export function CloseIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+export function CloseIcon({ color = colors.ink, size = 18 }: IconProps) {
   const thickness = Math.max(2, Math.round(size * 0.12));
   const barLength = size * 0.72;
 
@@ -176,7 +177,7 @@ const CHEVRON_ROTATION: Record<NonNullable<DirectionalIconProps['direction']>, s
 };
 
 /** A corner-box chevron/caret. Also doubles as a disclosure arrow via direction="up"/"down". */
-export function ChevronIcon({ color = '#94A3B8', size = 16, direction = 'right' }: DirectionalIconProps) {
+export function ChevronIcon({ color = colors.ink, size = 16, direction = 'right' }: DirectionalIconProps) {
   const thickness = Math.max(1.4, Math.round(size * 0.16));
 
   return (
@@ -195,7 +196,7 @@ export function ChevronIcon({ color = '#94A3B8', size = 16, direction = 'right' 
   );
 }
 
-export function PlayIcon({ color = '#09090A', size = 20 }: IconProps) {
+export function PlayIcon({ color = colors.ink, size = 20 }: IconProps) {
   const triangleHeight = size * 0.62;
 
   return (
@@ -223,7 +224,7 @@ export function PlayIcon({ color = '#09090A', size = 20 }: IconProps) {
  * this uses Expo's bundled Ionicons font instead — it ships inside Expo Go already, no
  * native rebuild needed.
  */
-export function SpeakerIcon({ color = '#94A3B8', size = 22, muted = false }: IconProps & { muted?: boolean }) {
+export function SpeakerIcon({ color = colors.ink, size = 22, muted = false }: IconProps & { muted?: boolean }) {
   return (
     <View style={[styles.iconBox, { width: size, height: size }]} accessible={false}>
       <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={size} color={color} />
@@ -232,7 +233,7 @@ export function SpeakerIcon({ color = '#94A3B8', size = 22, muted = false }: Ico
 }
 
 /** Two overlapping outlined squares — a "duplicate/copy" glyph. */
-export function CopyIcon({ color = '#94A3B8', size = 18 }: IconProps) {
+export function CopyIcon({ color = colors.ink, size = 18 }: IconProps) {
   const rectSize = size * 0.64;
   const border = Math.max(1.2, size * 0.09);
 
@@ -266,7 +267,7 @@ export function CopyIcon({ color = '#94A3B8', size = 18 }: IconProps) {
   );
 }
 
-export function PauseIcon({ color = '#09090A', size = 20 }: IconProps) {
+export function PauseIcon({ color = colors.ink, size = 20 }: IconProps) {
   const barWidth = Math.max(2, size * 0.16);
   const barHeight = size * 0.58;
 
@@ -279,7 +280,7 @@ export function PauseIcon({ color = '#09090A', size = 20 }: IconProps) {
 }
 
 /** A triangle-plus-bar "skip to next/previous" glyph, matching standard media-control iconography. */
-export function SkipIcon({ color = '#FFFFFF', size = 18, direction = 'right' }: DirectionalIconProps) {
+export function SkipIcon({ color = colors.ink, size = 18, direction = 'right' }: DirectionalIconProps) {
   const triangleHeight = size * 0.56;
   const barWidth = Math.max(1.6, size * 0.12);
   const isForward = direction !== 'left';
@@ -318,7 +319,7 @@ export function SkipIcon({ color = '#FFFFFF', size = 18, direction = 'right' }: 
   );
 }
 
-export function ClockIcon({ color = '#94A3B8', size = 16 }: IconProps) {
+export function ClockIcon({ color = colors.ink, size = 16 }: IconProps) {
   const border = Math.max(1.2, size * 0.1);
   const handThickness = Math.max(1, size * 0.09);
 
@@ -336,7 +337,7 @@ export function ClockIcon({ color = '#94A3B8', size = 16 }: IconProps) {
   );
 }
 
-export function DragHandleIcon({ color = '#475569', size = 18 }: IconProps) {
+export function DragHandleIcon({ color = colors.inkMuted, size = 18 }: IconProps) {
   const barHeight = Math.max(1.4, size * 0.1);
   const barWidth = size * 0.6;
 
@@ -349,7 +350,7 @@ export function DragHandleIcon({ color = '#475569', size = 18 }: IconProps) {
   );
 }
 
-export function LockIcon({ color = '#475569', size = 14 }: IconProps) {
+export function LockIcon({ color = colors.inkMuted, size = 14 }: IconProps) {
   const bodyWidth = size * 0.72;
   const bodyHeight = size * 0.48;
   const shackleSize = size * 0.5;
@@ -373,7 +374,7 @@ export function LockIcon({ color = '#475569', size = 14 }: IconProps) {
   );
 }
 
-export function InfoIcon({ color = '#CCFF00', size = 16 }: IconProps) {
+export function InfoIcon({ color = colors.ink, size = 16 }: IconProps) {
   const border = Math.max(1, size * 0.09);
   const dotSize = Math.max(1.6, size * 0.13);
 
@@ -392,7 +393,7 @@ export function InfoIcon({ color = '#CCFF00', size = 16 }: IconProps) {
 }
 
 /** A shaft + arrowhead + tray, matching the "import/download" affordance used across the library screen. */
-export function DownloadIcon({ color = '#09090A', size = 18 }: IconProps) {
+export function DownloadIcon({ color = colors.ink, size = 18 }: IconProps) {
   const shaftWidth = Math.max(1.6, size * 0.14);
 
   return (
@@ -415,7 +416,7 @@ export function DownloadIcon({ color = '#09090A', size = 18 }: IconProps) {
   );
 }
 
-export function PlusIcon({ color = '#09090A', size = 24 }: IconProps) {
+export function PlusIcon({ color = colors.ink, size = 24 }: IconProps) {
   const thickness = Math.max(2, size * 0.12);
 
   return (
@@ -426,7 +427,7 @@ export function PlusIcon({ color = '#09090A', size = 24 }: IconProps) {
   );
 }
 
-export function CameraIcon({ color = '#CCFF00', size = 20 }: IconProps) {
+export function CameraIcon({ color = colors.ink, size = 20 }: IconProps) {
   const border = Math.max(1.4, size * 0.09);
 
   return (
@@ -454,41 +455,7 @@ export function CameraIcon({ color = '#CCFF00', size = 20 }: IconProps) {
   );
 }
 
-/** A branded YouTube "play" glyph (rounded red rect + white triangle) for the video-import affordances. */
-export function YouTubePlayIcon({ size = 22 }: { size?: number }) {
-  const triangleHeight = size * 0.42;
-
-  return (
-    <View
-      style={{
-        width: size,
-        height: size * 0.72,
-        borderRadius: size * 0.2,
-        backgroundColor: '#FF0000',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      accessible={false}
-    >
-      <View
-        style={{
-          width: 0,
-          height: 0,
-          marginLeft: size * 0.05,
-          borderTopWidth: triangleHeight / 2,
-          borderBottomWidth: triangleHeight / 2,
-          borderLeftWidth: triangleHeight * 0.85,
-          borderTopColor: 'transparent',
-          borderBottomColor: 'transparent',
-          borderLeftColor: '#FFFFFF',
-        }}
-      />
-    </View>
-  );
-}
-
-/** A continuously spinning dumbbell used as the app's shared loading indicator. */
-export function RotatingDumbbellIcon({ color = '#CCFF00', size = 48 }: IconProps) {
+export function RotatingDumbbellIcon({ color = colors.ink, size = 48 }: IconProps) {
   const spin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, StyleSheet, Pressable, StatusBar, Alert, ActivityIndicator, ScrollView, Linking } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIAP } from 'react-native-iap';
+import Constants from 'expo-constants';
 import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
 import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit, loadAdFreeStatus, saveAdFreeStatus } from '../storage';
 import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
+import { BottomTabBar } from '../components/BottomTabBar';
+import { Display, Label, Body } from '../components/PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -13,6 +17,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 // this needs to be configured as a one-time non-consumable product before a
 // real purchase can succeed.
 const REMOVE_ADS_SKU = 'remove_ads';
+
+const PRIVACY_POLICY_URL = 'https://harshtalnikar.github.io/flex/privacy/';
+const CONTACT_EMAIL = 'harshtalnikar@gmail.com';
 
 const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string }[] = [
   {
@@ -148,187 +155,293 @@ export function SettingsScreen({ navigation }: Props) {
     saveWeightUnit(unit);
   };
 
+  const openContactEmail = () => {
+    Linking.openURL(`mailto:${CONTACT_EMAIL}`).catch(() => {
+      Alert.alert('Could not open email', `You can reach us at ${CONTACT_EMAIL}.`);
+    });
+  };
+
+  const openPrivacyPolicy = () => {
+    Linking.openURL(PRIVACY_POLICY_URL).catch(() => {
+      Alert.alert('Could not open link', 'The privacy policy could not be opened right now.');
+    });
+  };
+
+  const version = Constants.expoConfig?.version ?? '1.0.0';
+
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
       <View style={styles.statusBarSpacer} />
-      <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backAction} onPress={() => navigation.goBack()} accessibilityLabel="Go back">
-          <ChevronIcon color="#94A3B8" size={18} direction="left" />
-          <Text style={styles.backLabel}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.screenTitle}>Settings</Text>
-        <View style={styles.headerSpacer} />
+
+      <View style={styles.header}>
+        <Pressable
+          style={({ pressed }) => [styles.square, pressed && styles.pressed]}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ChevronIcon color={colors.ink} size={18} direction="left" />
+        </Pressable>
+        <Display style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>Settings</Display>
       </View>
 
       {loaded && (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-          <Text style={styles.sectionHeader}>SESSION COUNTDOWN</Text>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <Label style={styles.sectionHeader}>Session countdown</Label>
           <View style={styles.card}>
             {SOUND_MODES.map((option, index) => {
               const selected = soundMode === option.id;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={option.id}
-                  style={[styles.optionRow, index > 0 && styles.optionRowBorder]}
+                  style={({ pressed }) => [styles.optionRow, index > 0 && styles.optionRowBorder, pressed && styles.pressed]}
                   onPress={() => handleSelect(option.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
                   accessibilityLabel={`Use ${option.title.toLowerCase()} countdown`}
                 >
-                  <View style={[styles.radio, selected && styles.radioSelected]}>
-                    {selected && <CheckIcon color="#09090A" size={12} />}
+                  <View style={[styles.marker, selected && styles.markerSelected]}>
+                    {selected && <CheckIcon color={colors.onInk} size={12} />}
                   </View>
                   <View style={styles.optionInfo}>
-                    <Text style={styles.optionTitle}>{option.title}</Text>
-                    <Text style={styles.optionDescription}>{option.description}</Text>
+                    <Label style={styles.optionTitle}>{option.title}</Label>
+                    <Body style={styles.optionDescription}>{option.description}</Body>
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
-          <Text style={styles.hint}>
-            You can also tap the speaker icon during a workout to quickly switch between these.
-          </Text>
+          <Body style={styles.hint}>
+            You can also tap the speaker icon during a workout to switch between these.
+          </Body>
 
-          <Text style={styles.sectionHeader}>WEIGHT UNIT</Text>
+          <Label style={styles.sectionHeader}>Weight unit</Label>
           <View style={styles.card}>
             {WEIGHT_UNITS.map((option, index) => {
               const selected = weightUnit === option.id;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={option.id}
-                  style={[styles.optionRow, index > 0 && styles.optionRowBorder]}
+                  style={({ pressed }) => [styles.optionRow, index > 0 && styles.optionRowBorder, pressed && styles.pressed]}
                   onPress={() => handleSelectWeightUnit(option.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
                   accessibilityLabel={`Use ${option.title}`}
                 >
-                  <View style={[styles.radio, selected && styles.radioSelected]}>
-                    {selected && <CheckIcon color="#09090A" size={12} />}
+                  <View style={[styles.marker, selected && styles.markerSelected]}>
+                    {selected && <CheckIcon color={colors.onInk} size={12} />}
                   </View>
                   <View style={styles.optionInfo}>
-                    <Text style={styles.optionTitle}>{option.title}</Text>
-                    <Text style={styles.optionDescription}>{option.description}</Text>
+                    <Label style={styles.optionTitle}>{option.title}</Label>
+                    <Body style={styles.optionDescription}>{option.description}</Body>
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
 
-          <Text style={styles.sectionHeader}>SUPPORT FLEX</Text>
+          <Label style={styles.sectionHeader}>Support Flex</Label>
           {adFree ? (
-            <View style={styles.card}>
-              <View style={styles.adFreeConfirmedRow}>
-                <CheckIcon color="#CCFF00" size={16} />
-                <Text style={styles.adFreeConfirmedText}>Ads removed — thank you for supporting Flex!</Text>
+            <View style={[styles.card, styles.cardAccent]}>
+              <View style={styles.adFreeRow}>
+                <CheckIcon color={colors.ink} size={16} />
+                <Label style={styles.adFreeText}>Ads removed — thank you</Label>
               </View>
             </View>
           ) : (
             <View style={styles.card}>
-              <TouchableOpacity
-                style={styles.removeAdsRow}
+              <Pressable
+                style={({ pressed }) => [styles.purchaseRow, pressed && styles.pressed]}
                 onPress={handlePurchaseRemoveAds}
                 disabled={purchasing}
+                accessibilityRole="button"
                 accessibilityLabel="Remove ads"
               >
                 <View style={styles.optionInfo}>
-                  <Text style={styles.optionTitle}>{removeAdsPrice ? `Remove Ads - ${removeAdsPrice}` : 'Remove Ads'}</Text>
-                  <Text style={styles.optionDescription}>One-time purchase. You won't see any ads, forever.</Text>
+                  <Display style={styles.purchaseTitle}>
+                    {removeAdsPrice ? `Remove Ads - ${removeAdsPrice}` : 'Remove Ads'}
+                  </Display>
+                  <Body style={styles.optionDescription}>
+                    One-time purchase. You won&apos;t see any ads, forever.
+                  </Body>
                 </View>
-                {purchasing && <ActivityIndicator color="#CCFF00" />}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.optionRow, styles.optionRowBorder]}
+                {purchasing && <ActivityIndicator color={colors.ink} />}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.linkRow, styles.optionRowBorder, pressed && styles.pressed]}
                 onPress={handleRestorePurchases}
+                accessibilityRole="button"
                 accessibilityLabel="Restore purchases"
               >
-                <Text style={styles.restoreLink}>Restore Purchases</Text>
-              </TouchableOpacity>
+                <Label style={styles.linkLabel}>Restore purchases</Label>
+              </Pressable>
             </View>
           )}
+
+          <Label style={styles.sectionHeader}>About</Label>
+          <View style={styles.card}>
+            <Pressable
+              style={({ pressed }) => [styles.linkRow, pressed && styles.pressed]}
+              onPress={openPrivacyPolicy}
+              accessibilityRole="link"
+              accessibilityLabel="Open the privacy policy"
+            >
+              <Label style={styles.linkLabel}>Privacy policy</Label>
+              <ChevronIcon color={colors.ink} size={12} direction="right" />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.linkRow, styles.optionRowBorder, pressed && styles.pressed]}
+              onPress={openContactEmail}
+              accessibilityRole="link"
+              accessibilityLabel={`Email ${CONTACT_EMAIL}`}
+            >
+              <Label style={styles.linkLabel}>Contact</Label>
+              <Label style={styles.versionValue}>{CONTACT_EMAIL}</Label>
+            </Pressable>
+            <View style={[styles.linkRow, styles.optionRowBorder]}>
+              <Label style={styles.linkLabel}>Version</Label>
+              <Label style={styles.versionValue}>{version}</Label>
+            </View>
+          </View>
         </ScrollView>
       )}
+
+      <BottomTabBar active="settings" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#09090A' },
-  statusBarSpacer: { height: 44 },
-  headerRow: {
-    height: 48,
-    paddingHorizontal: 20,
+  container: {
+    flex: 1,
+    backgroundColor: colors.paper,
+  },
+  statusBarSpacer: {
+    height: band.statusBar,
+  },
+  header: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.tight,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: space.row,
   },
-  backAction: { width: 64, height: 20, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  backLabel: { color: '#94A3B8', fontSize: 15, lineHeight: 20 },
-  screenTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', lineHeight: 23 },
-  headerSpacer: { width: 64 },
-  scroll: { flex: 1 },
-  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40, gap: 10 },
-  sectionHeader: { color: '#94A3B8', fontSize: 11, fontWeight: '700', lineHeight: 14, textTransform: 'uppercase' },
+  square: {
+    width: band.control,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: {
+    backgroundColor: colors.rowPress,
+  },
+  hero: {
+    flex: 1,
+    fontSize: display.hero,
+    lineHeight: Math.round(display.hero * leading.display),
+    letterSpacing: tracking.display,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.block,
+    paddingBottom: space.block * 2,
+  },
+  sectionHeader: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
+    marginTop: space.block,
+    marginBottom: space.tight,
+  },
   card: {
-    borderWidth: 1,
-    borderColor: '#1F1F24',
-    borderRadius: 12,
-    backgroundColor: '#121214',
-    overflow: 'hidden',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  cardAccent: {
+    backgroundColor: colors.accent,
   },
   optionRow: {
-    padding: 16,
+    minHeight: band.control,
+    padding: space.row,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 14,
+    gap: space.row,
   },
   optionRowBorder: {
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F24',
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
   },
-  radio: {
+  marker: {
     width: 22,
     height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#1F1F24',
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
   },
-  radioSelected: {
-    borderColor: '#CCFF00',
-    backgroundColor: '#CCFF00',
+  markerSelected: {
+    backgroundColor: colors.ink,
   },
-  optionInfo: { flex: 1, gap: 4 },
-  optionTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  optionDescription: { color: '#94A3B8', fontSize: 12, lineHeight: 17 },
+  optionInfo: {
+    flex: 1,
+    gap: space.hair,
+  },
+  optionTitle: {
+    fontSize: label.base,
+  },
+  optionDescription: {
+    fontSize: label.micro,
+    lineHeight: label.micro * 1.5,
+    color: colors.inkMuted,
+  },
   hint: {
-    color: '#64748B',
-    fontSize: 12,
-    lineHeight: 17,
-    paddingHorizontal: 4,
+    marginTop: space.tight,
+    fontSize: label.micro,
+    lineHeight: label.micro * 1.5,
+    color: colors.inkMuted,
   },
-  removeAdsRow: {
-    padding: 16,
+  purchaseRow: {
+    minHeight: band.control,
+    padding: space.row,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.row,
+  },
+  purchaseTitle: {
+    fontSize: display.entryTitle,
+    lineHeight: display.entryTitle * leading.snug,
+  },
+  linkRow: {
+    minHeight: band.control,
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 14,
   },
-  restoreLink: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
+  linkLabel: {
+    fontSize: label.small,
+    letterSpacing: tracking.label,
   },
-  adFreeConfirmedRow: {
-    padding: 16,
+  versionValue: {
+    fontSize: label.small,
+    color: colors.inkMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  adFreeRow: {
+    padding: space.row,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: space.tight,
   },
-  adFreeConfirmedText: {
+  adFreeText: {
     flex: 1,
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 19,
+    fontSize: label.base,
   },
 });

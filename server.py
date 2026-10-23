@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import traceback
 
+import admob_ssv
 import usage_limits
 
 app = Flask(__name__)
@@ -57,6 +58,7 @@ def limit_reached_response(usage: dict):
         "limit": usage["limit"],
         "used": usage["used"],
         "resets_at": usage["resets_at"],
+        "rewards_remaining": usage.get("rewards_remaining", 0),
     }), 429
 
 
@@ -142,6 +144,72 @@ def usage_endpoint():
     except usage_limits.UsageUnavailable as exc:
         print(f"[usage] unavailable: {exc}")
         return jsonify(USAGE_UNAVAILABLE_BODY), 503
+
+REWARD_LIMIT_BODY = {
+    "error": "reward_limit_reached",
+    "message": "You've used all your bonus videos for this month. Your imports reset at the start of your next period.",
+}
+REWARD_NOT_NEEDED_BODY = {
+    "error": "reward_not_needed",
+    "message": "You still have imports left, so there's no need to watch a video yet.",
+}
+
+
+@app.post('/reward/start')
+def reward_start_endpoint():
+    """Issue a one-time token that the app attaches to a rewarded ad as SSV custom data."""
+    device_hash, error = device_hash_from_request()
+    if error:
+        return error
+    try:
+        status, token, usage = usage_limits.start_reward(device_hash)
+    except usage_limits.UsageUnavailable as exc:
+        print(f"[reward] unavailable: {exc}")
+        return jsonify(USAGE_UNAVAILABLE_BODY), 503
+    if status == 'cap_reached':
+        return jsonify(REWARD_LIMIT_BODY), 403
+    if status == 'not_needed':
+        return jsonify(REWARD_NOT_NEEDED_BODY), 409
+    return jsonify({
+        "token": token,
+        "expires_in_seconds": usage_limits.REWARD_TOKEN_TTL_MINUTES * 60,
+        "rewards_remaining": usage["rewards_remaining"],
+    })
+
+
+@app.get('/reward/callback')
+def reward_callback_endpoint():
+    """AdMob server-side verification callback. Only a correctly signed request can grant anything.
+
+    Nothing from this request is logged: the query string carries the one-time token.
+    """
+    try:
+        params = admob_ssv.verify_callback(request.query_string.decode('utf-8', 'replace'))
+    except admob_ssv.InvalidCallback:
+        return jsonify({"error": "invalid_callback"}), 400
+    except admob_ssv.KeysUnavailable as exc:
+        print(f"[reward] verifier keys unavailable: {exc}")
+        return jsonify({"error": "verifier_unavailable"}), 503
+
+    token = params.get('custom_data', '')
+    transaction_id = params.get('transaction_id', '')
+    if not token:
+        # AdMob's "Verify URL" button in the console sends a signed ping with no
+        # custom data. It is genuine, but there is nothing to reward.
+        return jsonify({"verified": True, "granted": False}), 200
+    if not transaction_id:
+        return jsonify({"error": "invalid_callback"}), 400
+
+    try:
+        outcome = usage_limits.grant_reward(token, transaction_id)
+    except usage_limits.UsageUnavailable as exc:
+        # 503 so AdMob retries.
+        print(f"[reward] unavailable: {exc}")
+        return jsonify(USAGE_UNAVAILABLE_BODY), 503
+    if outcome == 'invalid_token':
+        return jsonify({"error": "invalid_token"}), 400
+    return jsonify({"verified": True, "granted": outcome == 'granted'}), 200
+
 
 @app.route('/extract', methods=['POST'])
 def extract_endpoint():

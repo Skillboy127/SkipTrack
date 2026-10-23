@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
+import { View, StyleSheet, Pressable, Share } from 'react-native';
 import { RepSetLog, WeightUnit } from '../types';
 import { ChevronIcon } from './WorkoutIcons';
+import { Display, Label } from './PosterText';
+import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 export function groupRepLogs(repLogs: RepSetLog[]): { exerciseName: string; sets: RepSetLog[] }[] {
   const order: string[] = [];
@@ -28,24 +30,35 @@ export function ExerciseLogCard({ exerciseName, sets, weightUnit = 'lb' }: { exe
 
   return (
     <View style={styles.logCard}>
-      <TouchableOpacity style={styles.logCardHeader} onPress={() => setExpanded(e => !e)} accessibilityLabel={`Toggle log for ${exerciseName}`}>
-        <Text style={styles.logExerciseName} numberOfLines={1}>{exerciseName}</Text>
+      <Pressable
+        style={styles.logCardHeader}
+        onPress={() => setExpanded(e => !e)}
+        accessibilityRole="button"
+        accessibilityLabel={`Toggle log for ${exerciseName}`}
+      >
+        <Display style={styles.logExerciseName} numberOfLines={1}>{exerciseName}</Display>
         <View style={styles.logDisclosureGroup}>
-          <Text style={styles.logDisclosure}>{expanded ? 'Hide Log' : 'View Log'}</Text>
-          <ChevronIcon color="#CCFF00" size={12} direction={expanded ? 'up' : 'down'} />
+          <Label style={styles.logDisclosure}>{expanded ? 'Hide' : 'Sets'}</Label>
+          <ChevronIcon color={colors.ink} size={12} direction={expanded ? 'up' : 'down'} />
         </View>
-      </TouchableOpacity>
+      </Pressable>
       {expanded && (
         <View style={styles.logDetail}>
           {sets.map((s, i) => (
             <View key={i} style={styles.logRow}>
-              <Text style={styles.logRowLabel}>Set {i + 1}</Text>
-              <Text style={styles.logRowValue}>{s.reps} reps{s.weight != null ? ` @ ${s.weight} ${weightUnit}` : ''}</Text>
+              <Label style={styles.logRowLabel}>Set {i + 1}</Label>
+              <Label style={styles.logRowValue}>
+                {s.reps} reps{s.weight != null ? ` @ ${s.weight} ${weightUnit}` : ''}
+              </Label>
             </View>
           ))}
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-            <Text style={styles.shareButtonText}>Share as text</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [styles.shareButton, pressed && styles.shareButtonPressed]}
+            onPress={handleShare}
+            accessibilityRole="button"
+          >
+            <Label style={styles.shareButtonText}>Share as text</Label>
+          </Pressable>
         </View>
       )}
     </View>
@@ -53,15 +66,66 @@ export function ExerciseLogCard({ exerciseName, sets, weightUnit = 'lb' }: { exe
 }
 
 const styles = StyleSheet.create({
-  logCard: { borderWidth: 1, borderColor: '#1F1F24', borderRadius: 12, backgroundColor: '#121214', overflow: 'hidden' },
-  logCardHeader: { paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  logExerciseName: { flex: 1, color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  logDisclosureGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  logDisclosure: { color: '#CCFF00', fontSize: 12, fontWeight: '700' },
-  logDetail: { paddingHorizontal: 16, paddingBottom: 14, gap: 8, borderTopWidth: 1, borderTopColor: '#1F1F24' },
-  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10 },
-  logRowLabel: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-  logRowValue: { color: '#FFFFFF', fontFamily: 'monospace', fontSize: 13, fontWeight: '700' },
-  shareButton: { marginTop: 4, height: 40, borderRadius: 10, borderWidth: 1, borderColor: '#1F1F24', alignItems: 'center', justifyContent: 'center' },
-  shareButtonText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
+  logCard: {
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+  },
+  logCardHeader: {
+    minHeight: band.control,
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.row,
+  },
+  logExerciseName: {
+    flex: 1,
+    fontSize: display.wordmark,
+    lineHeight: display.wordmark * leading.snug,
+  },
+  logDisclosureGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.hair + 2,
+  },
+  logDisclosure: {
+    fontSize: label.micro,
+  },
+  logDetail: {
+    paddingHorizontal: space.row,
+    paddingBottom: space.row,
+    gap: space.tight,
+    borderTopWidth: rule.thin,
+    borderTopColor: colors.ink,
+  },
+  logRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: space.tight,
+  },
+  logRowLabel: {
+    fontSize: label.micro,
+    color: colors.inkMuted,
+  },
+  logRowValue: {
+    fontSize: label.small,
+    fontVariant: ['tabular-nums'],
+  },
+  shareButton: {
+    marginTop: space.hair,
+    minHeight: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareButtonPressed: {
+    backgroundColor: colors.rowPress,
+  },
+  shareButtonText: {
+    fontSize: label.micro,
+    letterSpacing: tracking.wide,
+  },
 });

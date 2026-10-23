@@ -5,13 +5,31 @@ export const USE_GOOGLE_TEST_ADS = true;
 
 // Google's sample units for Android, from
 // https://developers.google.com/admob/android/test-ads
-const TEST_BANNER_AD_UNIT_ID = 'ca-app-pub-3940256099942544/9214589741'; // anchored adaptive banner
 const TEST_INTERSTITIAL_AD_UNIT_ID = 'ca-app-pub-3940256099942544/1033173712';
 
-const REAL_BANNER_AD_UNIT_ID = 'ca-app-pub-9013066559297172/8344769072';
 const REAL_INTERSTITIAL_AD_UNIT_ID = 'ca-app-pub-9013066559297172/3697937890';
 
 const useTestAds = USE_GOOGLE_TEST_ADS || __DEV__;
 
-export const BANNER_AD_UNIT_ID = useTestAds ? TEST_BANNER_AD_UNIT_ID : REAL_BANNER_AD_UNIT_ID;
 export const INTERSTITIAL_AD_UNIT_ID = useTestAds ? TEST_INTERSTITIAL_AD_UNIT_ID : REAL_INTERSTITIAL_AD_UNIT_ID;
+
+// ─── Rewarded ad (+2 imports) ─────────────────────────────────────────────────
+// Its own flag, so the rewarded unit can be tested on its own while the other ads
+// stay on Google's samples.
+//
+// Google's sample rewarded unit is not tied to your AdMob account, so AdMob never
+// sends the server-side verification callback for it: the video plays, but the
+// server never grants the imports. To test the full flow, create a rewarded unit in
+// AdMob, put its ID in REAL_REWARDED_AD_UNIT_ID, and set this to false.
+export const USE_GOOGLE_TEST_REWARDED_ADS = true;
+
+const TEST_REWARDED_AD_UNIT_ID = 'ca-app-pub-3940256099942544/5224354917';
+
+// Your own rewarded ad unit, e.g. 'ca-app-pub-9013066559297172/XXXXXXXXXX'.
+// Left empty until you create it: the watch-a-video option is then unavailable
+// whenever the sample units are off.
+const REAL_REWARDED_AD_UNIT_ID = '';
+
+const useTestRewardedAds = USE_GOOGLE_TEST_REWARDED_ADS || __DEV__;
+
+export const REWARDED_AD_UNIT_ID = useTestRewardedAds ? TEST_REWARDED_AD_UNIT_ID : REAL_REWARDED_AD_UNIT_ID;

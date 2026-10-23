@@ -30,7 +30,7 @@ export function useSpeech(enabled: boolean) {
 
   useEffect(() => {
     if (enabledRef.current) primeSpeechEngine();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return () => {
