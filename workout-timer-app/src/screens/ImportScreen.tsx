@@ -59,6 +59,9 @@ const TABS: { key: Tab; title: string }[] = [
 
 type ImportError = { tab: Tab; message: string };
 
+/** How many more times the user can earn extra imports this month, in words. */
+const bonusVideosLeft = (n: number) => (n > 0 ? `${n} bonus ${n === 1 ? 'video' : 'videos'} left` : 'no bonus videos left');
+
 // How long the "adding your imports" dialog stays open before the user is let go on
 // while the confirmation keeps being awaited in the background.
 const REWARD_FOREGROUND_WAIT_MS = 30_000;
@@ -292,11 +295,14 @@ export function ImportScreen({ navigation }: Props) {
         if (!rewardConfirmed || rewardConfirmed.at === lastConfirmedRef.current) return;
         lastConfirmedRef.current = rewardConfirmed.at;
         const left = latest?.remaining ?? rewardConfirmed.added;
+        const videosLeftNow = latest?.rewards_remaining;
         setRewardPhase('idle');
         setLimitModalVisible(false);
         setRewardNotice({
           title: `+${rewardConfirmed.added} imports added`,
-          message: `You have ${left} ${left === 1 ? 'import' : 'imports'} left.`,
+          message:
+            `You have ${left} ${left === 1 ? 'import' : 'imports'} left.` +
+            (videosLeftNow === undefined ? '' : ` You have ${bonusVideosLeft(videosLeftNow)} this month.`),
         });
       }),
     [],
@@ -330,8 +336,16 @@ export function ImportScreen({ navigation }: Props) {
   const resetDate = usage?.resets_at
     ? new Date(usage.resets_at.replace(/(\.\d{3})\d+/, '$1')).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
+  // Extra imports from videos are limited per month; say how many chances are left.
+  const videosLeft = REWARDED_ADS_CONFIGURED ? usage?.rewards_remaining : undefined;
+  const bonusLimitLine =
+    videosLeft === undefined
+      ? ''
+      : videosLeft > 0
+        ? ` Watch a video for +2 imports (${bonusVideosLeft(videosLeft)} this month).`
+        : ' You have no bonus videos left this month.';
   const limitMessage = usage
-    ? `You've used all ${usage.limit} imports for this month.${resetDate ? ` Your imports reset on ${resetDate}.` : ''}`
+    ? `You've used all ${usage.limit} imports for this month.${resetDate ? ` Your imports reset on ${resetDate}.` : ''}${bonusLimitLine}`
     : "You've used all your imports for this month.";
   // Offered whenever the server says a reward is still available; Remove Ads
   // doesn't affect it because the video is optional.
@@ -417,6 +431,9 @@ export function ImportScreen({ navigation }: Props) {
                     : `${usage.remaining} Imports left${usageStatus === 'checking' ? '…' : ''}`}
               </Label>
             </View>
+            {videosLeft !== undefined && !rewardPending && (
+              <Label style={styles.usageNote}>{bonusVideosLeft(videosLeft)}</Label>
+            )}
             {usageStatus === 'failed' && <Label style={styles.usageNote}>May be out of date</Label>}
           </View>
         ) : usageStatus !== 'failed' ? (
