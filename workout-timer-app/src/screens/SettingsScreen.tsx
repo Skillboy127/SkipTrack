@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, StatusBar, Alert, ActivityIndicator, ScrollView, Linking } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useIAP } from 'react-native-iap';
 import Constants from 'expo-constants';
 import mobileAds from 'react-native-google-mobile-ads';
 import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
-import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit, loadAdFreeStatus, saveAdFreeStatus } from '../storage';
+import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit } from '../storage';
+import { BillingNotice, buyRemoveAds, getBillingSnapshot, restoreRemoveAds, subscribeBilling, useBilling } from '../billing';
 import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { REWARDED_AD_IS_TEST_UNIT, REWARDED_AD_UNIT_ID } from '../adConfig';
@@ -16,14 +16,26 @@ import { band, colors, display, label, leading, rule, space, tracking } from '..
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
-// TODO: replace with the real product ID once created in Play Console /
-// App Store Connect — must match exactly on both, and on both platforms
-// this needs to be configured as a one-time non-consumable product before a
-// real purchase can succeed.
-const REMOVE_ADS_SKU = 'remove_ads';
 
 const PRIVACY_POLICY_URL = 'https://harshtalnikar.github.io/flex/privacy/';
 const CONTACT_EMAIL = 'harshtalnikar@gmail.com';
+
+// What to tell the user after a purchase or restore attempt. Short on purpose.
+const BILLING_MESSAGES: Record<BillingNotice, { title: string; message: string }> = {
+  purchased: {
+    title: 'Ads removed',
+    message: 'Thank you for supporting Flex. You can still watch optional videos for bonus imports.',
+  },
+  pending: {
+    title: 'Payment pending',
+    message: "Your payment is still being processed. Ads will be removed as soon as Google Play confirms it.",
+  },
+  cancelled: { title: 'Purchase cancelled', message: 'No payment was made.' },
+  failed: { title: 'Purchase failed', message: 'Something went wrong with Google Play. Please try again.' },
+  restored: { title: 'Purchase restored', message: 'Ads are removed on this device.' },
+  'nothing-to-restore': { title: 'Nothing to restore', message: 'No Remove Ads purchase was found for this Google account.' },
+  unavailable: { title: 'Not available', message: "Purchases aren't available on this device right now." },
+};
 
 const SOUND_MODES: { id: CountdownSoundMode; title: string; description: string }[] = [
   {
@@ -60,94 +72,30 @@ export function SettingsScreen({ navigation }: Props) {
   const [soundMode, setSoundMode] = useState<CountdownSoundMode>('speech');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('lb');
   const [loaded, setLoaded] = useState(false);
-  const [adFree, setAdFree] = useState(false);
-  const [purchasing, setPurchasing] = useState(false);
+  // Remove Ads: the billing module (started at app launch) owns the store connection.
+  const billing = useBilling();
 
   useEffect(() => {
-    Promise.all([loadCountdownSoundMode(), loadWeightUnit(), loadAdFreeStatus()]).then(([sound, unit, ads]) => {
+    Promise.all([loadCountdownSoundMode(), loadWeightUnit()]).then(([sound, unit]) => {
       setSoundMode(sound);
       setWeightUnit(unit);
-      setAdFree(ads);
       setLoaded(true);
     });
   }, []);
 
-  const {
-    connected,
-    products,
-    fetchProducts,
-    requestPurchase,
-    finishTransaction,
-    restorePurchases,
-    availablePurchases,
-  } = useIAP({
-    onPurchaseSuccess: async purchase => {
-      if (purchase.productId !== REMOVE_ADS_SKU) return;
-      try {
-        await finishTransaction({ purchase, isConsumable: false });
-      } catch (e) {
-        console.warn('Failed to finish Remove Ads transaction:', e);
-      }
-      await saveAdFreeStatus(true);
-      setAdFree(true);
-      setPurchasing(false);
-    },
-    onPurchaseError: error => {
-      setPurchasing(false);
-      if (error.code !== 'user-cancelled') {
-        Alert.alert('Purchase failed', error.message || 'Something went wrong. Please try again.');
-      }
-    },
-  });
-
-  // Fetch the store-listed price as soon as the store connection is ready, so
-  // the button can show the localized price once it's known.
-  useEffect(() => {
-    if (connected) fetchProducts({ skus: [REMOVE_ADS_SKU], type: 'in-app' }).catch(() => {});
-  }, [connected, fetchProducts]);
-
-  // Restoring purchases (or a purchase made on another device syncing in)
-  // surfaces here — pick it up without requiring a manual "I already own
-  // this" confirmation.
-  useEffect(() => {
-    const alreadyOwned = availablePurchases.some(p => p.productId === REMOVE_ADS_SKU);
-    if (alreadyOwned && !adFree) {
-      saveAdFreeStatus(true);
-      setAdFree(true);
-    }
-  }, [availablePurchases]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const removeAdsPrice = products.find(p => p.id === REMOVE_ADS_SKU)?.displayPrice;
-
-  const handlePurchaseRemoveAds = async () => {
-    if (!connected) {
-      Alert.alert('Store unavailable', 'Could not connect to the store right now. Please try again later.');
-      return;
-    }
-    if (!products.some(p => p.id === REMOVE_ADS_SKU)) {
-      Alert.alert('Not available right now', 'Remove Ads can\'t be purchased right now. Please try again later.');
-      return;
-    }
-    setPurchasing(true);
-    try {
-      await requestPurchase({
-        request: { apple: { sku: REMOVE_ADS_SKU }, google: { skus: [REMOVE_ADS_SKU] } },
-        type: 'in-app',
-      });
-    } catch (e: any) {
-      setPurchasing(false);
-      Alert.alert('Purchase failed', e?.message || 'Something went wrong. Please try again.');
-    }
-  };
-
-  const handleRestorePurchases = async () => {
-    try {
-      await restorePurchases();
-    } catch (e) {
-      console.warn('Restore purchases failed:', e);
-      Alert.alert('Restore failed', 'Could not restore purchases right now. Please try again later.');
-    }
-  };
+  // Show each purchase/restore outcome once, while this screen is open.
+  const lastNoticeRef = useRef(getBillingSnapshot().notice?.at ?? null);
+  useEffect(
+    () =>
+      subscribeBilling(() => {
+        const { notice } = getBillingSnapshot();
+        if (!notice || notice.at === lastNoticeRef.current) return;
+        lastNoticeRef.current = notice.at;
+        const { title, message } = BILLING_MESSAGES[notice.kind];
+        Alert.alert(title, message);
+      }),
+    [],
+  );
 
   const handleSelect = (mode: CountdownSoundMode) => {
     setSoundMode(mode);
@@ -256,7 +204,7 @@ export function SettingsScreen({ navigation }: Props) {
           </View>
 
           <Label style={styles.sectionHeader}>Support Flex</Label>
-          {adFree ? (
+          {billing.adFree ? (
             <View style={[styles.card, styles.cardAccent]}>
               <View style={styles.adFreeRow}>
                 <CheckIcon color={colors.ink} size={16} />
@@ -266,25 +214,31 @@ export function SettingsScreen({ navigation }: Props) {
           ) : (
             <View style={styles.card}>
               <Pressable
-                style={({ pressed }) => [styles.purchaseRow, pressed && styles.pressed]}
-                onPress={handlePurchaseRemoveAds}
-                disabled={purchasing}
+                style={({ pressed }) => [styles.purchaseRow, pressed && billing.status === 'ready' && styles.pressed]}
+                onPress={buyRemoveAds}
+                disabled={billing.status !== 'ready' || billing.busy}
                 accessibilityRole="button"
-                accessibilityLabel="Remove ads"
+                accessibilityLabel={billing.price ? `Remove ads for ${billing.price}` : 'Remove ads'}
+                accessibilityState={{ disabled: billing.status !== 'ready' || billing.busy }}
               >
                 <View style={styles.optionInfo}>
-                  <Display style={styles.purchaseTitle}>
-                    {removeAdsPrice ? `Remove Ads - ${removeAdsPrice}` : 'Remove Ads'}
+                  <Display style={[styles.purchaseTitle, billing.status !== 'ready' && styles.purchaseTitleDisabled]}>
+                    {billing.price ? `Remove Ads - ${billing.price}` : 'Remove Ads'}
                   </Display>
                   <Body style={styles.optionDescription}>
-                    One-time purchase. You won&apos;t see any ads, forever.
+                    {billing.status === 'unavailable'
+                      ? "Purchases aren't available on this device. Install Flex from Google Play to remove ads."
+                      : billing.status === 'connecting'
+                        ? 'Connecting to Google Play…'
+                        : 'One-time purchase. No ads, except the optional videos for bonus imports.'}
                   </Body>
                 </View>
-                {purchasing && <ActivityIndicator color={colors.ink} />}
+                {(billing.busy || billing.status === 'connecting') && <ActivityIndicator color={colors.ink} />}
               </Pressable>
               <Pressable
                 style={({ pressed }) => [styles.linkRow, styles.optionRowBorder, pressed && styles.pressed]}
-                onPress={handleRestorePurchases}
+                onPress={restoreRemoveAds}
+                disabled={billing.busy || billing.status === 'connecting'}
                 accessibilityRole="button"
                 accessibilityLabel="Restore purchases"
               >
@@ -503,6 +457,9 @@ const styles = StyleSheet.create({
     fontSize: label.small,
     color: colors.inkMuted,
     fontVariant: ['tabular-nums'],
+  },
+  purchaseTitleDisabled: {
+    color: colors.inkMuted,
   },
   adFreeRow: {
     padding: space.row,

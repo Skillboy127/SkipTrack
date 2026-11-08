@@ -25,7 +25,8 @@ import { CompletionScreen } from './src/screens/CompletionScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
-import { loadHasSeenOnboarding, loadAdFreeStatus } from './src/storage';
+import { loadHasSeenOnboarding } from './src/storage';
+import { initBilling } from './src/billing';
 import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
 import { fetchUsage, pingServer } from './src/api';
 import { hydrateUsageCache } from './src/usageStore';
@@ -71,7 +72,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadAdFreeStatus().then(adsRemoved => console.log('[AdMob] adsRemoved =', adsRemoved));
+    // Remove Ads: connect to Google Play, then restore any owned purchase (covers reinstalls).
+    void initBilling();
   }, []);
 
   // Required once at startup before any ad can load. The shared interstitial
