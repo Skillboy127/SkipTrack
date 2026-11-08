@@ -18,7 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 
 const PRIVACY_POLICY_URL = 'https://harshtalnikar.github.io/flex/privacy/';
-const CONTACT_EMAIL = 'harshtalnikar@gmail.com';
+const CONTACT_EMAIL = 'flexbyht@gmail.com';
 
 // What to tell the user after a purchase or restore attempt. Short on purpose.
 const BILLING_MESSAGES: Record<BillingNotice, { title: string; message: string }> = {
