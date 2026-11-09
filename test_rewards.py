@@ -25,6 +25,7 @@ if not os.getenv("DATABASE_URL"):
 os.environ["LIMIT"] = "2"
 os.environ["WINDOW_DAYS"] = "1"
 os.environ["DAILY_GLOBAL_IMPORT_CAP"] = "100000"
+os.environ.pop("REWARD_CAP", None)  # the default cap (2) unless a test sets it
 os.environ.setdefault("GEMINI_API_KEY", "unused")
 
 from cryptography.hazmat.primitives import hashes, serialization  # noqa: E402
@@ -138,18 +139,18 @@ usage_limits._schema_ready = False
 usage_limits.init_schema()
 usage_limits.init_schema()  # idempotent
 u = usage("legacy-device-0001")
-check("migration keeps old rows: used preserved, no bonus, 3 rewards left",
-      u["used"] == 1 and u["remaining"] == 1 and u["bonus"] == 0 and u["rewards_remaining"] == 3)
+check("migration keeps old rows: used preserved, no bonus, 2 rewards left",
+      u["used"] == 1 and u["remaining"] == 1 and u["bonus"] == 0 and u["rewards_remaining"] == 2)
 
 # --- start is refused while imports remain
 d = new_device()
 r = start(d)
 check("start while imports remain -> 409 reward_not_needed", r.status_code == 409 and r.get_json()["error"] == "reward_not_needed")
-check("new user reports rewards_remaining == 3", usage(d)["rewards_remaining"] == 3)
+check("new user reports rewards_remaining == 2 (default cap)", usage(d)["rewards_remaining"] == 2)
 
 # --- happy path
 exhaust(d)
-check("limit_reached response carries rewards_remaining", do_import(d).get_json().get("rewards_remaining") == 3)
+check("limit_reached response carries rewards_remaining", do_import(d).get_json().get("rewards_remaining") == 2)
 r = start(d)
 body = r.get_json()
 token = body.get("token")
@@ -160,8 +161,8 @@ tx = uuid.uuid4().hex
 r = callback(signed_query(token, tx))
 check("valid signed callback -> 200 granted", r.status_code == 200 and r.get_json()["granted"] is True)
 u = usage(d)
-check("remaining == 2, limit == 4, bonus == 2, rewards_remaining == 2",
-      u["remaining"] == 2 and u["limit"] == 4 and u["bonus"] == 2 and u["rewards_remaining"] == 2)
+check("remaining == 2, limit == 4, bonus == 2, rewards_remaining == 1",
+      u["remaining"] == 2 and u["limit"] == 4 and u["bonus"] == 2 and u["rewards_remaining"] == 1)
 check("imports work again after reward", do_import(d).status_code == 200 and do_import(d).status_code == 200)
 check("and are blocked again once bonus is spent", do_import(d).status_code == 429)
 
@@ -213,18 +214,18 @@ r1 = callback(signed_query(t1))
 r2 = callback(signed_query(t2))
 check("starting again invalidates the previous unused token", r1.status_code == 400 and r2.status_code == 200)
 
-# --- cap of 3 per window
+# --- cap of 2 per window
 d3 = new_device()
 exhaust(d3)
-for i in range(3):
+for i in range(2):
     t = start(d3).get_json()["token"]
     assert callback(signed_query(t)).status_code == 200
     while usage(d3)["remaining"] > 0:
         assert do_import(d3).status_code == 200
 u = usage(d3)
-check("after 3 rewards: bonus 6, rewards_remaining 0", u["bonus"] == 6 and u["rewards_remaining"] == 0)
+check("after 2 rewards: bonus 4, rewards_remaining 0", u["bonus"] == 4 and u["rewards_remaining"] == 0)
 r = start(d3)
-check("4th start -> 403 reward_limit_reached with a message",
+check("3rd start -> 403 reward_limit_reached with a message",
       r.status_code == 403 and r.get_json()["error"] == "reward_limit_reached" and r.get_json()["message"])
 check("429 now reports rewards_remaining 0", do_import(d3).get_json().get("rewards_remaining") == 0)
 
@@ -234,12 +235,12 @@ exhaust(d4)
 ta = start(d4).get_json()["token"]
 with usage_limits._connect() as conn:
     conn.execute(
-        "UPDATE usage SET rewards_used_in_window = 3, bonus_imports = 6 WHERE device_hash = %s",
+        "UPDATE usage SET rewards_used_in_window = 2, bonus_imports = 4 WHERE device_hash = %s",
         (usage_limits.hash_device_id(d4),),
     )
 r = callback(signed_query(ta))
 check("cap reached before grant -> 200 (stops retries) but granted False, bonus unchanged",
-      r.status_code == 200 and r.get_json()["granted"] is False and usage(d4)["bonus"] == 6)
+      r.status_code == 200 and r.get_json()["granted"] is False and usage(d4)["bonus"] == 4)
 
 # --- rollover resets bonus and rewards counter
 d5 = new_device()
@@ -247,13 +248,13 @@ os.environ["WINDOW_DAYS"] = str(3 / 86400)
 exhaust(d5)
 t = start(d5).get_json()["token"]
 callback(signed_query(t))
-check("bonus applied inside window", usage(d5)["bonus"] == 2 and usage(d5)["rewards_remaining"] == 2)
+check("bonus applied inside window", usage(d5)["bonus"] == 2 and usage(d5)["rewards_remaining"] == 1)
 time.sleep(3.5)
 u = usage(d5)
-check("/usage after rollover: bonus 0, rewards_remaining 3, remaining == limit",
-      u["bonus"] == 0 and u["rewards_remaining"] == 3 and u["remaining"] == 2 and u["limit"] == 2)
+check("/usage after rollover: bonus 0, rewards_remaining 2, remaining == limit",
+      u["bonus"] == 0 and u["rewards_remaining"] == 2 and u["remaining"] == 2 and u["limit"] == 2)
 check("import after rollover works and persists the reset",
-      do_import(d5).status_code == 200 and usage(d5)["bonus"] == 0 and usage(d5)["rewards_remaining"] == 3)
+      do_import(d5).status_code == 200 and usage(d5)["bonus"] == 0 and usage(d5)["rewards_remaining"] == 2)
 os.environ["WINDOW_DAYS"] = "1"
 
 # --- reward granted after the window rolled over but before any new import
@@ -264,8 +265,8 @@ t = start(d6).get_json()["token"]
 time.sleep(3.5)
 r = callback(signed_query(t))
 u = usage(d6)
-check("grant in a fresh window starts from clean counters (used 0, bonus 2, 2 rewards left)",
-      r.status_code == 200 and u["used"] == 0 and u["bonus"] == 2 and u["rewards_remaining"] == 2)
+check("grant in a fresh window starts from clean counters (used 0, bonus 2, 1 reward left)",
+      r.status_code == 200 and u["used"] == 0 and u["bonus"] == 2 and u["rewards_remaining"] == 1)
 os.environ["WINDOW_DAYS"] = "1"
 
 # --- concurrent callbacks with the same transaction grant once
@@ -286,6 +287,80 @@ threads = [threading.Thread(target=fire) for _ in range(5)]
 [th.start() for th in threads]
 [th.join() for th in threads]
 check("5 concurrent identical callbacks -> exactly one grant", usage(d7)["bonus"] == 2)
+
+
+# --- the cap is enforced by the server, however the app behaves
+d8 = new_device()
+exhaust(d8)
+grants = 0
+for i in range(5):  # a modified app that keeps asking for more videos
+    r = start(d8)
+    if r.status_code != 200:
+        break
+    if callback(signed_query(r.get_json()["token"])).get_json().get("granted"):
+        grants += 1
+    while usage(d8)["remaining"] > 0:
+        assert do_import(d8).status_code == 200
+u = usage(d8)
+check("repeated start+callback: exactly 2 grants, then start is refused (403)",
+      grants == 2 and u["bonus"] == 4 and u["rewards_remaining"] == 0 and start(d8).status_code == 403)
+
+# The last video of the window: a second token requested before the first callback
+# lands supersedes the first, and the live one pays out once.
+d9 = new_device()
+exhaust(d9)
+with usage_limits._connect() as conn:
+    conn.execute("UPDATE usage SET rewards_used_in_window = 1, bonus_imports = 2, used_count = 4 WHERE device_hash = %s",
+                 (usage_limits.hash_device_id(d9),))
+ta = start(d9).get_json()["token"]
+tb = start(d9).get_json()["token"]
+ra = callback(signed_query(ta))
+rb = callback(signed_query(tb))
+rb2 = callback(signed_query(tb))  # an AdMob retry with a new transaction id
+check("last video: superseded token 400, live token granted once, its retry 400",
+      ra.status_code == 400 and rb.get_json()["granted"] is True and rb2.status_code == 400
+      and usage(d9)["bonus"] == 4 and usage(d9)["rewards_remaining"] == 0)
+
+# --- a duplicate callback for the same reward token never grants twice
+d10 = new_device()
+exhaust(d10)
+t = start(d10).get_json()["token"]
+q = signed_query(t, "dup-" + uuid.uuid4().hex)
+first, second, third = callback(q), callback(q), callback(signed_query(t))
+check("duplicate callback: same transaction -> 200 granted False; same token, new transaction -> 400",
+      first.get_json()["granted"] is True and second.status_code == 200 and second.get_json()["granted"] is False
+      and third.status_code == 400 and usage(d10)["bonus"] == 2)
+
+# --- users already over a lowered cap (3 watched under the old cap of 3)
+d11 = new_device()
+exhaust(d11)
+tok_old = start(d11).get_json()["token"]  # issued before the counters below
+with usage_limits._connect() as conn:
+    conn.execute("UPDATE usage SET rewards_used_in_window = 3, bonus_imports = 6, used_count = 8 WHERE device_hash = %s",
+                 (usage_limits.hash_device_id(d11),))
+u = usage(d11)
+check("over-cap user: /usage works, rewards_remaining 0 (not negative), allowance intact",
+      u["rewards_remaining"] == 0 and u["bonus"] == 6 and u["limit"] == 8 and u["remaining"] == 0)
+check("over-cap user: start -> 403 reward_limit_reached", start(d11).status_code == 403)
+r = callback(signed_query(tok_old))
+check("over-cap user: callback for an earlier token -> 200 granted False, bonus unchanged",
+      r.status_code == 200 and r.get_json()["granted"] is False and usage(d11)["bonus"] == 6)
+check("over-cap user: 429 reports rewards_remaining 0", do_import(d11).get_json().get("rewards_remaining") == 0)
+
+# --- REWARD_CAP changes the cap without a code change
+os.environ["REWARD_CAP"] = "3"
+check("REWARD_CAP=3: a user with 3 used has 0 left", usage(d11)["rewards_remaining"] == 0)
+check("REWARD_CAP=3: a user with 2 used has 1 left", usage(d3)["rewards_remaining"] == 1)
+os.environ["REWARD_CAP"] = "0"
+check("REWARD_CAP=0: a new user has 0 left", usage(new_device())["rewards_remaining"] == 0)
+os.environ["REWARD_CAP"] = "-4"
+check("REWARD_CAP negative is treated as 0", usage_limits.reward_cap() == 0)
+os.environ["REWARD_CAP"] = "lots"
+with contextlib.redirect_stdout(io.StringIO()):
+    unreadable = usage_limits.reward_cap()
+check("REWARD_CAP unreadable falls back to 2", unreadable == 2)
+os.environ.pop("REWARD_CAP")
+check("REWARD_CAP unset -> 2", usage_limits.reward_cap() == 2 and usage(new_device())["rewards_remaining"] == 2)
 
 # --- rejection logging: one line, a fixed reason, the key_id, and nothing else
 def reject_line(query, reason, key_id):

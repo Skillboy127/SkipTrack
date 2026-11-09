@@ -10,9 +10,12 @@ Configuration (environment variables):
     LIMIT                     successful imports per window (default 10)
     WINDOW_DAYS               window length in days, fractions allowed (default 30)
     DAILY_GLOBAL_IMPORT_CAP   successful imports per UTC day across all users (default 300)
+    REWARD_CAP                rewarded videos per window (default 2)
 
-Rewarded ads grant REWARD_BONUS_IMPORTS extra imports, at most MAX_REWARDS_PER_WINDOW
-times per window. The bonus lives in the same window as the base allowance and is
+Rewarded ads grant REWARD_BONUS_IMPORTS extra imports, at most REWARD_CAP times per
+window. The cap is checked when a reward starts and again, atomically, when AdMob's
+callback grants it, so it holds however many tokens or callbacks arrive. Lowering
+it never breaks a user who already watched more: they simply have 0 left. The bonus lives in the same window as the base allowance and is
 cleared when that window rolls over. The server alone decides the reward: it is only
 ever applied from a verified AdMob callback (see admob_ssv.py), never on the
 client's say-so.
@@ -28,7 +31,7 @@ import psycopg
 
 DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9._-]{8,128}$')
 
-MAX_REWARDS_PER_WINDOW = 3
+DEFAULT_REWARD_CAP = 2
 REWARD_BONUS_IMPORTS = 2
 REWARD_TOKEN_TTL_MINUTES = 10
 # Used tokens are kept this long so a replayed callback is recognised by its
@@ -83,6 +86,19 @@ def window_days() -> float:
 
 def daily_cap() -> int:
     return int(os.getenv('DAILY_GLOBAL_IMPORT_CAP', '300'))
+
+
+def reward_cap() -> int:
+    """Rewarded videos allowed per window (REWARD_CAP). A missing or unreadable value
+    falls back to the default rather than taking the server down; negatives mean 0."""
+    raw = os.getenv('REWARD_CAP', '').strip()
+    if not raw:
+        return DEFAULT_REWARD_CAP
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        print(f"[reward] REWARD_CAP is not a whole number; using {DEFAULT_REWARD_CAP}")
+        return DEFAULT_REWARD_CAP
 
 
 def is_configured() -> bool:
@@ -150,7 +166,7 @@ def _usage_dict(row) -> dict:
     plus any bonus earned from rewarded ads.
     """
     base = limit()
-    max_rewards = MAX_REWARDS_PER_WINDOW
+    max_rewards = reward_cap()
     if row is None:
         return {
             "limit": base,
@@ -325,7 +341,7 @@ def grant_reward(token: str, transaction_id: str) -> str:
         "token": token,
         "ttl": REWARD_TOKEN_TTL_MINUTES,
         "bonus": REWARD_BONUS_IMPORTS,
-        "maxr": MAX_REWARDS_PER_WINDOW,
+        "maxr": reward_cap(),
         "win": window_days() * 86400,
     }
     idx = WINDOW_INDEX_SQL.format(first="first_import_at")
