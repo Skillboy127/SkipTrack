@@ -6,6 +6,7 @@ const HISTORY_KEY = '@workout_history_v1';
 const MAX_HISTORY_ENTRIES = 200;
 const COUNTDOWN_SOUND_KEY = '@countdown_sound_mode_v1';
 const WEIGHT_UNIT_KEY = '@weight_unit_v1';
+const AUTO_ADVANCE_REPS_KEY = '@auto_advance_reps_v1';
 const AD_FREE_KEY = '@ad_free_v1';
 const ONBOARDING_SEEN_KEY = '@onboarding_seen_v1';
 const LAST_AD_SHOWN_KEY = '@last_interstitial_at_v1';
@@ -166,6 +167,37 @@ export async function saveCountdownSoundMode(mode: CountdownSoundMode): Promise<
     await AsyncStorage.setItem(COUNTDOWN_SOUND_KEY, mode);
   } catch (e) {
     console.error('Failed to save countdown sound setting', e);
+  }
+}
+
+/** Optional: finish a rep set by itself after (reps x secondsPerRep) + a short buffer. */
+export type AutoAdvanceReps = { enabled: boolean; secondsPerRep: number };
+export const AUTO_ADVANCE_MIN_SECONDS_PER_REP = 1;
+export const AUTO_ADVANCE_MAX_SECONDS_PER_REP = 8;
+export const DEFAULT_AUTO_ADVANCE_REPS: AutoAdvanceReps = { enabled: false, secondsPerRep: 3 };
+
+export async function loadAutoAdvanceReps(): Promise<AutoAdvanceReps> {
+  try {
+    const value = JSON.parse((await AsyncStorage.getItem(AUTO_ADVANCE_REPS_KEY)) ?? 'null');
+    if (!value || typeof value !== 'object') return DEFAULT_AUTO_ADVANCE_REPS;
+    const pace = Number(value.secondsPerRep);
+    return {
+      enabled: value.enabled === true,
+      secondsPerRep: Number.isFinite(pace)
+        ? Math.min(AUTO_ADVANCE_MAX_SECONDS_PER_REP, Math.max(AUTO_ADVANCE_MIN_SECONDS_PER_REP, Math.round(pace)))
+        : DEFAULT_AUTO_ADVANCE_REPS.secondsPerRep,
+    };
+  } catch (e) {
+    console.error('Failed to load auto-advance setting', e);
+    return DEFAULT_AUTO_ADVANCE_REPS;
+  }
+}
+
+export async function saveAutoAdvanceReps(setting: AutoAdvanceReps): Promise<void> {
+  try {
+    await AsyncStorage.setItem(AUTO_ADVANCE_REPS_KEY, JSON.stringify(setting));
+  } catch (e) {
+    console.error('Failed to save auto-advance setting', e);
   }
 }
 

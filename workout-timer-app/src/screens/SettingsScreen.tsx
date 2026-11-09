@@ -4,7 +4,18 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Constants from 'expo-constants';
 import mobileAds from 'react-native-google-mobile-ads';
 import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
-import { loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit, saveWeightUnit } from '../storage';
+import {
+  loadCountdownSoundMode,
+  saveCountdownSoundMode,
+  loadWeightUnit,
+  saveWeightUnit,
+  loadAutoAdvanceReps,
+  saveAutoAdvanceReps,
+  AutoAdvanceReps,
+  DEFAULT_AUTO_ADVANCE_REPS,
+  AUTO_ADVANCE_MIN_SECONDS_PER_REP,
+  AUTO_ADVANCE_MAX_SECONDS_PER_REP,
+} from '../storage';
 import { BillingNotice, buyRemoveAds, getBillingSnapshot, restoreRemoveAds, subscribeBilling, useBilling } from '../billing';
 import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -75,10 +86,13 @@ export function SettingsScreen({ navigation }: Props) {
   // Remove Ads: the billing module (started at app launch) owns the store connection.
   const billing = useBilling();
 
+  const [autoAdvance, setAutoAdvance] = useState<AutoAdvanceReps>(DEFAULT_AUTO_ADVANCE_REPS);
+
   useEffect(() => {
-    Promise.all([loadCountdownSoundMode(), loadWeightUnit()]).then(([sound, unit]) => {
+    Promise.all([loadCountdownSoundMode(), loadWeightUnit(), loadAutoAdvanceReps()]).then(([sound, unit, auto]) => {
       setSoundMode(sound);
       setWeightUnit(unit);
+      setAutoAdvance(auto);
       setLoaded(true);
     });
   }, []);
@@ -100,6 +114,18 @@ export function SettingsScreen({ navigation }: Props) {
   const handleSelect = (mode: CountdownSoundMode) => {
     setSoundMode(mode);
     saveCountdownSoundMode(mode);
+  };
+
+  const updateAutoAdvance = (next: AutoAdvanceReps) => {
+    setAutoAdvance(next);
+    saveAutoAdvanceReps(next);
+  };
+  const stepAutoAdvancePace = (delta: number) => {
+    const secondsPerRep = Math.min(
+      AUTO_ADVANCE_MAX_SECONDS_PER_REP,
+      Math.max(AUTO_ADVANCE_MIN_SECONDS_PER_REP, autoAdvance.secondsPerRep + delta),
+    );
+    updateAutoAdvance({ ...autoAdvance, secondsPerRep });
   };
 
   const handleSelectWeightUnit = (unit: WeightUnit) => {
@@ -201,6 +227,55 @@ export function SettingsScreen({ navigation }: Props) {
                 </Pressable>
               );
             })}
+          </View>
+
+          <Label style={styles.sectionHeader}>Rep sets</Label>
+          <View style={styles.card}>
+            <Pressable
+              style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}
+              onPress={() => updateAutoAdvance({ ...autoAdvance, enabled: !autoAdvance.enabled })}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: autoAdvance.enabled }}
+              accessibilityLabel="Auto-advance rep sets"
+            >
+              <View style={[styles.marker, autoAdvance.enabled && styles.markerSelected]}>
+                {autoAdvance.enabled && <CheckIcon color={colors.onInk} size={12} />}
+              </View>
+              <View style={styles.optionInfo}>
+                <Label style={styles.optionTitle}>Auto-advance rep sets</Label>
+                <Body style={styles.optionDescription}>
+                  {autoAdvance.enabled
+                    ? `A rep set moves on to rest by itself after ${autoAdvance.secondsPerRep} sec per rep, plus 3 sec. You can still tap Done early, or add time with +10s.`
+                    : 'Off: a rep set waits until you tap Done.'}
+                </Body>
+              </View>
+            </Pressable>
+            {autoAdvance.enabled && (
+              <View style={[styles.paceRow, styles.optionRowBorder]}>
+                <Label style={styles.linkLabel}>Pace</Label>
+                <View style={styles.paceStepper}>
+                  <Pressable
+                    style={({ pressed }) => [styles.paceButton, pressed && styles.pressed]}
+                    onPress={() => stepAutoAdvancePace(-1)}
+                    disabled={autoAdvance.secondsPerRep <= AUTO_ADVANCE_MIN_SECONDS_PER_REP}
+                    accessibilityRole="button"
+                    accessibilityLabel="Fewer seconds per rep"
+                  >
+                    <Label style={[styles.paceButtonLabel, autoAdvance.secondsPerRep <= AUTO_ADVANCE_MIN_SECONDS_PER_REP && styles.paceButtonDisabled]}>−</Label>
+                  </Pressable>
+                  <Label style={styles.paceValue}>{autoAdvance.secondsPerRep} sec / rep</Label>
+                  <Pressable
+                    style={({ pressed }) => [styles.paceButton, pressed && styles.pressed]}
+                    onPress={() => stepAutoAdvancePace(1)}
+                    disabled={autoAdvance.secondsPerRep >= AUTO_ADVANCE_MAX_SECONDS_PER_REP}
+                    accessibilityRole="button"
+                    accessibilityLabel="More seconds per rep"
+                  >
+                    <Label style={[styles.paceButtonLabel, autoAdvance.secondsPerRep >= AUTO_ADVANCE_MAX_SECONDS_PER_REP && styles.paceButtonDisabled]}>+</Label>
+                  </Pressable>
+                </View>
+              </View>
+            )}
           </View>
 
           <Label style={styles.sectionHeader}>Support Flex</Label>
@@ -411,6 +486,39 @@ const styles = StyleSheet.create({
   },
   markerSelected: {
     backgroundColor: colors.ink,
+  },
+  paceRow: {
+    minHeight: band.control,
+    paddingHorizontal: space.row,
+    paddingVertical: space.hair,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  paceStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.tight,
+  },
+  paceButton: {
+    width: band.control,
+    height: band.control,
+    borderWidth: rule.heavy,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paceButtonLabel: {
+    fontSize: label.cue,
+  },
+  paceButtonDisabled: {
+    color: colors.inkMuted,
+  },
+  paceValue: {
+    minWidth: 92,
+    textAlign: 'center',
+    fontSize: label.small,
+    fontVariant: ['tabular-nums'],
   },
   optionInfo: {
     flex: 1,

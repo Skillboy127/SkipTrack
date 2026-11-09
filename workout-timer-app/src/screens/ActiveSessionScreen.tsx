@@ -9,7 +9,15 @@ import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
-import { addHistoryEntry, loadCountdownSoundMode, saveCountdownSoundMode, loadWeightUnit } from '../storage';
+import {
+  addHistoryEntry,
+  loadCountdownSoundMode,
+  saveCountdownSoundMode,
+  loadWeightUnit,
+  loadAutoAdvanceReps,
+  AutoAdvanceReps,
+  DEFAULT_AUTO_ADVANCE_REPS,
+} from '../storage';
 import { SkipIcon, PlayIcon, PauseIcon, SpeakerIcon, ChevronIcon, CloseIcon } from '../components/WorkoutIcons';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { UpNextDrawer } from '../components/UpNextDrawer';
@@ -27,6 +35,11 @@ const PRE_START_SECONDS = 5;
 const PRE_START_CUE_WORDS: Record<number, string> = { 3: 'three', 2: 'two', 1: 'one' };
 
 const SOUND_MODE_ORDER: CountdownSoundMode[] = ['speech', 'beep', 'silent'];
+
+// Auto-advance rep sets: extra seconds on top of (reps x seconds per rep), and
+// how much one tap on "+10s" adds.
+const AUTO_ADVANCE_BUFFER_SECONDS = 3;
+const AUTO_ADVANCE_EXTEND_SECONDS = 10;
 const SOUND_MODE_LABELS: Record<CountdownSoundMode, string> = {
   speech: 'Spoken countdown',
   beep: 'Beep countdown',
@@ -103,11 +116,14 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // Seconds left in the "get ready" countdown shown before the workout timer
   // actually starts; null once it's finished and the real session has begun.
   const [preStartSeconds, setPreStartSeconds] = useState<number | null>(PRE_START_SECONDS);
+  // Optional (Settings): finish rep sets by themselves. Off means the set waits for "Done".
+  const [autoAdvance, setAutoAdvance] = useState<AutoAdvanceReps>(DEFAULT_AUTO_ADVANCE_REPS);
 
   // Load the user's countdown sound preference (defaults to spoken)
   useEffect(() => {
     loadCountdownSoundMode().then(setSoundMode);
     loadWeightUnit().then(setWeightUnit);
+    loadAutoAdvanceReps().then(setAutoAdvance);
   }, []);
 
   const cycleSoundMode = () => {
@@ -292,6 +308,73 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     goToCompletion();
   }, [engine.timerState]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Log the current rep set and move on: the same thing for a tap on "Done" and for
+  // auto-advance.
+  const completeRepSet = () => {
+    const phase = engine.currentPhase;
+    if (!phase || phase.type === 'rest' || phase.mode !== 'reps') return;
+    const reps = phase.reps ?? 0;
+    const weight = pendingWeight;
+    const setNumber = phases
+      .slice(0, engine.currentPhaseIndex + 1)
+      .filter(item => item.mode === 'reps' && item.exerciseName === phase.exerciseName)
+      .length;
+
+    setRepLogs(prev => [...prev, { exerciseName: phase.exerciseName, setNumber, reps, weight }]);
+    setToastMessage(`${reps} reps${weight != null ? ` at ${weight} ${weightUnit}` : ''} logged`);
+    setTimeout(() => setToastMessage(null), 2500);
+    engine.completeRepPhase();
+  };
+
+  // ── Auto-advance rep sets ───────────────────────────────────────────────
+  // When on, a rep set announces itself, then finishes by itself after
+  // (reps x pace) + a short buffer, exactly as if "Done" were tapped. The
+  // countdown only runs while the workout is running (so pausing pauses it),
+  // and stops when the set changes or this screen closes.
+  const onRepSet = engine.currentPhase?.type === 'work' && engine.currentPhase.mode === 'reps';
+  const autoAdvanceKey =
+    autoAdvance.enabled && onRepSet && preStartSeconds === null &&
+    (engine.timerState === 'running' || engine.timerState === 'paused')
+      ? engine.currentPhaseIndex
+      : null;
+  const autoRemainingMsRef = useRef(0);
+  const [autoLeft, setAutoLeft] = useState<{ key: number; seconds: number } | null>(null);
+  const timerStateRef = useRef(engine.timerState);
+  const completeRepSetRef = useRef(completeRepSet);
+  useEffect(() => {
+    timerStateRef.current = engine.timerState;
+    completeRepSetRef.current = completeRepSet;
+  });
+
+  useEffect(() => {
+    if (autoAdvanceKey === null) return;
+    const phase = phases[autoAdvanceKey];
+    const reps = phase.reps ?? 0;
+    autoRemainingMsRef.current = (reps * autoAdvance.secondsPerRep + AUTO_ADVANCE_BUFFER_SECONDS) * 1000;
+    if (soundModeRef.current === 'speech') speak(`${phase.exerciseName}, ${reps} rep${reps === 1 ? '' : 's'}`);
+
+    let last = Date.now();
+    let finished = false;
+    const id = setInterval(() => {
+      const now = Date.now();
+      if (timerStateRef.current === 'running') autoRemainingMsRef.current -= now - last;
+      last = now;
+      setAutoLeft({ key: autoAdvanceKey, seconds: Math.max(0, Math.ceil(autoRemainingMsRef.current / 1000)) });
+      if (finished || autoRemainingMsRef.current > 0) return;
+      finished = true;
+      clearInterval(id);
+      if (soundModeRef.current === 'speech' && phases[autoAdvanceKey + 1]?.type === 'rest') speak('Rest');
+      completeRepSetRef.current();
+    }, 250);
+    return () => clearInterval(id);
+  }, [autoAdvanceKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const extendAutoAdvance = () => {
+    if (autoAdvanceKey === null) return;
+    autoRemainingMsRef.current += AUTO_ADVANCE_EXTEND_SECONDS * 1000;
+    setAutoLeft({ key: autoAdvanceKey, seconds: Math.max(0, Math.ceil(autoRemainingMsRef.current / 1000)) });
+  };
+
   if (!engine.currentPhase) {
     return (
       <View style={styles.blankScreen}>
@@ -402,16 +485,14 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     setWeightInputVisible(false);
   };
 
-  const handleRepDone = () => {
-    if (!isRepPhase) return;
-    const reps = engine.currentPhase.reps ?? 0;
-    const weight = pendingWeight;
-
-    setRepLogs(prev => [...prev, { exerciseName: engine.currentPhase.exerciseName, setNumber: currentSetNumber, reps, weight }]);
-    setToastMessage(`${reps} reps${weight != null ? ` at ${weight} ${weightUnit}` : ''} logged`);
-    setTimeout(() => setToastMessage(null), 2500);
-    engine.completeRepPhase();
-  };
+  const handleRepDone = completeRepSet;
+  // Seconds until an auto-advancing set finishes (the full time until the first tick).
+  const autoSecondsLeft =
+    autoAdvanceKey === null
+      ? null
+      : autoLeft?.key === autoAdvanceKey
+        ? autoLeft.seconds
+        : (engine.currentPhase.reps ?? 0) * autoAdvance.secondsPerRep + AUTO_ADVANCE_BUFFER_SECONDS;
 
   return (
     <View style={[styles.field, { backgroundColor: field.bg }]} {...swipeBackResponder.panHandlers}>
@@ -562,6 +643,22 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
             </Pressable>
           )}
 
+          {autoSecondsLeft !== null && (
+            <View style={styles.autoRow}>
+              <Label style={[styles.autoLabel, { color: field.fg }]}>
+                {engine.timerState === 'paused' ? 'Paused' : `Rest in ${autoSecondsLeft}s`}
+              </Label>
+              <Pressable
+                style={({ pressed }) => [styles.autoExtend, { borderColor: field.fg }, pressed && styles.autoExtendPressed]}
+                onPress={extendAutoAdvance}
+                accessibilityRole="button"
+                accessibilityLabel="Add 10 seconds to this set"
+              >
+                <Label style={[styles.weightBtnLabel, { color: field.fg }]}>+10s</Label>
+              </Pressable>
+            </View>
+          )}
+
           <Pressable
             style={({ pressed }) => [styles.doneBtn, pressed && styles.doneBtnPressed]}
             onPress={handleRepDone}
@@ -617,7 +714,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           >
             <SkipIcon color={colors.onInk} size={24} direction="left" />
           </Pressable>
-          {!isRepPhase && (
+          {(!isRepPhase || autoAdvanceKey !== null) && (
             <Pressable
               style={({ pressed }) => [styles.transportMain, pressed && styles.transportPressed]}
               onPress={engine.timerState === 'paused' ? engine.resume : engine.pause}
@@ -635,7 +732,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           <Pressable
             style={({ pressed }) => [
               styles.transportSide,
-              isRepPhase && styles.transportWide,
+              isRepPhase && autoAdvanceKey === null && styles.transportWide,
               pressed && styles.transportPressed,
             ]}
             onPress={engine.skipToNextPhase}
@@ -832,6 +929,28 @@ const styles = StyleSheet.create({
   weightBtnLabel: {
     fontSize: label.base,
     letterSpacing: tracking.label,
+  },
+  autoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.row,
+    marginBottom: space.row,
+  },
+  autoLabel: {
+    fontSize: label.base,
+    letterSpacing: tracking.label,
+  },
+  autoExtend: {
+    minHeight: band.control,
+    minWidth: band.control + space.block,
+    paddingHorizontal: space.block,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: rule.heavy,
+  },
+  autoExtendPressed: {
+    opacity: 0.6,
   },
   weightRow: {
     flexDirection: 'row',

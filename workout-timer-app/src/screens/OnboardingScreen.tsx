@@ -5,8 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import { CountdownSoundMode, RootStackParamList, WeightUnit } from '../types';
 import {
+  DEFAULT_AUTO_ADVANCE_REPS,
+  loadAutoAdvanceReps,
   loadCountdownSoundMode,
   loadWeightUnitIfSet,
+  saveAutoAdvanceReps,
   saveCountdownSoundMode,
   saveHasSeenOnboarding,
   saveWeightUnit,
@@ -29,6 +32,13 @@ const SOUND_OPTIONS: { id: CountdownSoundMode; title: string; description: strin
   { id: 'speech', title: 'Spoken', description: 'Counts down out loud.' },
   { id: 'beep', title: 'Beep', description: 'A short beep for the countdown.' },
   { id: 'silent', title: 'Silent', description: 'Just the visual timer.' },
+];
+
+// "Automatically" turns on Auto-advance rep sets at the default pace (pace itself
+// lives in Settings); "When I tap" is the default and leaves it off.
+const REST_OPTIONS: { auto: boolean; title: string }[] = [
+  { auto: true, title: 'Automatically' },
+  { auto: false, title: 'When I tap' },
 ];
 
 const UNIT_OPTIONS: { id: WeightUnit; title: string }[] = [
@@ -78,14 +88,17 @@ export function OnboardingScreen({ navigation }: Props) {
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('kg');
   const soundTouchedRef = useRef(false);
   const unitTouchedRef = useRef(false);
+  const [restAuto, setRestAuto] = useState(false);
+  const restTouchedRef = useRef(false);
   const { playBeep } = useAudio();
   const { speak } = useSpeech(true);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadCountdownSoundMode(), loadWeightUnitIfSet()]).then(([savedMode, savedUnit]) => {
+    Promise.all([loadCountdownSoundMode(), loadWeightUnitIfSet(), loadAutoAdvanceReps()]).then(([savedMode, savedUnit, savedAuto]) => {
       if (cancelled) return;
       if (!soundTouchedRef.current) setSoundMode(savedMode);
+      if (!restTouchedRef.current) setRestAuto(savedAuto.enabled);
       if (unitTouchedRef.current) return;
       if (savedUnit) setWeightUnit(savedUnit);
       else void saveWeightUnit('kg'); // nothing chosen yet: make the KG default real
@@ -103,6 +116,12 @@ export function OnboardingScreen({ navigation }: Props) {
     Speech.stop();
     if (mode === 'speech') speak('three, two, one');
     else if (mode === 'beep') playBeep();
+  };
+
+  const chooseRest = (auto: boolean) => {
+    restTouchedRef.current = true;
+    setRestAuto(auto);
+    void saveAutoAdvanceReps({ enabled: auto, secondsPerRep: DEFAULT_AUTO_ADVANCE_REPS.secondsPerRep });
   };
 
   const chooseUnit = (unit: WeightUnit) => {
@@ -159,7 +178,7 @@ export function OnboardingScreen({ navigation }: Props) {
             contentContainerStyle={[styles.slide, slide.preferences && styles.slideCompact]}
             showsVerticalScrollIndicator={false}
           >
-            <Label style={styles.slideNumber}>
+            <Label style={[styles.slideNumber, slide.preferences && styles.slideNumberCompact]}>
               {String(slideIndex + 1).padStart(2, '0')} / {String(SLIDES.length).padStart(2, '0')}
             </Label>
             <Display
@@ -218,6 +237,32 @@ export function OnboardingScreen({ navigation }: Props) {
                           accessibilityRole="radio"
                           accessibilityState={{ selected }}
                           accessibilityLabel={`Weight unit ${option.title}`}
+                        >
+                          <Label style={[styles.unitButtonLabel, selected && styles.onInkText]}>{option.title}</Label>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.restBlock}>
+                  <Label style={styles.unitLabel}>After a rep set, go to rest:</Label>
+                  <View style={styles.restOptions} accessibilityRole="radiogroup">
+                    {REST_OPTIONS.map(option => {
+                      const selected = restAuto === option.auto;
+                      return (
+                        <Pressable
+                          key={option.title}
+                          style={({ pressed }) => [
+                            styles.unitButton,
+                            styles.restButton,
+                            selected && styles.unitButtonSelected,
+                            pressed && !selected && styles.pressed,
+                          ]}
+                          onPress={() => chooseRest(option.auto)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`After a rep set, go to rest ${option.title.toLowerCase()}`}
                         >
                           <Label style={[styles.unitButtonLabel, selected && styles.onInkText]}>{option.title}</Label>
                         </Pressable>
@@ -309,23 +354,26 @@ const styles = StyleSheet.create({
   slideCompact: {
     paddingVertical: space.tight,
   },
+  slideNumberCompact: {
+    marginBottom: space.hair,
+  },
   titleCompact: {
-    fontSize: 44,
-    lineHeight: Math.round(44 * leading.display),
+    fontSize: 40,
+    lineHeight: Math.round(40 * leading.display),
   },
   bodyCompact: {
     marginTop: space.tight,
   },
   options: {
-    marginTop: space.row,
+    marginTop: space.tight,
     gap: space.hair,
   },
   optionCard: {
-    minHeight: band.control + space.tight,
+    minHeight: band.control,
     borderWidth: rule.heavy,
     borderColor: colors.ink,
     paddingHorizontal: space.row,
-    paddingVertical: space.tight,
+    paddingVertical: space.hair,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -361,7 +409,7 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   unitRow: {
-    marginTop: space.row,
+    marginTop: space.tight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -391,8 +439,19 @@ const styles = StyleSheet.create({
     fontSize: label.base,
     letterSpacing: tracking.wide,
   },
-  note: {
+  restBlock: {
     marginTop: space.tight,
+    gap: space.hair,
+  },
+  restOptions: {
+    flexDirection: 'row',
+    gap: space.hair,
+  },
+  restButton: {
+    flex: 1,
+  },
+  note: {
+    marginTop: space.hair,
     fontSize: label.micro,
     lineHeight: label.micro * 1.4,
     color: colors.inkMuted,
