@@ -1,248 +1,59 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Phase } from './types';
+import { TimerCore, TimerHandlers } from './timer/timerCore';
 
-type TimerState = 'idle' | 'running' | 'paused' | 'completed';
+// How often the clock is checked. Cues are due by deadline, not by counting ticks,
+// so this only bounds how late a cue can be (at most one interval).
+const TICK_MS = 50;
 
-type CountdownListener = (secondsRemaining: number) => void;
-type PhaseStartListener = (phase: Phase) => void;
+/**
+ * The workout timer for a screen. All timing and every cue live in TimerCore
+ * (framework-free, tested with a fake clock); this hook ticks it, re-renders when
+ * a displayed value changes (about once a second, not on every tick), and stops
+ * it when the screen goes away.
+ */
+export function useTimerEngine(phases: Phase[], handlers: TimerHandlers) {
+  const [core] = useState(() => new TimerCore(phases));
 
-export function useTimerEngine(phases: Phase[], onBeep: () => void, onCountdown?: CountdownListener, onPhaseStart?: PhaseStartListener) {
-  const [timerState, setTimerState] = useState<TimerState>('idle');
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
-  
-  // The time the current phase started
-  const [phaseStartTime, setPhaseStartTime] = useState<number | null>(null);
-  
-  // Real-time remaining seconds in the current phase
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
-  
-  // The total duration of the current phase (accounting for adjustments)
-  const [currentPhaseDuration, setCurrentPhaseDuration] = useState<number>(0);
-
-  // Time the workout has actually been running — paused time (including the quit
-  // dialog) is excluded, while skips and rest adjustments don't affect it.
-  const [sessionElapsedSeconds, setSessionElapsedSeconds] = useState<number>(0);
-  const sessionStartTimeRef = useRef<number | null>(null);
-  const activeMsRef = useRef(0);
-  const lastTickAtRef = useRef<number | null>(null);
-
-  // For tracking when to beep (3, 2, 1)
-  const lastBeepTimeRef = useRef<number>(-1);
-
-  // Refs to read the latest values inside the setInterval without re-triggering it
-  const stateRef = useRef(timerState);
-  const phaseIndexRef = useRef(currentPhaseIndex);
-  const phaseStartTimeRef = useRef(phaseStartTime);
-  const durationRef = useRef(currentPhaseDuration);
-  const phasesRef = useRef(phases);
-  const onBeepRef = useRef(onBeep);
-  const onCountdownRef = useRef(onCountdown);
-  const onPhaseStartRef = useRef(onPhaseStart);
+  // The latest handlers, so cues always use the current settings.
+  useEffect(() => {
+    core.setHandlers(handlers);
+  });
+  useEffect(() => {
+    core.setPhases(phases);
+  }, [core, phases]);
 
   useEffect(() => {
-    stateRef.current = timerState;
-    phaseIndexRef.current = currentPhaseIndex;
-    phaseStartTimeRef.current = phaseStartTime;
-    durationRef.current = currentPhaseDuration;
-    phasesRef.current = phases;
-    onBeepRef.current = onBeep;
-    onCountdownRef.current = onCountdown;
-    onPhaseStartRef.current = onPhaseStart;
-  }, [timerState, currentPhaseIndex, phaseStartTime, currentPhaseDuration, phases, onBeep, onCountdown, onPhaseStart]);
+    core.revive();
+    const id = setInterval(() => core.tick(), TICK_MS);
+    return () => {
+      clearInterval(id);
+      core.dispose(); // leaving the screen cancels every pending cue
+    };
+  }, [core]);
 
-  const start = useCallback(() => {
-    if (phases.length === 0) return;
-    setTimerState('running');
-    setCurrentPhaseIndex(0);
-    const initialDuration = phases[0].duration;
-    setCurrentPhaseDuration(initialDuration);
-    setRemainingSeconds(initialDuration);
-    setPhaseStartTime(Date.now());
-    sessionStartTimeRef.current = Date.now();
-    activeMsRef.current = 0;
-    lastTickAtRef.current = Date.now();
-    setSessionElapsedSeconds(0);
-    lastBeepTimeRef.current = -1;
-  }, [phases]);
-
-  const pause = useCallback(() => {
-    if (timerState === 'running') {
-      setTimerState('paused');
-    }
-  }, [timerState]);
-
-  const resume = useCallback(() => {
-    if (timerState === 'paused' && phaseStartTime !== null) {
-      // Adjust the start time so that the time spent paused doesn't count
-      const timeElapsedBeforePause = currentPhaseDuration - remainingSeconds;
-      const newStartTime = Date.now() - (timeElapsedBeforePause * 1000);
-      setPhaseStartTime(newStartTime);
-      setTimerState('running');
-    }
-  }, [timerState, phaseStartTime, currentPhaseDuration, remainingSeconds]);
-
-  const skipToNextPhase = useCallback(() => {
-    if (sessionStartTimeRef.current != null) {
-      setSessionElapsedSeconds(activeMsRef.current / 1000);
-    }
-
-    if (currentPhaseIndex >= phases.length - 1) {
-      setTimerState('completed');
-    } else {
-      const nextIndex = currentPhaseIndex + 1;
-      setCurrentPhaseIndex(nextIndex);
-      const nextDuration = phases[nextIndex].duration;
-      setCurrentPhaseDuration(nextDuration);
-      setRemainingSeconds(nextDuration);
-      setPhaseStartTime(Date.now());
-      lastBeepTimeRef.current = -1;
-      // Manual skips are intentionally silent. They should never compete with the timer's
-      // countdown audio while the next phase is mounting.
-    }
-  }, [currentPhaseIndex, phases]);
-
-  const completeRepPhase = useCallback(() => {
-    const currentPhase = phases[currentPhaseIndex];
-    if (!currentPhase || currentPhase.mode !== 'reps') return;
-
-    if (sessionStartTimeRef.current != null) {
-      setSessionElapsedSeconds(activeMsRef.current / 1000);
-    }
-
-    if (currentPhaseIndex >= phases.length - 1) {
-      setTimerState('completed');
-      setRemainingSeconds(0);
-      return;
-    }
-
-    const nextIndex = currentPhaseIndex + 1;
-    const nextPhase = phases[nextIndex];
-    setCurrentPhaseIndex(nextIndex);
-    setCurrentPhaseDuration(nextPhase.duration);
-    setRemainingSeconds(nextPhase.duration);
-    setPhaseStartTime(Date.now());
-    lastBeepTimeRef.current = -1;
-    onBeep();
-    onPhaseStart?.(nextPhase);
-  }, [currentPhaseIndex, phases, onBeep, onPhaseStart]);
-
-  const skipToPreviousPhase = useCallback(() => {
-    const previousIndex = Math.max(0, currentPhaseIndex - 1);
-    const previousDuration = phases[previousIndex]?.duration;
-
-    if (previousDuration == null) return;
-
-    setCurrentPhaseIndex(previousIndex);
-    setCurrentPhaseDuration(previousDuration);
-    setRemainingSeconds(previousDuration);
-    setPhaseStartTime(Date.now());
-    lastBeepTimeRef.current = -1;
-  }, [currentPhaseIndex, phases]);
-
-  const adjustRest = useCallback((secondsToAdjust: number) => {
-    const currentPhase = phases[currentPhaseIndex];
-    if (!currentPhase || currentPhase.type !== 'rest') return;
-
-    setCurrentPhaseDuration((prev) => {
-      // Don't allow total duration to cause remaining time to go below 0
-      const elapsed = prev - remainingSeconds;
-      const newDuration = Math.max(elapsed, prev + secondsToAdjust);
-      return newDuration;
-    });
-  }, [currentPhaseIndex, phases, remainingSeconds]);
-
-  // Main Timer Tick Engine
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-
-      // Only accrue time while actually running, so pauses don't count toward the
-      // session total. Skips and rest adjustments don't touch this accumulator.
-      if (lastTickAtRef.current != null && stateRef.current === 'running') {
-        activeMsRef.current += now - lastTickAtRef.current;
-      }
-      lastTickAtRef.current = now;
-
-      if (sessionStartTimeRef.current != null && stateRef.current !== 'idle' && stateRef.current !== 'completed') {
-        setSessionElapsedSeconds(activeMsRef.current / 1000);
-      }
-
-      if (stateRef.current !== 'running' || phaseStartTimeRef.current === null) return;
-      if (phasesRef.current[phaseIndexRef.current]?.mode === 'reps') return;
-
-      const index = phaseIndexRef.current;
-      const startMs = phaseStartTimeRef.current;
-      const duration = durationRef.current;
-      const remaining = duration - (now - startMs) / 1000;
-
-      // Countdown cue for 3, 2, 1 — spoken via TTS (see onCountdown in ActiveSessionScreen).
-      // Cue N is due the moment `remaining` hits N, so lateness is N - remaining. A
-      // cue that is already stale (this tick arrived well after it was due) is
-      // dropped rather than spoken out of sync; phase changes below are never dropped.
-      // Each of 3, 2 and 1 fires exactly once per phase. There is deliberately
-      // no "too late to bother" test: dropping a cue leaves an audible hole in
-      // the countdown, which is worse than one arriving slightly late.
-      const ceilRemaining = Math.ceil(remaining);
-      if (ceilRemaining <= 3 && ceilRemaining > 0 && ceilRemaining !== lastBeepTimeRef.current) {
-        lastBeepTimeRef.current = ceilRemaining;
-        onCountdownRef.current?.(ceilRemaining);
-      }
-
-      if (remaining > 0) {
-        setRemainingSeconds(remaining);
-        return;
-      }
-
-      // The phase is over. Each next phase starts exactly where the previous one
-      // ended (not at "now"), so a late tick never loses time, and if several timed
-      // phases elapsed since the last tick we land on the one that is current now.
-      let landedStart = startMs;
-      let landedIndex = index;
-      let landedRemaining = 0;
-      let previousDuration = duration;
-      for (;;) {
-        const nextIndex = landedIndex + 1;
-        if (nextIndex >= phasesRef.current.length) {
-          setTimerState('completed');
-          setRemainingSeconds(0);
-          return;
-        }
-        const nextPhase = phasesRef.current[nextIndex];
-        landedStart += previousDuration * 1000;
-        landedIndex = nextIndex;
-        landedRemaining = nextPhase.duration - (now - landedStart) / 1000;
-        if (nextPhase.mode === 'reps' || landedRemaining > 0) break;
-        previousDuration = nextPhase.duration;
-      }
-
-      const landedPhase = phasesRef.current[landedIndex];
-      setCurrentPhaseIndex(landedIndex);
-      setCurrentPhaseDuration(landedPhase.duration);
-      setRemainingSeconds(Math.max(0, landedRemaining));
-      setPhaseStartTime(landedStart);
-      lastBeepTimeRef.current = -1;
-      onPhaseStartRef.current?.(landedPhase);
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const totalWorkoutDuration = phases.reduce((sum, p) => sum + p.duration, 0);
+  const snapshot = useSyncExternalStore(
+    listener => core.subscribe(listener),
+    () => core.getSnapshot(),
+  );
 
   return {
-    timerState,
-    currentPhase: phases[currentPhaseIndex],
-    currentPhaseIndex,
-    currentPhaseDuration,
-    remainingSeconds: Math.max(0, remainingSeconds),
-    totalElapsed: Math.max(0, sessionElapsedSeconds),
-    totalWorkoutDuration,
-    start,
-    pause,
-    resume,
-    skipToNextPhase,
-    completeRepPhase,
-    skipToPreviousPhase,
-    adjustRest,
+    timerState: snapshot.state,
+    currentPhase: phases[snapshot.index],
+    currentPhaseIndex: snapshot.index,
+    currentPhaseDuration: snapshot.segmentSeconds,
+    remainingSeconds: snapshot.remainingSeconds,
+    totalElapsed: snapshot.elapsedSeconds,
+    totalWorkoutDuration: phases.reduce((sum, p) => sum + p.duration, 0),
+    /** The current set is a rep set that will advance by itself. */
+    autoRepActive: snapshot.autoRep,
+    start: () => core.start(),
+    pause: () => core.pause(),
+    resume: () => core.resume(),
+    skipToNextPhase: () => core.skipNext(),
+    completeRepPhase: () => core.completeRep(),
+    skipToPreviousPhase: () => core.skipPrevious(),
+    adjustRest: (seconds: number) => core.adjustRest(seconds),
+    extendRep: (seconds: number) => core.extendRep(seconds),
   };
 }

@@ -7,6 +7,8 @@ import { setWorkoutActive } from '../ads/interstitialManager';
 import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '../types';
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
+import { holdCueOutput } from '../audio/cuePlayer';
+import { dueCountdownCues, monotonicNow } from '../timer/timerCore';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
 import {
@@ -94,17 +96,37 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     if (soundModeRef.current === 'speech') speakCountdown(secondsRemaining);
     else if (soundModeRef.current === 'beep') playBeep();
   };
-  const playTransitionBeep = () => {
-    if (soundModeRef.current !== 'silent') playBeep();
-  };
   // A distinct higher-pitched cue the moment a new phase begins, following the
   // "3, 2, 1" countdown — a clear "go" signal separate from the countdown
   // beeps/speech. It marks the start of a rest as well as of an exercise, so
-  // the change of phase is audible either way.
-  const handlePhaseStart = (_phase: { type: 'work' | 'rest' }) => {
+  // the change of phase is audible either way. It is the one end-of-segment cue
+  // for every way a segment ends: its timer, "Done" on a rep set, or an
+  // auto-advancing rep set (which used to play two tones at once).
+  const handlePhaseStart = () => {
     if (soundModeRef.current !== 'silent') playGoBeep();
   };
-  const engine = useTimerEngine(phases, playTransitionBeep, handleCountdownTick, handlePhaseStart);
+
+  // Optional (Settings): finish rep sets by themselves. Off means the set waits for "Done".
+  const [autoAdvance, setAutoAdvance] = useState<AutoAdvanceReps>(DEFAULT_AUTO_ADVANCE_REPS);
+  // Logs the current rep set and moves on (set below, once the screen's state exists).
+  const completeRepSetRef = useRef<() => void>(() => {});
+
+  const engine = useTimerEngine(phases, {
+    onCountdown: handleCountdownTick,
+    onPhaseStart: handlePhaseStart,
+    // An auto-advancing rep set counts down (3, 2, 1) and ends through exactly the
+    // same deadline and cue code as a timed set.
+    getAutoRepSeconds: phase =>
+      autoAdvance.enabled ? (phase.reps ?? 0) * autoAdvance.secondsPerRep + AUTO_ADVANCE_BUFFER_SECONDS : null,
+    onAutoRepEnd: index => {
+      if (soundModeRef.current === 'speech' && phases[index + 1]?.type === 'rest') speak('Rest');
+      completeRepSetRef.current();
+    },
+  });
+
+  // Keep the audio output awake while a workout is on screen, so the first cue
+  // after a quiet stretch isn't late (see audio/cuePlayer.ts).
+  useEffect(() => holdCueOutput(), []);
 
   const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
   const [pendingWeight, setPendingWeight] = useState<number | null>(null);
@@ -116,8 +138,6 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // Seconds left in the "get ready" countdown shown before the workout timer
   // actually starts; null once it's finished and the real session has begun.
   const [preStartSeconds, setPreStartSeconds] = useState<number | null>(PRE_START_SECONDS);
-  // Optional (Settings): finish rep sets by themselves. Off means the set waits for "Done".
-  const [autoAdvance, setAutoAdvance] = useState<AutoAdvanceReps>(DEFAULT_AUTO_ADVANCE_REPS);
 
   // Load the user's countdown sound preference (defaults to spoken)
   useEffect(() => {
@@ -149,27 +169,30 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // rather than counting naive setInterval ticks — a plain 1s-interval
   // countdown starts however late the effect happened to get scheduled and
   // never catches up, which is what made the "3, 2, 1" cues feel late.
-  // Recomputing from Date.now() every 100ms self-corrects for that.
+  // Like the workout timer, it runs from a deadline on a monotonic clock and
+  // plays each of 3, 2, 1 exactly once (a late tick plays a late cue rather than
+  // skipping it).
   useEffect(() => {
-    const startTime = Date.now();
-    let lastCued = -1;
-    let intervalId: ReturnType<typeof setInterval>;
+    const deadline = monotonicNow() + PRE_START_SECONDS * 1000;
+    const fired = new Set<number>();
+    let shown = -1;
 
     const tick = () => {
-      const remaining = PRE_START_SECONDS - (Date.now() - startTime) / 1000;
+      const remaining = (deadline - monotonicNow()) / 1000;
+      for (const n of dueCountdownCues(remaining, PRE_START_SECONDS, fired)) {
+        fired.add(n);
+        cuePreStartTick(n);
+      }
       const ceilRemaining = Math.max(0, Math.ceil(remaining));
-
-      if (ceilRemaining !== lastCued) {
-        lastCued = ceilRemaining;
-        if (ceilRemaining > 0) cuePreStartTick(ceilRemaining);
+      if (ceilRemaining !== shown) {
+        shown = ceilRemaining;
         setPreStartSeconds(ceilRemaining > 0 ? ceilRemaining : null);
       }
-
       if (remaining <= 0) clearInterval(intervalId);
     };
 
+    const intervalId = setInterval(tick, 50);
     tick();
-    intervalId = setInterval(tick, 100);
     return () => clearInterval(intervalId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -326,54 +349,22 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     engine.completeRepPhase();
   };
 
-  // ── Auto-advance rep sets ───────────────────────────────────────────────
-  // When on, a rep set announces itself, then finishes by itself after
-  // (reps x pace) + a short buffer, exactly as if "Done" were tapped. The
-  // countdown only runs while the workout is running (so pausing pauses it),
-  // and stops when the set changes or this screen closes.
-  const onRepSet = engine.currentPhase?.type === 'work' && engine.currentPhase.mode === 'reps';
-  const autoAdvanceKey =
-    autoAdvance.enabled && onRepSet && preStartSeconds === null &&
-    (engine.timerState === 'running' || engine.timerState === 'paused')
-      ? engine.currentPhaseIndex
-      : null;
-  const autoRemainingMsRef = useRef(0);
-  const [autoLeft, setAutoLeft] = useState<{ key: number; seconds: number } | null>(null);
-  const timerStateRef = useRef(engine.timerState);
-  const completeRepSetRef = useRef(completeRepSet);
   useEffect(() => {
-    timerStateRef.current = engine.timerState;
     completeRepSetRef.current = completeRepSet;
   });
 
+  // ── Auto-advance rep sets ───────────────────────────────────────────────
+  // The engine owns the deadline (so pause, resume, skip and leaving the screen
+  // behave exactly like a timed set); this only announces the set when it starts.
+  const autoRepKey = engine.autoRepActive ? engine.currentPhaseIndex : null;
   useEffect(() => {
-    if (autoAdvanceKey === null) return;
-    const phase = phases[autoAdvanceKey];
+    if (autoRepKey === null || soundModeRef.current !== 'speech') return;
+    const phase = phases[autoRepKey];
     const reps = phase.reps ?? 0;
-    autoRemainingMsRef.current = (reps * autoAdvance.secondsPerRep + AUTO_ADVANCE_BUFFER_SECONDS) * 1000;
-    if (soundModeRef.current === 'speech') speak(`${phase.exerciseName}, ${reps} rep${reps === 1 ? '' : 's'}`);
+    speak(`${phase.exerciseName}, ${reps} rep${reps === 1 ? '' : 's'}`);
+  }, [autoRepKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    let last = Date.now();
-    let finished = false;
-    const id = setInterval(() => {
-      const now = Date.now();
-      if (timerStateRef.current === 'running') autoRemainingMsRef.current -= now - last;
-      last = now;
-      setAutoLeft({ key: autoAdvanceKey, seconds: Math.max(0, Math.ceil(autoRemainingMsRef.current / 1000)) });
-      if (finished || autoRemainingMsRef.current > 0) return;
-      finished = true;
-      clearInterval(id);
-      if (soundModeRef.current === 'speech' && phases[autoAdvanceKey + 1]?.type === 'rest') speak('Rest');
-      completeRepSetRef.current();
-    }, 250);
-    return () => clearInterval(id);
-  }, [autoAdvanceKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const extendAutoAdvance = () => {
-    if (autoAdvanceKey === null) return;
-    autoRemainingMsRef.current += AUTO_ADVANCE_EXTEND_SECONDS * 1000;
-    setAutoLeft({ key: autoAdvanceKey, seconds: Math.max(0, Math.ceil(autoRemainingMsRef.current / 1000)) });
-  };
+  const extendAutoAdvance = () => engine.extendRep(AUTO_ADVANCE_EXTEND_SECONDS);
 
   if (!engine.currentPhase) {
     return (
@@ -486,13 +477,8 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   };
 
   const handleRepDone = completeRepSet;
-  // Seconds until an auto-advancing set finishes (the full time until the first tick).
-  const autoSecondsLeft =
-    autoAdvanceKey === null
-      ? null
-      : autoLeft?.key === autoAdvanceKey
-        ? autoLeft.seconds
-        : (engine.currentPhase.reps ?? 0) * autoAdvance.secondsPerRep + AUTO_ADVANCE_BUFFER_SECONDS;
+  // Seconds until an auto-advancing set finishes.
+  const autoSecondsLeft = engine.autoRepActive ? Math.ceil(engine.remainingSeconds) : null;
 
   return (
     <View style={[styles.field, { backgroundColor: field.bg }]} {...swipeBackResponder.panHandlers}>
@@ -714,7 +700,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           >
             <SkipIcon color={colors.onInk} size={24} direction="left" />
           </Pressable>
-          {(!isRepPhase || autoAdvanceKey !== null) && (
+          {(!isRepPhase || engine.autoRepActive) && (
             <Pressable
               style={({ pressed }) => [styles.transportMain, pressed && styles.transportPressed]}
               onPress={engine.timerState === 'paused' ? engine.resume : engine.pause}
@@ -732,7 +718,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           <Pressable
             style={({ pressed }) => [
               styles.transportSide,
-              isRepPhase && autoAdvanceKey === null && styles.transportWide,
+              isRepPhase && !engine.autoRepActive && styles.transportWide,
               pressed && styles.transportPressed,
             ]}
             onPress={engine.skipToNextPhase}

@@ -1,119 +1,12 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { playCue, preloadCueSounds } from './audio/cuePlayer';
 
-// A full-amplitude 1kHz tone, generated at full scale so it's as loud as the
-// device volume allows — not dependent on ducking other apps, which only
-// helps when something else happens to be playing.
-const BEEP_ASSET = require('../assets/audio/beep-loud.wav');
-// A distinct, higher-pitched (1.6kHz) full-amplitude tone for the "start of a
-// new exercise" cue — a dedicated asset rather than pitch-shifting the beep
-// at runtime, since that relies on native playbackRate/pitch-correction
-// support that isn't guaranteed to do anything audible on every device.
-const GO_BEEP_ASSET = require('../assets/audio/go-beep.wav');
+// The cue sounds are app-wide (see audio/cuePlayer.ts): loaded once at app start,
+// not per screen, so a screen opening never has to wait for them.
+const playBeep = () => playCue('beep');
+const playGoBeep = () => playCue('go');
+const cues = { playBeep, playGoBeep };
 
 export function useAudio() {
-  const player = useAudioPlayer(BEEP_ASSET);
-  const goBeepPlayer = useAudioPlayer(GO_BEEP_ASSET);
-
-  useEffect(() => {
-    async function configureAudio() {
-      try {
-        await setAudioModeAsync({
-          playsInSilentMode: true,
-          shouldPlayInBackground: true,
-          // Mix with other apps' audio at equal volume rather than ducking
-          // (temporarily lowering) it — ducking was reported as annoying
-          // since it dips the user's own music every time a beep plays.
-          interruptionMode: 'mixWithOthers',
-        });
-      } catch (e) {
-        console.warn('Failed to configure audio mode', e);
-      }
-    }
-    configureAudio();
-  }, []);
-
-  // Track when each player last actually played a real (audible) cue, so the
-  // warm-up loop below can avoid stepping on one that just fired.
-  const lastRealPlayAt = useRef(new WeakMap<object, number>());
-  // A warm-up finishes by pausing the player 100ms after it starts. If a real
-  // cue begins inside that window the pause would silence it, so each warm-up
-  // remembers when it started and bails out if a real play happened since.
-  const warmUp = (source: ReturnType<typeof useAudioPlayer>) => {
-    if (!source) return;
-    try {
-      const startedAt = Date.now();
-      source.volume = 0;
-      source.play();
-      // Give the native player a moment to actually start (play/pause back
-      // to back in the same tick can land at the native side before
-      // playback has really engaged, since the bridge call is async).
-      setTimeout(() => {
-        try {
-          const lastReal = lastRealPlayAt.current.get(source) ?? 0;
-          if (lastReal >= startedAt) {
-            // A real cue took over mid-warm-up — leave it playing.
-            return;
-          }
-          source.pause();
-          source.seekTo(0).catch(() => {});
-          source.volume = 1.0;
-        } catch (e) {
-          console.warn('Failed to finish warming up beep player:', e);
-        }
-      }, 100);
-    } catch (e) {
-      console.warn('Failed to warm up beep player:', e);
-    }
-  };
-
-  // The audio session being "active" (via the keep-alive loop) isn't enough
-  // to keep an INDIVIDUAL player instance ready — each one seems to pay its
-  // own buffering/engage cost again after sitting unused for a while (the
-  // regular beep and the go-beep in particular go quiet for tens of seconds
-  // at a time between real cues), which is what caused beeps to be late or
-  // silently dropped well after the first one. Re-warming both every few
-  // seconds means neither ever goes idle long enough for that to happen,
-  // while skipping any player that just played for real avoids interrupting
-  // an actual cue that's still finishing.
-  useEffect(() => {
-    warmUp(player);
-    warmUp(goBeepPlayer);
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      [player, goBeepPlayer].forEach(source => {
-        if (!source) return;
-        const last = lastRealPlayAt.current.get(source) ?? 0;
-        if (now - last > 1500) warmUp(source);
-      });
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [player, goBeepPlayer]);
-
-  const playFrom = (source: ReturnType<typeof useAudioPlayer>) => {
-    if (!source) return;
-    lastRealPlayAt.current.set(source, Date.now());
-    (async () => {
-      try {
-        // Stop and rewind before replaying so rapid, back-to-back beeps
-        // (e.g. the 3-2-1 countdown) don't race a still-playing instance
-        // and get truncated or silently dropped.
-        source.pause();
-        await source.seekTo(0);
-        // Always restore full volume: a warm-up that was interrupted may have
-        // left this player silent.
-        source.volume = 1.0;
-        source.play();
-      } catch (e) {
-        console.warn('Audio playback error silenced to prevent crash:', e);
-      }
-    })();
-  };
-
-  const playBeep = useCallback(() => playFrom(player), [player]);
-  const playGoBeep = useCallback(() => playFrom(goBeepPlayer), [goBeepPlayer]);
-
-  return { playBeep, playGoBeep };
+  preloadCueSounds();
+  return cues;
 }
