@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
+  ActivityIndicator,
   StyleSheet,
   TextInput,
   Pressable,
@@ -15,12 +16,14 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { noteTransition } from '../ads/interstitialManager';
-import { RootStackParamList } from '../types';
+import { RootStackParamList, Workout } from '../types';
 import {
   extractWorkoutFromImage,
   extractWorkoutFromText,
   fetchUsage,
+  ImportCancelledError,
   ImportLimitError,
+  ImportOptions,
   refreshUsage,
   RewardStartError,
   confirmReward,
@@ -82,7 +85,7 @@ export function ImportScreen({ navigation }: Props) {
   // keep the last known value, or show no counter at all if there isn't one.
   // The cached allowance shows straight away; `usageStatus` says whether the server
   // has confirmed it yet. Until it has (or 10 seconds pass), Import stays disabled.
-  const { usage, status: usageStatus, settled: usageSettled, rewardPending } = useUsage();
+  const { usage, status: usageStatus, settled: usageSettled, rewardPending, serverWaking } = useUsage();
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [rewardPhase, setRewardPhase] = useState<'idle' | 'preparing' | 'confirming' | 'slow'>('idle');
   const [rewardNotice, setRewardNotice] = useState<{ title: string; message: string } | null>(null);
@@ -162,54 +165,74 @@ export function ImportScreen({ navigation }: Props) {
     }
   };
 
-  const handleImageExtract = async () => {
+  // Waking a sleeping server before an import is sent can take up to a minute; the
+  // user can cancel during that time (nothing has been sent, so no import is used).
+  const [serverWakingForImport, setServerWakingForImport] = useState(false);
+  const wakeAbortRef = useRef<AbortController | null>(null);
+  // Leaving the screen while the server wakes up cancels the import before it is sent.
+  useEffect(() => () => wakeAbortRef.current?.abort(), []);
+
+  const runImport = async (
+    tab: Tab,
+    extract: (options: ImportOptions) => Promise<{ workout: Workout }>,
+    fallbackMessage: string,
+  ) => {
+    if (!checkImportAllowed()) return;
+    const controller = new AbortController();
+    wakeAbortRef.current = controller;
+    setLoading(true);
+    setImportError(null);
+    try {
+      const { workout } = await extract({
+        signal: controller.signal,
+        onWaking: () => {
+          if (isMountedRef.current) setServerWakingForImport(true);
+        },
+        onSending: () => {
+          // Sent now: from here on it can't be cancelled.
+          wakeAbortRef.current = null;
+          if (isMountedRef.current) setServerWakingForImport(false);
+        },
+      });
+      if (!isMountedRef.current) return;
+      navigation.replace('WorkoutEditor', { draftWorkout: workout });
+    } catch (e: any) {
+      if (!isMountedRef.current || e instanceof ImportCancelledError) return;
+      if (e instanceof ImportLimitError) {
+        setLimitModalVisible(true);
+        return;
+      }
+      setImportError({ tab, message: e.message || fallbackMessage });
+    } finally {
+      if (wakeAbortRef.current === controller) wakeAbortRef.current = null;
+      if (isMountedRef.current) {
+        setServerWakingForImport(false);
+        setLoading(false);
+      }
+    }
+  };
+
+  const cancelWakingImport = () => wakeAbortRef.current?.abort();
+
+  const handleImageExtract = () => {
     if (!imageBase64) {
       Alert.alert('No Image', 'Pick a workout image first.');
       return;
     }
-    if (!checkImportAllowed()) return;
-    setLoading(true);
-    setImportError(null);
-    try {
-      const { workout } = await extractWorkoutFromImage(imageBase64, imageMime);
-      if (!isMountedRef.current) return;
-      navigation.replace('WorkoutEditor', { draftWorkout: workout });
-    } catch (e: any) {
-      if (e instanceof ImportLimitError) {
-        if (isMountedRef.current) {
-          setLimitModalVisible(true);
-        }
-        return;
-      }
-      setImportError({ tab: 'image', message: e.message || 'Something went wrong reading that image.' });
-    } finally {
-      setLoading(false);
-    }
+    runImport(
+      'image',
+      options => extractWorkoutFromImage(imageBase64, imageMime, options),
+      'Something went wrong reading that image.',
+    );
   };
 
-  const handleTextExtract = async () => {
-    if (!workoutText.trim()) {
+  const handleTextExtract = () => {
+    const text = workoutText.trim();
+    if (!text) {
       Alert.alert('Error', 'Paste or type a workout description first.');
       return;
     }
-    if (!checkImportAllowed()) return;
-    setLoading(true);
-    setImportError(null);
-    try {
-      const { workout } = await extractWorkoutFromText(workoutText.trim());
-      if (!isMountedRef.current) return;
-      navigation.replace('WorkoutEditor', { draftWorkout: workout });
-    } catch (e: any) {
-      if (e instanceof ImportLimitError) {
-        if (isMountedRef.current) {
-          setLimitModalVisible(true);
-        }
-        return;
-      }
-      setImportError({ tab: 'text', message: e.message || 'Something went wrong reading that workout.' });
-    } finally {
-      setLoading(false);
-    }
+    runImport('text', options => extractWorkoutFromText(text, options), 'Something went wrong reading that workout.');
   };
 
   // ─── Rewarded video (+2 imports) ────────────────────────────────────────────
@@ -416,37 +439,64 @@ export function ImportScreen({ navigation }: Props) {
         {usage !== null ? (
           <View style={styles.usageColumn}>
             <View style={styles.usageChip}>
-              <View
-                style={[
-                  styles.usageDot,
-                  limitReached && styles.usageDotEmpty,
-                  usageStatus !== 'fresh' && styles.usageDotPending,
-                ]}
-              />
+              {serverWaking ? (
+                <ActivityIndicator size="small" color={colors.ink} />
+              ) : (
+                <View
+                  style={[
+                    styles.usageDot,
+                    limitReached && styles.usageDotEmpty,
+                    usageStatus !== 'fresh' && styles.usageDotPending,
+                  ]}
+                />
+              )}
               <Label style={[styles.usageLabel, usageStatus !== 'fresh' && styles.usageLabelPending]}>
                 {rewardPending
                   ? 'Confirming video…'
-                  : limitReached
-                    ? 'No imports left'
-                    : `${usage.remaining} Imports left${usageStatus === 'checking' ? '…' : ''}`}
+                  : serverWaking
+                    ? 'Waking server…'
+                    : limitReached
+                      ? 'No imports left'
+                      : `${usage.remaining} Imports left${usageStatus === 'checking' ? '…' : ''}`}
               </Label>
             </View>
-            {videosLeft !== undefined && !rewardPending && (
+            {videosLeft !== undefined && !rewardPending && !serverWaking && (
               <Label style={styles.usageNote}>{bonusVideosLeft(videosLeft)}</Label>
             )}
             {usageStatus === 'failed' && <Label style={styles.usageNote}>May be out of date</Label>}
           </View>
         ) : usageStatus !== 'failed' ? (
           <View style={styles.usageChip}>
-            <View style={[styles.usageDot, styles.usageDotPending]} />
-            <Label style={[styles.usageLabel, styles.usageLabelPending]}>Checking…</Label>
+            {serverWaking ? (
+              <ActivityIndicator size="small" color={colors.ink} />
+            ) : (
+              <View style={[styles.usageDot, styles.usageDotPending]} />
+            )}
+            <Label style={[styles.usageLabel, styles.usageLabelPending]}>
+              {serverWaking ? 'Waking server…' : 'Checking…'}
+            </Label>
           </View>
         ) : null}
       </View>
 
       <Display style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>Import</Display>
 
-      {loading ? (
+      {loading && serverWakingForImport ? (
+        /* ── Waking the server (nothing sent yet, so it can be cancelled) ───── */
+        <View style={styles.statusBody}>
+          <RotatingDumbbellIcon color={colors.ink} size={64} />
+          <Display style={styles.statusTitle} numberOfLines={2}>Waking up the server</Display>
+          <Label style={styles.statusMeta}>This can take up to a minute</Label>
+          <Pressable
+            style={({ pressed }) => [styles.ghostBar, pressed && styles.squarePressed]}
+            onPress={cancelWakingImport}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel import"
+          >
+            <Label style={styles.ghostBarLabel}>Cancel</Label>
+          </Pressable>
+        </View>
+      ) : loading ? (
         /* ── Loading ────────────────────────────────────────────────────────── */
         <View style={styles.statusBody}>
           <RotatingDumbbellIcon color={colors.ink} size={64} />
@@ -549,6 +599,13 @@ export function ImportScreen({ navigation }: Props) {
             </Pressable>
           </ScrollView>
 
+          {serverWaking && (
+            <View style={styles.wakingNote} accessibilityLiveRegion="polite">
+              <ActivityIndicator size="small" color={colors.ink} />
+              <Label style={styles.wakingNoteText}>Waking up the server. This can take up to a minute.</Label>
+            </View>
+          )}
+
           <Pressable
             style={({ pressed }) => [
               styles.primaryBar,
@@ -563,7 +620,13 @@ export function ImportScreen({ navigation }: Props) {
             accessibilityState={{ disabled: !canImport }}
           >
             <Display style={[styles.primaryBarLabel, !canImport && styles.primaryBarLabelDisabled]}>
-              {rewardPending ? 'Confirming video…' : usageSettled ? 'Import' : 'Checking imports…'}
+              {rewardPending
+                ? 'Confirming video…'
+                : usageSettled
+                  ? 'Import'
+                  : serverWaking
+                    ? 'Waking server…'
+                    : 'Checking imports…'}
             </Display>
           </Pressable>
         </>
@@ -787,6 +850,21 @@ const styles = StyleSheet.create({
     paddingVertical: space.tight,
   },
   noteText: {
+    fontSize: label.micro,
+  },
+  wakingNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.tight,
+    marginHorizontal: space.gutter,
+    marginBottom: space.tight,
+    borderWidth: rule.thin,
+    borderColor: colors.ink,
+    paddingHorizontal: space.row,
+    paddingVertical: space.tight,
+  },
+  wakingNoteText: {
+    flex: 1,
     fontSize: label.micro,
   },
   errorTitle: {

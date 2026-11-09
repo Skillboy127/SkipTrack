@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StatusBar, StyleSheet, View } from 'react-native';
+import { AppState, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -29,16 +29,16 @@ import { loadHasSeenOnboarding } from './src/storage';
 import { initBilling } from './src/billing';
 import { preloadCueSounds } from './src/audio/cuePlayer';
 import { RotatingDumbbellIcon } from './src/components/WorkoutIcons';
-import { fetchUsage, pingServer } from './src/api';
+import { fetchUsage, warmUpServer } from './src/api';
 import { hydrateUsageCache } from './src/usageStore';
 import { initInterstitials } from './src/ads/interstitialManager';
 import { colors } from './src/theme';
 
 // Runs when the app's code loads, before anything renders, so none of it waits on
-// fonts or navigation: load last time's import count, nudge the (possibly
-// sleeping) server awake, and ask for the real count, all in parallel.
+// fonts or navigation: load last time's import count, wake the (possibly
+// sleeping) server, and ask for the real count, all in parallel.
 void hydrateUsageCache();
-pingServer();
+warmUpServer();
 fetchUsage().catch(() => {});
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -75,6 +75,16 @@ export default function App() {
   useEffect(() => {
     // Remove Ads: connect to Google Play, then restore any owned purchase (covers reinstalls).
     void initBilling();
+  }, []);
+
+  // The free-tier server sleeps while idle. Each time the app comes back to the
+  // foreground, wake it in the background (one GET /health, no UI, errors ignored;
+  // skipped if it answered in the last minute) so it is up before an import.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') warmUpServer();
+    });
+    return () => subscription.remove();
   }, []);
 
   // Load the countdown and phase-change sounds once, so no cue ever waits on loading.

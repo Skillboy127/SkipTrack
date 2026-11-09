@@ -9,7 +9,17 @@ import {
   markRewardConfirmed,
   rememberUsage,
   setRewardPending,
+  setServerWaking,
 } from './usageStore';
+import {
+  AttemptTimeoutError,
+  RawResponse,
+  RequestOptions,
+  ServerRequestError,
+  SLOW_AFTER_MS,
+  WAKE_BUDGET_MS,
+  sendRequest,
+} from './net/serverRequest';
 
 // Get API URL from env, or dynamically from Expo's hostUri, with fallback
 const getHostUrl = () => {
@@ -260,27 +270,164 @@ export async function waitForAllowanceIncrease(
   return null;
 }
 
+// ─── Reaching a server that may be asleep ──────────────────────────────────
+// The free-tier server sleeps when idle and takes 30-60s to answer the first
+// request after that. The rules for retrying (and why an import is never sent
+// twice) are in net/serverRequest.ts.
+
+/** When the app last answered anything (epoch ms): within a minute, it is awake. */
+let lastServerAnswerAt = 0;
+const AWAKE_FOR_MS = 60_000;
+
+/** One HTTP attempt for sendRequest: status and body, or AttemptTimeoutError. */
+function httpAttempt(url: string, init: RequestInit) {
+  return async (timeoutMs: number, signal?: AbortSignal): Promise<RawResponse> => {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      const text = await response.text();
+      return { status: response.status, text };
+    } catch (error) {
+      if (timedOut) throw new AttemptTimeoutError();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  };
+}
+
+/** sendRequest against the backend, noting that the server is awake when it answers. */
+async function send(
+  path: string,
+  init: RequestInit,
+  options: Omit<RequestOptions, 'attempt'>,
+): Promise<{ status: number; ok: boolean; payload: any }> {
+  const response = await sendRequest({ ...options, attempt: httpAttempt(`${API_BASE}${path}`, init) });
+  lastServerAnswerAt = Date.now();
+  let payload: any = null;
+  try {
+    payload = JSON.parse(response.text);
+  } catch {
+    // not JSON: the caller only looks at the status
+  }
+  // The server is answering again: if the count couldn't be loaded earlier, load it now.
+  if (path !== '/usage') retryFailedUsageSoon(0);
+  return { status: response.status, ok: response.status >= 200 && response.status < 300, payload };
+}
+
+let sharedWake: Promise<void> | null = null;
+
+/**
+ * Resolves once the server answers (straight away if it answered in the last
+ * minute). Sends only GET /health, which is safe to repeat, so it retries until
+ * about 90s have gone by. `onSlow` runs if that takes more than ~4s. Rejects with
+ * ServerRequestError when the server can't be reached or `signal` aborts.
+ */
+export async function wakeServer(options: { signal?: AbortSignal; onSlow?: () => void } = {}): Promise<void> {
+  if (Date.now() - lastServerAnswerAt < AWAKE_FOR_MS) return;
+  if (!sharedWake) {
+    sharedWake = send('/health', {}, { idempotent: true, attemptTimeoutMs: WAKE_BUDGET_MS, budgetMs: WAKE_BUDGET_MS })
+      .then(() => undefined)
+      .finally(() => {
+        sharedWake = null;
+      });
+  }
+  const wake = sharedWake;
+  const { signal, onSlow } = options;
+  const slowTimer = onSlow ? setTimeout(onSlow, SLOW_AFTER_MS) : null;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new ServerRequestError('cancelled', false));
+        return;
+      }
+      const onAbort = () => reject(new ServerRequestError('cancelled', false));
+      signal?.addEventListener('abort', onAbort, { once: true });
+      wake.then(resolve, reject).finally(() => signal?.removeEventListener('abort', onAbort));
+    });
+  } finally {
+    if (slowTimer) clearTimeout(slowTimer);
+  }
+}
+
+/**
+ * Wake the server in the background (app launch, and each return to the
+ * foreground), so it is up before the user needs it. No UI; errors are ignored.
+ */
+export function warmUpServer(): void {
+  wakeServer().catch(() => {});
+}
+
 let usageRequest: Promise<ServerUsage> | null = null;
 
 /**
- * Asks the server how many imports are left. Throws if every attempt fails.
+ * Asks the server how many imports are left. Throws if the server couldn't be
+ * reached after about 90 seconds of retries.
  *
- * Retries with a generous timeout because the free-tier server can take 30-60s
- * to wake up after sitting idle, and a single short attempt would just give up
- * (leaving no counter on screen). Concurrent callers share one request.
+ * GET /usage changes nothing, so it is retried after network errors, timeouts and
+ * 502/503/504s from the host while the free-tier server wakes up. After ~4s without an answer
+ * the store says the server is waking up, so screens can say so instead of
+ * showing the count as out of date. Concurrent callers share one request.
  */
 export function fetchUsage(): Promise<ServerUsage> {
   if (usageRequest) return usageRequest;
   markChecking();
-  usageRequest = fetchUsageWithRetries()
+  usageRequest = fetchUsageWithRetries(() => setServerWaking(true))
     .catch(error => {
       markFailed();
       throw error;
     })
     .finally(() => {
+      setServerWaking(false);
       usageRequest = null;
+      retryFailedUsageSoon();
     });
   return usageRequest;
+}
+
+// After a failed check, try again quietly (the "may be out of date" label stays
+// until one succeeds, then the fresh count replaces it). A server answer to any
+// other request also triggers a retry straight away.
+const QUIET_RETRY_DELAYS_MS = [20_000, 60_000, 180_000];
+let quietTimer: ReturnType<typeof setTimeout> | null = null;
+let quietAttempts = 0;
+
+function retryFailedUsageSoon(delayMs?: number) {
+  if (getUsageSnapshot().status !== 'failed' || usageRequest) return;
+  if (quietTimer) {
+    if (delayMs !== 0) return;
+    clearTimeout(quietTimer);
+  }
+  if (delayMs === undefined) {
+    if (quietAttempts >= QUIET_RETRY_DELAYS_MS.length) return;
+    delayMs = QUIET_RETRY_DELAYS_MS[quietAttempts];
+  }
+  quietTimer = setTimeout(() => {
+    quietTimer = null;
+    if (getUsageSnapshot().status !== 'failed' || usageRequest) return;
+    quietAttempts += 1;
+    const run = fetchUsageWithRetries();
+    usageRequest = run;
+    run
+      .then(
+        () => {
+          quietAttempts = 0;
+        },
+        () => {},
+      )
+      .finally(() => {
+        usageRequest = null;
+        retryFailedUsageSoon();
+      });
+  }, delayMs);
 }
 
 /**
@@ -298,73 +445,87 @@ export async function refreshUsage(): Promise<ServerUsage | null> {
   }
 }
 
-/** One cheap request at launch so a sleeping free-tier server starts waking up straight away. */
-export function pingServer(): void {
-  fetchWithTimeout(`${API_BASE}/health`, {}, 60000).catch(() => {});
-}
-
-async function fetchUsageWithRetries(): Promise<ServerUsage> {
+async function fetchUsageWithRetries(onSlow?: () => void): Promise<ServerUsage> {
   const deviceId = getDeviceId();
   if (!deviceId) throw new Error(DEVICE_UNAVAILABLE_MESSAGE);
 
-  const attempts = 3;
-  let lastError: unknown = null;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    try {
-      const response = await fetchWithTimeout(`${API_BASE}/usage`, { headers: { 'X-Device-Id': deviceId } }, 30000);
-      if (!response.ok) throw new Error(`Usage request failed (${response.status})`);
-      const usage = parseUsage(await response.json().catch(() => null));
-      if (!usage) throw new Error('Usage response was not understood');
-      rememberUsage(usage);
-      return usage;
-    } catch (err: any) {
-      lastError = err;
-      console.log(`[Usage] attempt ${attempt}/${attempts} failed:`, err?.message ?? err);
-      if (attempt < attempts) await new Promise(r => setTimeout(r, 3000));
-    }
-  }
-  throw lastError;
+  const response = await send(
+    '/usage',
+    { headers: { 'X-Device-Id': deviceId } },
+    { idempotent: true, attemptTimeoutMs: WAKE_BUDGET_MS, budgetMs: WAKE_BUDGET_MS, onSlow },
+  );
+  if (!response.ok) throw new Error(`Usage request failed (${response.status})`);
+  const usage = parseUsage(response.payload);
+  if (!usage) throw new Error('Usage response was not understood');
+  rememberUsage(usage);
+  return usage;
 }
 
 type ExtractionResult = { workout: Workout; usage: ServerUsage | null };
 
-async function postJson(path: string, body: Record<string, string>, timeoutMs = 60000): Promise<ExtractionResult> {
+/** The user cancelled while the server was waking up; nothing was sent, so no import was used. */
+export class ImportCancelledError extends Error {
+  constructor() {
+    super('cancelled');
+  }
+}
+
+export type ImportOptions = {
+  /** Cancels while the server is waking up (before the import is sent). */
+  signal?: AbortSignal;
+  /** The server is taking a while to answer: it is probably waking up. */
+  onWaking?: () => void;
+  /** The server is awake and the import is being sent. */
+  onSending?: () => void;
+};
+
+async function postJson(
+  path: string,
+  body: Record<string, string>,
+  timeoutMs: number,
+  options: ImportOptions = {},
+): Promise<ExtractionResult> {
   const deviceId = getDeviceId();
   if (!deviceId) throw new Error(DEVICE_UNAVAILABLE_MESSAGE);
 
-  let response: Response | null = null;
-  let lastError: any = null;
-
-  // Try up to 2 attempts to handle Render free-tier cold starts (server wake-up delay)
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      response = await fetchWithTimeout(
-        `${API_BASE}${path}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Device-Id': deviceId },
-          body: JSON.stringify(body),
-        },
-        timeoutMs,
-      );
-      break;
-    } catch (err) {
-      lastError = err;
-      if (attempt === 1) {
-        // Wait 4 seconds for Render container wake-up before retrying
-        await new Promise(r => setTimeout(r, 4000));
-      }
-    }
+  // 1. Make sure the server is up, using only a request that is safe to repeat.
+  try {
+    await wakeServer({ signal: options.signal, onSlow: options.onWaking });
+  } catch (error) {
+    if (error instanceof ServerRequestError && error.kind === 'cancelled') throw new ImportCancelledError();
+    throw new Error("Couldn't reach the server. Check your connection and try again. No import was used.");
   }
+  if (options.signal?.aborted) throw new ImportCancelledError();
+  options.onSending?.();
 
-  if (!response) {
-    const errorDetail = lastError?.message ? ` (${lastError.message})` : '';
+  // 2. Send the import once. It is only sent again if the hosting platform says it
+  //    couldn't reach the app at all (see net/serverRequest.ts); never after a
+  //    network error, a timeout, or any answer from the app.
+  let response: { status: number; ok: boolean; payload: any };
+  try {
+    response = await send(
+      path,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-Id': deviceId },
+        body: JSON.stringify(body),
+      },
+      { idempotent: false, attemptTimeoutMs: timeoutMs, maxHostRetries: 2 },
+    );
+  } catch (error) {
+    if (error instanceof ServerRequestError && error.kind === 'host_unavailable') {
+      throw new Error('The server is unavailable right now. Please try again in a minute.');
+    }
+    // It may have reached the server and been counted: show the real count.
+    fetchUsage().catch(() => {});
     throw new Error(
-      `Could not connect to server at ${API_BASE}.${errorDetail} If using Render free tier, server may be waking up — wait 15-20s and try again.`
+      error instanceof ServerRequestError && error.kind === 'timeout'
+        ? "The server took too long to answer. If the import went through, it's already in your count, so check it before trying again."
+        : "The connection dropped before the server answered. If the import went through, it's already in your count, so check it before trying again.",
     );
   }
 
-  const payload = await response.json().catch(() => null);
+  const payload = response.payload;
   if (!response.ok) {
     if (response.status === 429 && payload?.error === 'limit_reached') {
       const usage: ServerUsage = {
@@ -398,17 +559,22 @@ export async function extractWorkoutFromVideo(url: string): Promise<Workout> {
   return (await postJson('/extract', { url }, 150000)).workout;
 }
 
+// An image or text import, once the server is awake: the extraction itself can
+// take a while (the server allows 180s), so this is generous.
+const IMPORT_TIMEOUT_MS = 120_000;
+
 /** Phase 4 — Single image (base64) */
 export async function extractWorkoutFromImage(
   imageBase64: string,
   mimeType: string = 'image/jpeg',
+  options?: ImportOptions,
 ): Promise<ExtractionResult> {
   console.log('Sending image extraction request to:', `${API_BASE}/extract/image`);
-  return postJson('/extract/image', { image_b64: imageBase64, mime_type: mimeType });
+  return postJson('/extract/image', { image_b64: imageBase64, mime_type: mimeType }, IMPORT_TIMEOUT_MS, options);
 }
 
 /** Phase 5 — Plain text workout description */
-export async function extractWorkoutFromText(text: string): Promise<ExtractionResult> {
+export async function extractWorkoutFromText(text: string, options?: ImportOptions): Promise<ExtractionResult> {
   console.log('Sending text extraction request to:', `${API_BASE}/extract/text`);
-  return postJson('/extract/text', { text });
+  return postJson('/extract/text', { text }, IMPORT_TIMEOUT_MS, options);
 }

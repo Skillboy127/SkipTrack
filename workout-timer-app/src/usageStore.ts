@@ -28,6 +28,8 @@ export type UsageSnapshot = {
   rewardPending: boolean;
   /** The latest reward the server confirmed (screens show it once per `at`). */
   rewardConfirmed: { at: number; added: number } | null;
+  /** A usage check has gone unanswered for a few seconds: the server is probably waking up. */
+  serverWaking: boolean;
 };
 
 let snapshot: UsageSnapshot = {
@@ -37,6 +39,7 @@ let snapshot: UsageSnapshot = {
   checkStartedAt: null,
   rewardPending: false,
   rewardConfirmed: null,
+  serverWaking: false,
 };
 const listeners = new Set<() => void>();
 
@@ -77,6 +80,11 @@ export function rememberUsage(usage: ServerUsage) {
   const fetchedAt = Date.now();
   update({ ...snapshot, usage, fetchedAt, status: 'fresh', checkStartedAt: null });
   persist(usage, fetchedAt);
+}
+
+/** A usage check is slow because the server is waking up (true), or it has finished (false). */
+export function setServerWaking(waking: boolean) {
+  if (snapshot.serverWaking !== waking) update({ ...snapshot, serverWaking: waking });
 }
 
 /** A watched video is waiting for the server's confirmation (true), or no longer is (false). */
