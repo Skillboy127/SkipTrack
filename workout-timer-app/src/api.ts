@@ -21,18 +21,24 @@ import {
   sendRequest,
 } from './net/serverRequest';
 
-// Get API URL from env, or dynamically from Expo's hostUri, with fallback
+// The deployed backend. Release builds and updates use it whenever
+// EXPO_PUBLIC_API_URL is missing at bundle time (e.g. an `eas update
+// --environment X` whose EAS environment lacks the variable), so a missing
+// variable can never ship an unreachable address.
+const PRODUCTION_API_URL = 'https://skiptrack-api.onrender.com';
+
+// Get API URL from env; in development, fall back to the dev machine (Expo's hostUri).
 const getHostUrl = () => {
   if (process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
+  if (!__DEV__) return PRODUCTION_API_URL;
   const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri) {
     const ip = hostUri.split(':')[0];
     return `http://${ip}:5000`;
   }
-  // Fallbacks
-  return 'http://10.0.2.2:5000'; // Android emulator fallback
+  return 'http://10.0.2.2:5000'; // Android emulator fallback (development only)
 };
 
 const API_BASE = getHostUrl().replace(/\/+$/, '');
