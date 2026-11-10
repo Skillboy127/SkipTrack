@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.workoutservice'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.workoutservice"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  // HeadlessJsTaskService, HeadlessJsTaskConfig and Arguments come from React Native itself.
+  implementation 'com.facebook.react:react-android'
+  implementation 'androidx.core:core-ktx:1.15.0'
+}

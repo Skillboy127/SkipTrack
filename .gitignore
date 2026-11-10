@@ -11,5 +11,9 @@ node_modules/
 dist/
 android/
 ios/
+# ...but not hand-written native code in local Expo modules (its Gradle output stays ignored)
+!workout-timer-app/modules/*/android/
+workout-timer-app/modules/*/android/build/
+workout-timer-app/modules/*/android/.cxx/
 
 Flex UI Reimagine.zip

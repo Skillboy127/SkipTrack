@@ -1,0 +1,23 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- The running-workout notification and the service behind it (see WorkoutForegroundService.kt).
+       mediaPlayback: the service's job is to keep the user's chosen audio cues (beeps or spoken
+       countdown) playing while the screen is off. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+  <application>
+    <!-- stopWithTask: swiping the app away in Recents stops the service too; it never outlives the app. -->
+    <service
+      android:name="expo.modules.workoutservice.WorkoutForegroundService"
+      android:exported="false"
+      android:stopWithTask="true"
+      android:foregroundServiceType="mediaPlayback" />
+
+    <receiver
+      android:name="expo.modules.workoutservice.WorkoutActionReceiver"
+      android:exported="false" />
+  </application>
+</manifest>
