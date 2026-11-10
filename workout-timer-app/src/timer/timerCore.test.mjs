@@ -286,3 +286,72 @@ test('randomised sessions: within each countdown, cues never repeat and only cou
     }
   }
 });
+
+// ── background service support ─────────────────────────────────────────────
+
+test('nextCueAt: each countdown number, then the end, then nothing; follows pause, skip and Done', () => {
+  const t = makeTimer([timed(10), timed(5, 'rest'), reps(8)]);
+  t.core.start();
+  const start = t.now;
+  assert.equal(t.core.nextCueAt(), start + 7000, '"3" is due 3s before the end');
+  t.run(7000);
+  assert.equal(t.core.nextCueAt(), start + 8000, 'then "2"');
+  t.run(2000);
+  assert.equal(t.core.nextCueAt(), start + 10000, 'after "1", the end cue');
+  t.core.pause();
+  assert.equal(t.core.nextCueAt(), null, 'nothing is due while paused');
+  t.core.resume();
+  t.core.skipNext();
+  assert.equal(t.core.nextCueAt(), t.now + 2000, 'a skipped-to 5s rest: its "3" is 2s away');
+  t.core.skipNext();
+  assert.equal(t.core.nextCueAt(), null, 'a rep set waiting for Done has no cue');
+});
+
+test('remainingMs is exact (not rounded), 0 for a rep set, and frozen while paused', () => {
+  const t = makeTimer([timed(10), reps(5)]);
+  assert.equal(t.core.remainingMs(), 0, 'not started');
+  t.core.start();
+  t.run(2350, { tickMs: 50 });
+  assert.equal(t.core.remainingMs(), 7650);
+  t.core.pause();
+  t.stall(60_000);
+  assert.equal(t.core.remainingMs(), 7650, 'pausing freezes it');
+  t.core.resume();
+  t.core.skipNext();
+  assert.equal(t.core.remainingMs(), 0);
+});
+
+test('the phone sleeping mid-workout (clock jumps, no ticks): lands on the right phase, cues once each', () => {
+  // Ticks stop while asleep; the elapsed-realtime clock keeps counting. On waking,
+  // a single tick must land on the current phase and play the overdue cues of the
+  // phase that just ended exactly once, never replaying earlier phases' cues.
+  const t = makeTimer([timed(20), timed(10, 'rest'), timed(20), timed(10, 'rest'), timed(20)]);
+  t.core.start();
+  t.run(15_000); // 5s left in phase 0
+  t.stall(30_000); // asleep: phase 0 ends at 20s, rest runs 20-30s, phase 2 runs 30-50s; now at 45s
+  assert.equal(t.core.getSnapshot().index, 2, 'landed on the phase that is current now');
+  assert.ok(Math.abs(t.core.remainingMs() - 5000) < 60, 'and its time left is right');
+  assert.deepEqual(countsFor(t.events, 0), [3, 2, 1], 'the interrupted phase still counted down once');
+  assert.deepEqual(countsFor(t.events, 1), [], 'a rest that passed entirely while asleep is not replayed');
+  t.run(6000);
+  assert.deepEqual(countsFor(t.events, 2), [3, 2, 1]);
+  assert.equal(endsInto(t.events, 3).length, 1);
+});
+
+test('notification actions while backgrounded behave like the on-screen buttons', () => {
+  const t = makeTimer([timed(10), timed(5, 'rest'), timed(10)]);
+  t.core.start();
+  t.run(3000);
+  t.core.pause(); // "Pause" from the lock screen
+  t.stall(20_000);
+  assert.equal(t.core.getSnapshot().index, 0);
+  t.core.resume(); // "Resume"
+  t.core.skipNext(); // "Next"
+  assert.equal(t.core.getSnapshot().index, 1);
+  t.core.skipPrevious(); // "Back"
+  assert.equal(t.core.getSnapshot().index, 0);
+  assert.equal(t.events.filter(e => e.kind === 'end').length, 0, 'manual skips stay silent');
+  t.run(10_500);
+  assert.deepEqual(countsFor(t.events, 0), [3, 2, 1]);
+  assert.equal(endsInto(t.events, 1).length, 1);
+});

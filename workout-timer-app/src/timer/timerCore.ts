@@ -254,6 +254,33 @@ export class TimerCore {
     this.enterSegment(landedIndex, landedStart, true);
   }
 
+  // ── For the notification ────────────────────────────────────────────────
+
+  /** The clock this core runs on, read now. */
+  now(): number {
+    return this.clock();
+  }
+
+  /** Exact milliseconds left in the current segment (0 for a rep set waiting for "Done"). */
+  remainingMs(): number {
+    if (this.state === 'idle' || this.state === 'completed' || !this.isTimedSegment()) return 0;
+    return Math.max(0, this.remainingAt(this.clock()) * 1000);
+  }
+
+  /**
+   * Clock time of the next audible cue (a countdown number or the segment's end),
+   * or null when nothing is pending (not running, or a rep set waiting for "Done").
+   */
+  nextCueAt(): number | null {
+    if (this.state !== 'running' || !this.isTimedSegment()) return null;
+    const end = this.segmentStart + this.segmentSeconds * 1000;
+    for (const n of COUNTDOWN_CUES) {
+      if (n < this.segmentSeconds && !this.fired.has(n)) return end - n * 1000;
+    }
+    if (this.autoRep && this.autoRepEnded) return null;
+    return end;
+  }
+
   // ── Internals ───────────────────────────────────────────────────────────
 
   private enterSegment(index: number, startAt: number, announce: boolean): void {

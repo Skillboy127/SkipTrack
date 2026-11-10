@@ -8,6 +8,7 @@ import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '.
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { holdCueOutput } from '../audio/cuePlayer';
+import { useWorkoutService } from '../background/useWorkoutService';
 import { dueCountdownCues, monotonicNow } from '../timer/timerCore';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
@@ -124,9 +125,16 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     },
   });
 
+  // Android: the lock-screen notification and the service that keeps the timer and
+  // cues running with the screen off (see src/background). Off via the kill switch.
+  const { stoppedForLimit } = useWorkoutService(engine, phases);
+  const [limitNoticeDismissed, setLimitNoticeDismissed] = useState(false);
+
   // Keep the audio output awake while a workout is on screen, so the first cue
-  // after a quiet stretch isn't late (see audio/cuePlayer.ts).
-  useEffect(() => holdCueOutput(), []);
+  // after a quiet stretch isn't late (see audio/cuePlayer.ts). Released when this
+  // screen goes away (finish, quit, the app being closed) and when the background
+  // service hits its time limit, so nothing keeps playing after that.
+  useEffect(() => (stoppedForLimit ? undefined : holdCueOutput()), [stoppedForLimit]);
 
   const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
   const [pendingWeight, setPendingWeight] = useState<number | null>(null);
@@ -730,6 +738,13 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         </View>
       </View>
 
+      <ConfirmDialog
+        visible={stoppedForLimit && !limitNoticeDismissed && quitStep === 'closed'}
+        title="Workout paused"
+        message="The background timer stops after 3 hours to save your battery. Tap Resume to carry on with the app open."
+        onRequestClose={() => setLimitNoticeDismissed(true)}
+        actions={[{ label: 'OK', variant: 'primary', onPress: () => setLimitNoticeDismissed(true) }]}
+      />
       <ConfirmDialog
         visible={quitStep === 'confirmQuit'}
         title="Quit workout?"

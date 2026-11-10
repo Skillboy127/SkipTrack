@@ -302,3 +302,22 @@ export async function saveHasCompletedFirstWorkout(): Promise<void> {
     console.error('Failed to save first-workout flag', e);
   }
 }
+
+const NOTIFICATION_PROMPT_SEEN_KEY = '@notification_prompt_seen_v1';
+
+/** The one-time explanation before the notification permission prompt has been shown. */
+export async function loadNotificationPromptSeen(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(NOTIFICATION_PROMPT_SEEN_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function saveNotificationPromptSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(NOTIFICATION_PROMPT_SEEN_KEY, '1');
+  } catch {
+    // Worst case the explanation shows once more.
+  }
+}
