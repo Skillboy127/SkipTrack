@@ -8,6 +8,9 @@ import { RootStackParamList, RepSetLog, CountdownSoundMode, WeightUnit } from '.
 import { useTimerEngine } from '../useTimerEngine';
 import { useAudio } from '../useAudio';
 import { holdCueOutput } from '../audio/cuePlayer';
+import { useWorkoutService } from '../background/useWorkoutService';
+import { ClipController } from '../audio/countdownClip';
+import { armCountdownClip, cancelCountdownClip, clipClockNow, countdownClipAvailable } from '../audio/nativeCues';
 import { dueCountdownCues, monotonicNow } from '../timer/timerCore';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
@@ -92,9 +95,20 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   const completionStartedRef = useRef(false);
   const completionNavigatedRef = useRef(false);
 
+  // In beep mode, builds with the native countdown clip play "3, 2, 1, go" as one
+  // pre-mixed clip scheduled natively (see the clip effects below): its "go" is the
+  // phase-end beep. The timer's per-beep cues then only feed the diagnostics.
+  // Voice mode, silent mode and builds without the clip behave as before.
+  const clipHandlesCountdown = () => countdownClipAvailable() && soundModeRef.current === 'beep';
+  // One clip per countdown, scheduled natively at the exact moment (so it doesn't
+  // depend on JavaScript timers and works with the screen off); see audio/countdownClip.ts.
+  const [clip] = useState(
+    () => new ClipController({ arm: armCountdownClip, cancel: cancelCountdownClip, now: clipClockNow }),
+  );
+
   const handleCountdownTick = (secondsRemaining: number) => {
     if (soundModeRef.current === 'speech') speakCountdown(secondsRemaining);
-    else if (soundModeRef.current === 'beep') playBeep();
+    else if (soundModeRef.current === 'beep' && !clipHandlesCountdown()) playBeep();
   };
   // A distinct higher-pitched cue the moment a new phase begins, following the
   // "3, 2, 1" countdown — a clear "go" signal separate from the countdown
@@ -102,8 +116,12 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   // the change of phase is audible either way. It is the one end-of-segment cue
   // for every way a segment ends: its timer, "Done" on a rep set, or an
   // auto-advancing rep set (which used to play two tones at once).
+  // When the countdown clip ran into the end, its own "go" already was that cue, so
+  // no separate beep is added; a skip, Done, or a countdown that couldn't be
+  // scheduled in time still gets the separate beep.
   const handlePhaseStart = () => {
-    if (soundModeRef.current !== 'silent') playGoBeep();
+    const coveredByClip = clipHandlesCountdown() && clip.takeEndCovered();
+    if (soundModeRef.current !== 'silent' && !coveredByClip) playGoBeep();
   };
 
   // Optional (Settings): finish rep sets by themselves. Off means the set waits for "Done".
@@ -124,9 +142,51 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     },
   });
 
+  // Android: the lock-screen notification and the service that keeps the timer and
+  // cues running with the screen off (see src/background). Off via the kill switch.
+  const { stoppedForLimit } = useWorkoutService(engine, phases);
+  const [limitNoticeDismissed, setLimitNoticeDismissed] = useState(false);
+
   // Keep the audio output awake while a workout is on screen, so the first cue
-  // after a quiet stretch isn't late (see audio/cuePlayer.ts).
-  useEffect(() => holdCueOutput(), []);
+  // after a quiet stretch isn't late (see audio/cuePlayer.ts). Released when this
+  // screen goes away (finish, quit, the app being closed) and when the background
+  // service hits its time limit, so nothing keeps playing after that.
+  useEffect(() => (stoppedForLimit ? undefined : holdCueOutput()), [stoppedForLimit]);
+
+  // ── Keeping the native countdown clip in step with the timer ───────────
+  // Re-synced whenever the timer changes: pause stops it, resume or a time change
+  // restarts it from the next beep still ahead, skip/back/Done stop it or move it
+  // to the new segment, and a phase that ends on its own lets its "go" finish
+  // (see audio/countdownClip.ts for the rules).
+  // The get-ready countdown's deadline (monotonic clock) while it runs, else null.
+  const preStartDeadlineRef = useRef<number | null>(null);
+  // `preStartEnded`: the get-ready countdown just ran out (its "go" is sounding).
+  const syncClip = (preStartEnded = false) => {
+    const enabled = clipHandlesCountdown();
+    if (preStartDeadlineRef.current !== null) {
+      // key -1: the get-ready countdown (the timer's own countdown keys start at 1).
+      clip.sync({ endAt: preStartDeadlineRef.current, lengthMs: PRE_START_SECONDS * 1000, key: -1 }, monotonicNow(), enabled);
+    } else {
+      // Moving on because a segment ran out of time (not a skip, Done or pause) must
+      // not cut off the "go" that is sounding right then.
+      clip.sync(engine.countdownSegment(), engine.now(), enabled, preStartEnded || engine.isEndingOnItsOwn());
+    }
+  };
+  const syncClipRef = useRef(syncClip);
+  useEffect(() => {
+    syncClipRef.current = syncClip;
+  });
+  useEffect(() => {
+    const unsubscribe = engine.subscribe(() => syncClipRef.current());
+    return () => {
+      unsubscribe();
+      clip.stop(); // leaving the screen stops any countdown clip
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Switching sound mode mid-countdown starts or stops the clip.
+  useEffect(() => {
+    syncClipRef.current();
+  }, [soundMode]);
 
   const [repLogs, setRepLogs] = useState<RepSetLog[]>([]);
   const [pendingWeight, setPendingWeight] = useState<number | null>(null);
@@ -158,7 +218,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
     const word = PRE_START_CUE_WORDS[secondsRemaining];
     if (!word) return; // stay silent for the leading seconds before the last 3
     if (soundModeRef.current === 'speech') speak(word);
-    else if (soundModeRef.current === 'beep') playBeep();
+    else if (soundModeRef.current === 'beep' && !clipHandlesCountdown()) playBeep();
   };
 
   // Give the user a "get ready" countdown before the first phase's timer
@@ -175,32 +235,57 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
   useEffect(() => {
     const deadline = monotonicNow() + PRE_START_SECONDS * 1000;
     const fired = new Set<number>();
+    let goPlayed = false;
     let shown = -1;
+    preStartDeadlineRef.current = deadline;
+    syncClipRef.current(); // beep mode: schedule the clip for the get-ready "3, 2, 1"
 
     const tick = () => {
-      const remaining = (deadline - monotonicNow()) / 1000;
+      const now = monotonicNow();
+      const remaining = (deadline - now) / 1000;
       for (const n of dueCountdownCues(remaining, PRE_START_SECONDS, fired)) {
         fired.add(n);
         cuePreStartTick(n);
+      }
+      // The "go" beep plays from here, at the deadline itself, rather than after
+      // React has re-rendered (which put it a variable amount after the "1").
+      // (In beep mode the countdown clip's own "go" is this beep, so none is added.)
+      if (remaining <= 0 && !goPlayed) {
+        goPlayed = true;
+        const coveredByClip = clipHandlesCountdown() && clip.hasGoPlan();
+        if (soundModeRef.current !== 'silent' && !coveredByClip) playGoBeep();
       }
       const ceilRemaining = Math.max(0, Math.ceil(remaining));
       if (ceilRemaining !== shown) {
         shown = ceilRemaining;
         setPreStartSeconds(ceilRemaining > 0 ? ceilRemaining : null);
       }
-      if (remaining <= 0) clearInterval(intervalId);
+      if (remaining <= 0) {
+        clearInterval(intervalId);
+        exactTimers.forEach(clearTimeout);
+        if (preStartDeadlineRef.current !== null) {
+          preStartDeadlineRef.current = null;
+          syncClipRef.current(true); // hand over to the workout's own countdowns; let the "go" finish
+        }
+      }
     };
 
     const intervalId = setInterval(tick, 50);
+    // Also wake exactly at each cue's moment, so they're evenly spaced (see useTimerEngine).
+    const exactTimers = [3, 2, 1, 0].map(n => setTimeout(tick, Math.max(0, deadline - n * 1000 - monotonicNow())));
     tick();
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+      exactTimers.forEach(clearTimeout);
+      preStartDeadlineRef.current = null;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Start the actual workout timer once the "get ready" countdown finishes
+  // Start the actual workout timer once the "get ready" countdown finishes (the
+  // "go" beep already played from the countdown itself, at its exact moment).
   useEffect(() => {
     if (preStartSeconds === null) {
       engine.start();
-      if (soundModeRef.current !== 'silent') playGoBeep();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
   }, [preStartSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -730,6 +815,13 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
         </View>
       </View>
 
+      <ConfirmDialog
+        visible={stoppedForLimit && !limitNoticeDismissed && quitStep === 'closed'}
+        title="Workout paused"
+        message="The background timer stops after 3 hours to save your battery. Tap Resume to carry on with the app open."
+        onRequestClose={() => setLimitNoticeDismissed(true)}
+        actions={[{ label: 'OK', variant: 'primary', onPress: () => setLimitNoticeDismissed(true) }]}
+      />
       <ConfirmDialog
         visible={quitStep === 'confirmQuit'}
         title="Quit workout?"

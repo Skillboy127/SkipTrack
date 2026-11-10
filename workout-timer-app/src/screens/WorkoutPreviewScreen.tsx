@@ -6,7 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronIcon, PlayIcon } from '../components/WorkoutIcons';
 import { noteTransition } from '../ads/interstitialManager';
 import { RootStackParamList, Workout } from '../types';
-import { loadCountdownSoundMode, loadWorkouts } from '../storage';
+import { loadCountdownSoundMode, loadNotificationPromptSeen, loadWorkouts, saveNotificationPromptSeen } from '../storage';
+import {
+  getNotificationPermission,
+  isBackgroundServiceAvailable,
+  requestNotificationPermission,
+} from '../background/workoutService';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { primeSpeechEngine } from '../useSpeech';
 import { getWorkoutDuration, isRepExercise } from '../workoutLogic';
 import { Display, Label } from '../components/PosterText';
@@ -42,8 +48,32 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
     });
   }, []);
 
-  const onStart = () => {
+  // The first time a workout starts, explain the lock-screen notification in one
+  // line before Android asks for the notification permission. Either answer starts
+  // the workout; without the permission it simply runs without the notification.
+  const [notificationAsk, setNotificationAsk] = useState(false);
+
+  const startWorkout = () => {
     navigation.replace('ActiveSession', { workout });
+  };
+
+  const onStart = async () => {
+    if (
+      isBackgroundServiceAvailable() &&
+      getNotificationPermission() === 'denied' &&
+      !(await loadNotificationPromptSeen())
+    ) {
+      setNotificationAsk(true);
+      return;
+    }
+    startWorkout();
+  };
+
+  const answerNotificationAsk = async (allow: boolean) => {
+    setNotificationAsk(false);
+    await saveNotificationPromptSeen();
+    if (allow) await requestNotificationPermission();
+    startWorkout();
   };
 
   // Pass the current copy too, so a workout that's no longer in the library
@@ -127,6 +157,17 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
           <PlayIcon color={colors.ink} size={20} />
         </View>
       </Pressable>
+
+      <ConfirmDialog
+        visible={notificationAsk}
+        title="Follow along with the screen off?"
+        message="Allow notifications to see your exercise and countdown on the lock screen, with pause and skip buttons."
+        onRequestClose={() => answerNotificationAsk(false)}
+        actions={[
+          { label: 'Allow', variant: 'primary', onPress: () => answerNotificationAsk(true) },
+          { label: 'Not now', variant: 'neutral', onPress: () => answerNotificationAsk(false) },
+        ]}
+      />
     </View>
   );
 }

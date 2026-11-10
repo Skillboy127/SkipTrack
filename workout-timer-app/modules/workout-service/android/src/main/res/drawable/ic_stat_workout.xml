@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon: a stopwatch outline. Must be a single-colour (white + alpha) glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M9,1h6v2H9V1zM12,5a8,8 0,1 0,0 16a8,8 0,0 0,0 -16zM12,19a6,6 0,1 1,0 -12a6,6 0,0 1,0 12zM11,8h2v5.5l3.2,1.9 -1,1.7L11,14.5V8z" />
+</vector>

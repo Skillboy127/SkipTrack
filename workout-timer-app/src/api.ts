@@ -555,7 +555,6 @@ async function postJson(
 
 /** Phase 3 — YouTube video URL */
 export async function extractWorkoutFromVideo(url: string): Promise<Workout> {
-  console.log('Sending extraction request to:', `${API_BASE}/extract`);
   // Video analysis genuinely takes longer than an image/text call — it reads
   // the actual video content, and can fall back through multiple models on
   // transient errors (see VIDEO_MODEL_FALLBACK_CHAIN server-side). The
@@ -575,12 +574,10 @@ export async function extractWorkoutFromImage(
   mimeType: string = 'image/jpeg',
   options?: ImportOptions,
 ): Promise<ExtractionResult> {
-  console.log('Sending image extraction request to:', `${API_BASE}/extract/image`);
   return postJson('/extract/image', { image_b64: imageBase64, mime_type: mimeType }, IMPORT_TIMEOUT_MS, options);
 }
 
 /** Phase 5 — Plain text workout description */
 export async function extractWorkoutFromText(text: string, options?: ImportOptions): Promise<ExtractionResult> {
-  console.log('Sending text extraction request to:', `${API_BASE}/extract/text`);
   return postJson('/extract/text', { text }, IMPORT_TIMEOUT_MS, options);
 }

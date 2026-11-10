@@ -286,3 +286,163 @@ test('randomised sessions: within each countdown, cues never repeat and only cou
     }
   }
 });
+
+// ── background service support ─────────────────────────────────────────────
+
+test('nextCueAt: each countdown number, then the end, then nothing; follows pause, skip and Done', () => {
+  const t = makeTimer([timed(10), timed(5, 'rest'), reps(8)]);
+  t.core.start();
+  const start = t.now;
+  assert.equal(t.core.nextCueAt(), start + 7000, '"3" is due 3s before the end');
+  t.run(7000);
+  assert.equal(t.core.nextCueAt(), start + 8000, 'then "2"');
+  t.run(2000);
+  assert.equal(t.core.nextCueAt(), start + 10000, 'after "1", the end cue');
+  t.core.pause();
+  assert.equal(t.core.nextCueAt(), null, 'nothing is due while paused');
+  t.core.resume();
+  t.core.skipNext();
+  assert.equal(t.core.nextCueAt(), t.now + 2000, 'a skipped-to 5s rest: its "3" is 2s away');
+  t.core.skipNext();
+  assert.equal(t.core.nextCueAt(), null, 'a rep set waiting for Done has no cue');
+});
+
+test('remainingMs is exact (not rounded), 0 for a rep set, and frozen while paused', () => {
+  const t = makeTimer([timed(10), reps(5)]);
+  assert.equal(t.core.remainingMs(), 0, 'not started');
+  t.core.start();
+  t.run(2350, { tickMs: 50 });
+  assert.equal(t.core.remainingMs(), 7650);
+  t.core.pause();
+  t.stall(60_000);
+  assert.equal(t.core.remainingMs(), 7650, 'pausing freezes it');
+  t.core.resume();
+  t.core.skipNext();
+  assert.equal(t.core.remainingMs(), 0);
+});
+
+test('the phone sleeping mid-workout (clock jumps, no ticks): lands on the right phase, cues once each', () => {
+  // Ticks stop while asleep; the elapsed-realtime clock keeps counting. On waking,
+  // a single tick must land on the current phase and play the overdue cues of the
+  // phase that just ended exactly once, never replaying earlier phases' cues.
+  const t = makeTimer([timed(20), timed(10, 'rest'), timed(20), timed(10, 'rest'), timed(20)]);
+  t.core.start();
+  t.run(15_000); // 5s left in phase 0
+  t.stall(30_000); // asleep: phase 0 ends at 20s, rest runs 20-30s, phase 2 runs 30-50s; now at 45s
+  assert.equal(t.core.getSnapshot().index, 2, 'landed on the phase that is current now');
+  assert.ok(Math.abs(t.core.remainingMs() - 5000) < 60, 'and its time left is right');
+  assert.deepEqual(countsFor(t.events, 0), [3, 2, 1], 'the interrupted phase still counted down once');
+  assert.deepEqual(countsFor(t.events, 1), [], 'a rest that passed entirely while asleep is not replayed');
+  t.run(6000);
+  assert.deepEqual(countsFor(t.events, 2), [3, 2, 1]);
+  assert.equal(endsInto(t.events, 3).length, 1);
+});
+
+test('notification actions while backgrounded behave like the on-screen buttons', () => {
+  const t = makeTimer([timed(10), timed(5, 'rest'), timed(10)]);
+  t.core.start();
+  t.run(3000);
+  t.core.pause(); // "Pause" from the lock screen
+  t.stall(20_000);
+  assert.equal(t.core.getSnapshot().index, 0);
+  t.core.resume(); // "Resume"
+  t.core.skipNext(); // "Next"
+  assert.equal(t.core.getSnapshot().index, 1);
+  t.core.skipPrevious(); // "Back"
+  assert.equal(t.core.getSnapshot().index, 0);
+  assert.equal(t.events.filter(e => e.kind === 'end').length, 0, 'manual skips stay silent');
+  t.run(10_500);
+  assert.deepEqual(countsFor(t.events, 0), [3, 2, 1]);
+  assert.equal(endsInto(t.events, 1).length, 1);
+});
+
+// ── timing diagnostics and exact wake-up ───────────────────────────────────
+
+test('msUntilNextCue: waking exactly then fires every cue at its exact moment, with no polling at all', () => {
+  let now = 0;
+  const heard = [];
+  const core = new TimerCore([timed(10), timed(6, 'rest'), timed(8)], () => now);
+  core.setHandlers({
+    onCountdown: n => heard.push([`count ${n}`, now]),
+    onPhaseStart: (_p, i) => heard.push([`end -> ${i}`, now]),
+  });
+  core.start();
+  // Drive only by the exact wake-up (no 50ms ticking).
+  for (let guard = 0; guard < 50 && core.getSnapshot().state === 'running'; guard++) {
+    const wait = core.msUntilNextCue();
+    if (wait === null) break;
+    now += wait;
+    core.tick();
+  }
+  assert.deepEqual(heard, [
+    ['count 3', 7000], ['count 2', 8000], ['count 1', 9000], ['end -> 1', 10000],
+    ['count 3', 13000], ['count 2', 14000], ['count 1', 15000], ['end -> 2', 16000],
+    ['count 3', 21000], ['count 2', 22000], ['count 1', 23000],
+  ]);
+  assert.equal(core.getSnapshot().state, 'completed');
+  assert.equal(now, 24000);
+});
+
+test('msUntilNextCue is null while paused and on a rep set waiting for Done', () => {
+  let now = 0;
+  const core = new TimerCore([timed(10), reps(5)], () => now);
+  core.start();
+  assert.equal(core.msUntilNextCue(), 7000);
+  core.pause();
+  assert.equal(core.msUntilNextCue(), null);
+  core.resume();
+  core.skipNext();
+  assert.equal(core.msUntilNextCue(), null);
+});
+
+// ── isEndingOnItsOwn: the timer running out vs a user action ───────────────
+
+test('isEndingOnItsOwn is true only while a segment runs out by itself, never for skip, Back, Done or pause', () => {
+  let now = 0;
+  const seen = [];
+  const core = new TimerCore([timed(5), timed(5, 'rest'), reps(4), timed(5)], () => now);
+  core.setHandlers({
+    onPhaseStart: (_p, i) => seen.push(['phaseStart', i, core.isEndingOnItsOwn()]),
+    getAutoRepSeconds: phase => (phase.mode === 'reps' ? 4 : null),
+    onAutoRepEnd: () => {
+      seen.push(['autoRepEnd', core.isEndingOnItsOwn()]);
+      core.completeRep();
+    },
+  });
+  core.subscribe(() => seen.push(['publish', core.getSnapshot().index, core.isEndingOnItsOwn()]));
+  core.start();
+  assert.equal(core.isEndingOnItsOwn(), false);
+
+  // Run out by itself: the timed set, then the rest. Listeners and callbacks see "true".
+  seen.length = 0;
+  now = 5000;
+  core.tick();
+  assert.deepEqual(seen.filter(e => e[0] !== 'publish'), [['phaseStart', 1, true]]);
+  assert.ok(seen.filter(e => e[0] === 'publish').every(e => e[2] === true), 'the listeners ran inside the window too');
+  assert.equal(core.isEndingOnItsOwn(), false, 'and the window is closed again afterwards');
+
+  // A user action, even right at the end, is never "on its own".
+  seen.length = 0;
+  now = 9999.9;
+  core.skipNext();
+  core.skipPrevious();
+  core.skipNext();
+  core.pause();
+  core.resume();
+  assert.ok(seen.every(e => e[0] !== 'phaseStart' && e[2] === false), `user actions: ${JSON.stringify(seen)}`);
+
+  // An auto-advancing rep set running out: the host's callback, and the move it makes, are inside the window.
+  assert.equal(core.getSnapshot().index, 2, 'we are on the auto-advancing rep set');
+  seen.length = 0;
+  now += 4001;
+  core.tick();
+  assert.deepEqual(seen.filter(e => e[0] !== 'publish'), [['autoRepEnd', true], ['phaseStart', 3, true]]);
+
+  // Done on a rep set before it runs out is a user action.
+  const core2 = new TimerCore([reps(4), timed(5)], () => now);
+  const flags = [];
+  core2.setHandlers({ onPhaseStart: () => flags.push(core2.isEndingOnItsOwn()), getAutoRepSeconds: () => 4 });
+  core2.start();
+  core2.completeRep();
+  assert.deepEqual(flags, [false]);
+});

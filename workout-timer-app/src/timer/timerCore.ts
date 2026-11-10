@@ -57,8 +57,15 @@ export const COUNTDOWN_CUES = [3, 2, 1] as const;
  * in the order they should play. A cue only belongs to a segment longer than it.
  */
 export function dueCountdownCues(remaining: number, segmentSeconds: number, fired: ReadonlySet<number>): number[] {
-  return COUNTDOWN_CUES.filter(n => n < segmentSeconds && remaining <= n && !fired.has(n));
+  return COUNTDOWN_CUES.filter(n => n < segmentSeconds && remaining <= n + DUE_EPSILON_S && !fired.has(n));
 }
+
+/**
+ * Floating-point slack when comparing a time left to a cue's moment: a waker that
+ * arrives exactly on time can still see 1e-13s left after the subtraction, which
+ * would make it wake again immediately without anything becoming due.
+ */
+export const DUE_EPSILON_S = 1e-6;
 
 /**
  * After time was added to or taken from a segment: cues whose moment is now in the
@@ -97,6 +104,14 @@ export class TimerCore {
   private activeMs = 0;
   private lastTickAt: number | null = null;
   private snapshot: TimerSnapshot;
+  /**
+   * Changes whenever the current countdown's timing changes: a new segment, a
+   * resume, or time added or removed. Lets a scheduled sound know exactly whether
+   * it still belongs to the countdown that is running (times alone can coincide).
+   */
+  private countdownEpoch = 0;
+  /** See isEndingOnItsOwn(). */
+  private endingOnItsOwn = false;
 
   constructor(phases: TimerPhase[], clock: () => number = monotonicNow) {
     this.phases = phases;
@@ -161,6 +176,7 @@ export class TimerCore {
     this.pausedAt = null;
     this.lastTickAt = now;
     this.state = 'running';
+    this.countdownEpoch += 1;
     this.publish(true);
   }
 
@@ -219,11 +235,34 @@ export class TimerCore {
       if (this.disposed || this.state !== 'running') return;
     }
 
-    if (remaining > 0) {
+    if (remaining > DUE_EPSILON_S) {
       this.publish(false);
       return;
     }
 
+    // The segment ran out by itself (as opposed to a skip, Back or Done). Everything
+    // it triggers synchronously, including listeners and the host's callbacks,
+    // happens inside this window, so they can tell the two apart.
+    this.endingOnItsOwn = true;
+    try {
+      this.endSegment(now);
+    } finally {
+      this.endingOnItsOwn = false;
+    }
+  }
+
+  /**
+   * True only while the timer is moving on because the current segment ran out of
+   * time (not for a skip, Back, Done or any other user action). The listeners and
+   * host callbacks that run during that move can ask, e.g. to let a sounding "go"
+   * beep finish instead of cutting it off.
+   */
+  isEndingOnItsOwn(): boolean {
+    return this.endingOnItsOwn;
+  }
+
+  /** The current timed segment has run out of time: move on. */
+  private endSegment(now: number): void {
     if (this.autoRep) {
       if (!this.autoRepEnded) {
         this.autoRepEnded = true;
@@ -254,12 +293,40 @@ export class TimerCore {
     this.enterSegment(landedIndex, landedStart, true);
   }
 
+  // ── For the notification ────────────────────────────────────────────────
+
+  /** The clock this core runs on, read now. */
+  now(): number {
+    return this.clock();
+  }
+
+  /** Exact milliseconds left in the current segment (0 for a rep set waiting for "Done"). */
+  remainingMs(): number {
+    if (this.state === 'idle' || this.state === 'completed' || !this.isTimedSegment()) return 0;
+    return Math.max(0, this.remainingAt(this.clock()) * 1000);
+  }
+
+  /**
+   * Clock time of the next audible cue (a countdown number or the segment's end),
+   * or null when nothing is pending (not running, or a rep set waiting for "Done").
+   */
+  nextCueAt(): number | null {
+    if (this.state !== 'running' || !this.isTimedSegment()) return null;
+    const end = this.segmentStart + this.segmentSeconds * 1000;
+    for (const n of COUNTDOWN_CUES) {
+      if (n < this.segmentSeconds && !this.fired.has(n)) return end - n * 1000;
+    }
+    if (this.autoRep && this.autoRepEnded) return null;
+    return end;
+  }
+
   // ── Internals ───────────────────────────────────────────────────────────
 
   private enterSegment(index: number, startAt: number, announce: boolean): void {
     const phase = this.phases[index];
     this.index = index;
     this.segmentStart = startAt;
+    this.countdownEpoch += 1;
     this.pausedAt = this.state === 'paused' ? this.clock() : null;
     this.fired = new Set();
     this.autoRepEnded = false;
@@ -275,10 +342,35 @@ export class TimerCore {
     if (announce) this.handlers.onPhaseStart?.(phase, index);
   }
 
+  /**
+   * When the current segment ends on this core's clock, and how long it is, while
+   * it is running and counts down (a timed set, a rest, or an auto-advancing rep
+   * set); null otherwise (not started, paused, finished, rep set waiting for Done).
+   */
+  countdownSegment(): { endAt: number; lengthMs: number; index: number; key: number } | null {
+    if (this.state !== 'running' || !this.isTimedSegment()) return null;
+    return {
+      endAt: this.segmentStart + this.segmentSeconds * 1000,
+      lengthMs: this.segmentSeconds * 1000,
+      index: this.index,
+      key: this.countdownEpoch,
+    };
+  }
+
+  /**
+   * Milliseconds until the next cue is due on this core's clock (0 if overdue), or
+   * null if none is pending. Lets the host wake exactly then instead of polling.
+   */
+  msUntilNextCue(): number | null {
+    const at = this.nextCueAt();
+    return at === null ? null : Math.max(0, at - this.clock());
+  }
+
   private changeSegmentLength(deltaSeconds: number): void {
     const now = this.clock();
     const elapsed = this.segmentSeconds - this.remainingAt(now);
     this.segmentSeconds = Math.max(elapsed, this.segmentSeconds + deltaSeconds);
+    this.countdownEpoch += 1;
     reconcileCountdownCues(this.fired, this.remainingAt(now));
     this.publish(true);
   }

@@ -4,7 +4,7 @@
     "slug": "workout-timer-app",
     "scheme": "skiptrack",
     "_buildComment": "NOTE: A full native rebuild (npx expo run:android) is required after changing native config plugins or AndroidManifest intent filters, not just a JS reload.",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -28,12 +28,9 @@
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "in.harshtalnikar.flex",
-      "versionCode": 1,
+      "versionCode": 2,
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
-        "android.permission.POST_NOTIFICATIONS",
         "android.permission.CAMERA",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",
