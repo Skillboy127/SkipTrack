@@ -264,7 +264,15 @@ export function OnboardingScreen({ navigation }: Props) {
                           accessibilityState={{ selected }}
                           accessibilityLabel={`After a rep set, go to rest ${option.title.toLowerCase()}`}
                         >
-                          <Label style={[styles.unitButtonLabel, selected && styles.onInkText]}>{option.title}</Label>
+                          <Label
+                            style={[styles.restButtonLabel, selected && styles.onInkText]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
+                            maxFontSizeMultiplier={1.3}
+                          >
+                            {option.title}
+                          </Label>
                         </Pressable>
                       );
                     })}
@@ -447,8 +455,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: space.hair,
   },
+  // The two halves of the "after a rep set" row. Their labels share one size so they
+  // match, and sit on one line: "AUTOMATICALLY" in the Archivo label font measures
+  // 9.15em, which at 13sp with wide tracking is 136dp, more than the 131dp a half
+  // row has on a 360dp-wide phone (it wrapped as "AUTOMATICALL / Y"). At 11sp with
+  // normal tracking it is 111dp (128dp at a "large" 1.15x system font, 144dp at the
+  // largest) in the 139dp left with the tighter padding; adjustsFontSizeToFit covers
+  // the rare narrower or larger case without ever wrapping.
   restButton: {
     flex: 1,
+    paddingHorizontal: space.tight,
+  },
+  restButtonLabel: {
+    fontSize: label.micro,
+    letterSpacing: tracking.label,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   note: {
     marginTop: space.hair,
