@@ -70,7 +70,7 @@ const SLIDES: Slide[] = [
   },
   {
     title: 'Free, with ads',
-    body: 'Flex is free to use and supported by ads. Free users get 10 imports each month. Building your own workouts and running sessions is always unlimited.',
+    body: 'Flex is free to use and supported by ads. Free users get 7 imports each month. Building your own workouts and running sessions is always unlimited.',
   },
 ];
 
