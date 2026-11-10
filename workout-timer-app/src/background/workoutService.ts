@@ -68,6 +68,14 @@ export function elapsedRealtimeNow(): number {
   return native ? native.elapsedRealtime() : Date.now();
 }
 
+/**
+ * True when elapsedRealtimeNow() is the real native clock (whatever the kill
+ * switch says): the timer then runs on the same clock as the native countdown clip.
+ */
+export function hasNativeClock(): boolean {
+  return native !== null;
+}
+
 export function isWorkoutServiceRunning(): boolean {
   return native !== null && native.isRunning();
 }

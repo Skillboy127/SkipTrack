@@ -10,3 +10,9 @@ export const BACKGROUND_WORKOUT_SERVICE_ENABLED = true;
 // native side caps it at 3 hours whatever this says). Long enough for any real
 // session; short enough that a forgotten workout can't run the battery down.
 export const BACKGROUND_SERVICE_MAX_HOURS = 3;
+
+// Play the countdown and phase-change beeps natively (SoundPool in the
+// workout-service module) instead of through expo-audio. JavaScript-only, so an
+// OTA update can switch back to expo-audio if the native player misbehaves.
+// Builds without the native player use expo-audio whatever this says.
+export const NATIVE_CUE_SOUNDS_ENABLED = true;

@@ -15,5 +15,6 @@ ios/
 !workout-timer-app/modules/*/android/
 workout-timer-app/modules/*/android/build/
 workout-timer-app/modules/*/android/.cxx/
+workout-timer-app/modules/*/android/.gradle/
 
 Flex UI Reimagine.zip

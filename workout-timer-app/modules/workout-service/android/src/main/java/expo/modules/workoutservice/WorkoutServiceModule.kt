@@ -53,6 +53,25 @@ class WorkoutServiceModule : Module() {
 
     Function("isRunning") { WorkoutServiceBridge.running }
 
+    // ── Cue sounds (SoundPool; see CueSounds.kt) ───────────────────────────
+
+    Function("prepareCues") {
+      CueSounds.prepare(context)
+      CountdownClip.prepare(context)
+    }
+
+    /** Schedule the 3-2-1 clip to start at `startAt` (elapsedRealtime) from `offsetMs`; no-op if `anchor` is already armed. */
+    Function("armCountdown") { anchor: Double, startAt: Double, offsetMs: Double ->
+      CountdownClip.arm(anchor.toLong(), startAt.toLong(), offsetMs.toLong())
+    }
+
+    Function("cancelCountdown") { CountdownClip.cancel() }
+
+
+    /** Play "beep" or "go" now; returns elapsedRealtime when it started, or -1 if it couldn't. */
+    Function("playCue") { name: String -> CueSounds.play(name) }
+
+
     Function("areNotificationsEnabled") { NotificationManagerCompat.from(context).areNotificationsEnabled() }
 
     /**

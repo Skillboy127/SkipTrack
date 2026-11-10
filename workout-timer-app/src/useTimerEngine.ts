@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Phase } from './types';
 import { TimerCore, TimerHandlers, monotonicNow } from './timer/timerCore';
-import { addWorkoutServiceListener, elapsedRealtimeNow, isBackgroundServiceAvailable } from './background/workoutService';
+import { addWorkoutServiceListener, elapsedRealtimeNow, hasNativeClock } from './background/workoutService';
 
 // How often the clock is checked while the app is on screen. Cues are due by
 // deadline, not by counting ticks, so this only bounds how late a cue can be.
@@ -21,7 +21,7 @@ const TICK_MS = 50;
  * which keeps counting through deep sleep (performance.now() does not).
  */
 export function useTimerEngine(phases: Phase[], handlers: TimerHandlers) {
-  const [core] = useState(() => new TimerCore(phases, isBackgroundServiceAvailable() ? elapsedRealtimeNow : monotonicNow));
+  const [core] = useState(() => new TimerCore(phases, hasNativeClock() ? elapsedRealtimeNow : monotonicNow));
 
   // The latest handlers, so cues always use the current settings.
   useEffect(() => {
@@ -33,10 +33,38 @@ export function useTimerEngine(phases: Phase[], handlers: TimerHandlers) {
 
   useEffect(() => {
     core.revive();
-    const id = setInterval(() => core.tick(), TICK_MS);
-    const stopListening = addWorkoutServiceListener({ onTick: () => core.tick() });
+
+    // Besides the regular check, wake exactly when the next cue is due, so cues
+    // fire within a frame of their moment instead of up to a whole interval late
+    // (which made the gaps between "3", "2" and "1" uneven). Re-armed whenever
+    // the next cue's time changes (a cue fired, pause, skip, rest adjusted).
+    let armedFor: number | null = null;
+    let cueTimer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => {
+      const due = core.nextCueAt();
+      if (due === armedFor) return;
+      if (cueTimer) clearTimeout(cueTimer);
+      cueTimer = null;
+      armedFor = due;
+      if (due === null) return;
+      cueTimer = setTimeout(() => {
+        cueTimer = null;
+        armedFor = null;
+        tick();
+      }, core.msUntilNextCue() ?? 0);
+    };
+    const tick = () => {
+      core.tick();
+      arm();
+    };
+
+    const id = setInterval(tick, TICK_MS);
+    const unsubscribe = core.subscribe(arm);
+    const stopListening = addWorkoutServiceListener({ onTick: tick });
     return () => {
       clearInterval(id);
+      if (cueTimer) clearTimeout(cueTimer);
+      unsubscribe();
       stopListening();
       core.dispose(); // leaving the screen cancels every pending cue
     };
@@ -72,5 +100,7 @@ export function useTimerEngine(phases: Phase[], handlers: TimerHandlers) {
     now: () => core.now(),
     remainingMs: () => core.remainingMs(),
     nextCueAt: () => core.nextCueAt(),
+    countdownSegment: () => core.countdownSegment(),
+    isEndingOnItsOwn: () => core.isEndingOnItsOwn(),
   };
 }
