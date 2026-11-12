@@ -221,34 +221,9 @@ def reward_callback_endpoint():
     return jsonify({"verified": True, "granted": outcome == 'granted'}), 200
 
 
-@app.route('/extract', methods=['POST'])
-def extract_endpoint():
-    data = request.json
-    if not data or 'url' not in data:
-        return jsonify({"error": "Missing 'url' in request body"}), 400
-        
-    url = data['url']
-    start_time = data.get('start')
-    end_time = data.get('end')
-    
-    try:
-        from extract_workout import get_video_id, get_transcript, get_description, extract
-
-        video_id = get_video_id(url)
-        canonical_url = f"https://www.youtube.com/watch?v={video_id}"
-        print(f"Fetching transcript for {video_id}...")
-        transcript = get_transcript(video_id)
-        
-        print("Fetching description...")
-        description = get_description(canonical_url)
-        
-        print("Extracting with Gemini...")
-        result = extract(transcript, description, canonical_url, start_time, end_time)
-        
-        return jsonify(result)
-    except Exception as e:
-        print(traceback.format_exc())
-        return jsonify({"error": friendly_error_message(e)}), 500
+# There is deliberately no POST /extract (import from a YouTube link): no app version
+# calls it, and it was open to anyone (no device id, no import limit). The helpers it
+# used stay in extract_workout.py for the command-line tool.
 
 @app.route('/extract/image', methods=['POST'])
 def extract_image_endpoint():
