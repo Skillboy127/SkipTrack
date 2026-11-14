@@ -15,9 +15,11 @@ this one command, e.g. in PowerShell:
     python device_hash.py
     Remove-Item Env:ANDROID_ID, Env:DEVICE_ID_SECRET
 
-Get the Android ID of a phone connected by USB (debugging on) with:
-
-    adb shell settings get secure android_id
+NOTE: this needs the Android ID that the Flex app itself sends. Android scopes ANDROID_ID to the
+app's signing key, so `adb shell settings get secure android_id` and device-info apps show a
+DIFFERENT value, and so does a Flex build signed with another key (a sideloaded EAS build vs the
+Play-installed one). To find a device's hash without knowing its ID, read it from the database
+instead (see "Owner bypass" in the README).
 """
 import getpass
 import os

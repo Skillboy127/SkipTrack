@@ -117,7 +117,7 @@ def reward_cap() -> int:
         return DEFAULT_REWARD_CAP
 
 
-_ignored_logged: int | None = None
+_logged_config: tuple[int, int] | None = None
 
 
 def unlimited_hashes() -> frozenset[str]:
@@ -127,8 +127,11 @@ def unlimited_hashes() -> frozenset[str]:
     is not a 64-character hex hash is ignored and only COUNTED in the log, never printed:
     the most likely mistake is pasting a raw Android ID, which must not end up in logs.
     Read on every call, so a changed environment takes effect without code changes.
+
+    Logs one line whenever what the server sees changes (how many valid hashes it has,
+    how many entries it ignored), so the Render logs show whether a setting arrived.
     """
-    global _ignored_logged
+    global _logged_config
     hashes = set()
     ignored = 0
     for part in os.getenv(UNLIMITED_ENV, '').split(','):
@@ -139,10 +142,15 @@ def unlimited_hashes() -> frozenset[str]:
             hashes.add(entry)
         else:
             ignored += 1
-    if ignored and ignored != _ignored_logged:
-        print(f"[unlimited] {ignored} entr{'y' if ignored == 1 else 'ies'} in {UNLIMITED_ENV} ignored: "
-              "each must be a 64-character hex device hash (values are never logged)")
-    _ignored_logged = ignored
+    config = (len(hashes), ignored)
+    if config != _logged_config:
+        if config != (0, 0) or _logged_config is not None:
+            message = f"[unlimited] {len(hashes)} device hash{'' if len(hashes) == 1 else 'es'} configured"
+            if ignored:
+                message += (f"; {ignored} entr{'y' if ignored == 1 else 'ies'} ignored (each must be a "
+                            "64-character hex device hash; values are never logged)")
+            print(message)
+        _logged_config = config
     return frozenset(hashes)
 
 

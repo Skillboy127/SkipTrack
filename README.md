@@ -72,10 +72,15 @@ it protects the Gemini bill. Whitespace, case and empty entries are ignored; an 
 hex hash is ignored and only counted in the log (never printed, since the usual mistake is pasting the raw Android
 ID). The variable is read on every request.
 
-Get your hash without logging anything: `python device_hash.py` asks for the phone's Android ID
-(`adb shell settings get secure android_id`) and for `DEVICE_ID_SECRET`, hides what you type, and prints only the
-hash. Or, after importing once from your phone, read your own row in Neon (`SELECT device_hash, first_import_at,
-used_count FROM usage ORDER BY first_import_at DESC LIMIT 5;`); that stored hash is the same value. Tests:
+Get your hash from Neon: import once from your phone, then run `SELECT device_hash, first_import_at, used_count
+FROM usage ORDER BY first_import_at DESC LIMIT 10;` and take the row that matches (compare `used_count` with what
+the app shows, or run it before and after one more import and see which count went up). That is the hash the server
+derives from the ID the app really sends. **Do not use `adb shell settings get secure android_id` or a device-info
+app:** Android scopes `ANDROID_ID` to the app's signing key, so every other app (and the shell) sees a different
+value than Flex does, and a sideloaded EAS build and the Play-installed build of Flex differ too. Only Flex itself
+can read its ID. `device_hash.py` computes a hash from an ID and the secret (hidden prompts, prints only the hash);
+it is only useful if you already have the ID the app sends. The server logs one line whenever the list changes
+(`[unlimited] N device hash(es) configured`), so the Render logs show whether the setting arrived. Tests:
 `python test_unlimited.py` (scratch Postgres).
 
 ### Testing it

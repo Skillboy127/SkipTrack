@@ -140,14 +140,27 @@ with contextlib.redirect_stdout(out):
 logged = out.getvalue()
 check("upper-case, spaced and empty entries are handled: both real hashes work",
       ua["remaining"] == usage_limits.UNLIMITED_ALLOWANCE and usage(b)["remaining"] == usage_limits.UNLIMITED_ALLOWANCE)
-check("the two invalid entries are ignored and only counted in the log",
-      "[unlimited] 2 entries" in logged and "not-a-hash" not in logged and raw_id not in logged)
+check("the log says 2 hashes are configured and 2 entries ignored, and prints none of the values",
+      "[unlimited] 2 device hashes configured; 2 entries ignored" in logged
+      and "not-a-hash" not in logged and raw_id not in logged and hash_of(a) not in logged.lower())
 check("a raw Android ID pasted in the list grants nothing", usage(raw_id)["limit"] == 2)
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     usage(a)
     usage(a)
-check("the warning is not repeated on every request", out.getvalue() == "")
+check("the line is not repeated on every request", out.getvalue() == "")
+
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    set_unlimited(hash_of(a))
+    usage(a)
+check("it is logged again when the setting changes (1 hash, nothing ignored)",
+      out.getvalue().strip() == "[unlimited] 1 device hash configured")
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    set_unlimited(None)
+    usage(a)
+check("and when it is cleared", out.getvalue().strip() == "[unlimited] 0 device hashes configured")
 
 for empty in (None, "", "  ", ",,,"):
     set_unlimited(empty)
