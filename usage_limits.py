@@ -11,6 +11,8 @@ Configuration (environment variables):
     WINDOW_DAYS               window length in days, fractions allowed (default 30)
     DAILY_GLOBAL_IMPORT_CAP   successful imports per UTC day across all users (default 300)
     REWARD_CAP                rewarded videos per window (default 2)
+    UNLIMITED_DEVICE_HASHES   comma-separated device hashes exempt from the per-device import
+                              limit (the owner's own devices); see "Owner bypass" below
 
 Rewarded ads grant REWARD_BONUS_IMPORTS extra imports, at most REWARD_CAP times per
 window. The cap is checked when a reward starts and again, atomically, when AdMob's
@@ -19,6 +21,14 @@ it never breaks a user who already watched more: they simply have 0 left. The bo
 cleared when that window rolls over. The server alone decides the reward: it is only
 ever applied from a verified AdMob callback (see admob_ssv.py), never on the
 client's say-so.
+
+Owner bypass: a device whose hash (the same HMAC-SHA256 stored in the usage table, see
+hash_device_id) is listed in UNLIMITED_DEVICE_HASHES skips the per-device import limit.
+The list exists only in the server's environment: the app has no flag for it and the
+server never trusts anything the app says about it. Such a device is reported as having
+UNLIMITED_ALLOWANCE imports left and no usage row is written for it. The global daily
+cap (DAILY_GLOBAL_IMPORT_CAP) still applies to it, because that protects the Gemini
+bill, not the user.
 """
 import hashlib
 import hmac
@@ -32,6 +42,12 @@ import psycopg
 DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9._-]{8,128}$')
 
 DEFAULT_REWARD_CAP = 2
+
+UNLIMITED_ENV = 'UNLIMITED_DEVICE_HASHES'
+# What /usage reports for an exempt device: large enough to never run out, small enough
+# to display sensibly in the app.
+UNLIMITED_ALLOWANCE = 999_999
+_DEVICE_HASH_PATTERN = re.compile(r'^[0-9a-f]{64}$')
 REWARD_BONUS_IMPORTS = 2
 REWARD_TOKEN_TTL_MINUTES = 10
 # Used tokens are kept this long so a replayed callback is recognised by its
@@ -99,6 +115,51 @@ def reward_cap() -> int:
     except ValueError:
         print(f"[reward] REWARD_CAP is not a whole number; using {DEFAULT_REWARD_CAP}")
         return DEFAULT_REWARD_CAP
+
+
+_ignored_logged: int | None = None
+
+
+def unlimited_hashes() -> frozenset[str]:
+    """The device hashes exempt from the per-device import limit (UNLIMITED_DEVICE_HASHES).
+
+    Comma-separated, whitespace and case ignored, empty entries skipped. An entry that
+    is not a 64-character hex hash is ignored and only COUNTED in the log, never printed:
+    the most likely mistake is pasting a raw Android ID, which must not end up in logs.
+    Read on every call, so a changed environment takes effect without code changes.
+    """
+    global _ignored_logged
+    hashes = set()
+    ignored = 0
+    for part in os.getenv(UNLIMITED_ENV, '').split(','):
+        entry = part.strip().lower()
+        if not entry:
+            continue
+        if _DEVICE_HASH_PATTERN.match(entry):
+            hashes.add(entry)
+        else:
+            ignored += 1
+    if ignored and ignored != _ignored_logged:
+        print(f"[unlimited] {ignored} entr{'y' if ignored == 1 else 'ies'} in {UNLIMITED_ENV} ignored: "
+              "each must be a 64-character hex device hash (values are never logged)")
+    _ignored_logged = ignored
+    return frozenset(hashes)
+
+
+def is_unlimited(device_hash: str) -> bool:
+    return device_hash.lower() in unlimited_hashes()
+
+
+def _unlimited_usage() -> dict:
+    """The usage object for an exempt device: a huge allowance, nothing used, no rewards to earn."""
+    return {
+        "limit": UNLIMITED_ALLOWANCE,
+        "used": 0,
+        "remaining": UNLIMITED_ALLOWANCE,
+        "bonus": 0,
+        "rewards_remaining": 0,
+        "resets_at": None,
+    }
 
 
 def is_configured() -> bool:
@@ -204,6 +265,8 @@ def _select_usage(conn, device_hash: str):
 
 
 def get_usage(device_hash: str) -> dict:
+    if is_unlimited(device_hash):
+        return _unlimited_usage()
     with _connect() as conn:
         try:
             return _usage_dict(_select_usage(conn, device_hash))
@@ -213,10 +276,11 @@ def get_usage(device_hash: str) -> dict:
 
 def check_allowance(device_hash: str) -> tuple[str, dict]:
     """Pre-extraction check. Returns (status, usage) with status 'ok', 'limit_reached' or 'service_busy'."""
+    unlimited = is_unlimited(device_hash)
     with _connect() as conn:
         try:
-            usage = _usage_dict(_select_usage(conn, device_hash))
-            if usage["remaining"] <= 0:
+            usage = _unlimited_usage() if unlimited else _usage_dict(_select_usage(conn, device_hash))
+            if not unlimited and usage["remaining"] <= 0:
                 return "limit_reached", usage
             today = conn.execute(
                 "SELECT import_count FROM global_daily WHERE day = (now() AT TIME ZONE 'utc')::date"
@@ -241,6 +305,7 @@ def record_success(device_hash: str) -> tuple[str, dict | None]:
         "cap": daily_cap(),
     }
     new_index = WINDOW_INDEX_SQL.format(first="usage.first_import_at")
+    unlimited = is_unlimited(device_hash)
     status = "ok"
     row = None
     with _connect() as conn:
@@ -259,6 +324,9 @@ def record_success(device_hash: str) -> tuple[str, dict | None]:
                 if global_row is None:
                     status = "service_busy"
                     raise psycopg.Rollback()
+                if unlimited:
+                    # Counted against the daily cap above, but no per-device record is kept.
+                    return "ok", _unlimited_usage()
 
                 row = conn.execute(
                     f"""
@@ -296,6 +364,8 @@ def start_reward(device_hash: str) -> tuple[str, str | None, dict]:
     per-window reward limit is used up) or 'not_needed' (the device still has
     imports left, so a reward would be wasted).
     """
+    if is_unlimited(device_hash):
+        return "not_needed", None, _unlimited_usage()
     with _connect() as conn:
         try:
             with conn.transaction():

@@ -59,7 +59,24 @@ the user's first successful import. `GET /usage` returns the current allowance.
 
 Environment variables (Render dashboard): `DATABASE_URL` and `DEVICE_ID_SECRET` are required (`/health` reports
 "misconfigured" until both are set); optional: `LIMIT`, `WINDOW_DAYS` (fractions allowed),
-`DAILY_GLOBAL_IMPORT_CAP` (default 300 successful imports per UTC day across all users).
+`DAILY_GLOBAL_IMPORT_CAP` (default 300 successful imports per UTC day across all users), `REWARD_CAP`
+(default 2), `UNLIMITED_DEVICE_HASHES` (see below).
+
+### Owner bypass (`UNLIMITED_DEVICE_HASHES`)
+
+A device whose hash is listed in the Render environment variable `UNLIMITED_DEVICE_HASHES` (comma-separated)
+skips the per-device import limit: `/usage` reports 999,999 imports left, imports are never refused for the
+allowance, and no usage record is written for it. The app has no flag for this and nothing it sends can turn it
+on; only the server's environment decides. The global daily cap (`DAILY_GLOBAL_IMPORT_CAP`) still applies, because
+it protects the Gemini bill. Whitespace, case and empty entries are ignored; an entry that is not a 64-character
+hex hash is ignored and only counted in the log (never printed, since the usual mistake is pasting the raw Android
+ID). The variable is read on every request.
+
+Get your hash without logging anything: `python device_hash.py` asks for the phone's Android ID
+(`adb shell settings get secure android_id`) and for `DEVICE_ID_SECRET`, hides what you type, and prints only the
+hash. Or, after importing once from your phone, read your own row in Neon (`SELECT device_hash, first_import_at,
+used_count FROM usage ORDER BY first_import_at DESC LIMIT 5;`); that stored hash is the same value. Tests:
+`python test_unlimited.py` (scratch Postgres).
 
 ### Testing it
 
