@@ -14,6 +14,7 @@ import { armCountdownClip, cancelCountdownClip, clipClockNow, countdownClipAvail
 import { dueCountdownCues, monotonicNow } from '../timer/timerCore';
 import { useSpeech } from '../useSpeech';
 import { expandWorkout } from '../workoutLogic';
+import { nextWorkPhase, timedWorkLabel } from '../session/sessionLabels';
 import {
   addHistoryEntry,
   loadCountdownSoundMode,
@@ -542,6 +543,14 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
       ? `×${nextPhase.reps}`
       : `${Math.ceil(nextPhase.duration)}s`
     : '';
+  // The footer's "Next" bar (shown while working) skips the rest that follows
+  // this exercise and names the next exercise itself.
+  const nextWork = nextWorkPhase(phases, engine.currentPhaseIndex);
+  const nextWorkMeta = nextWork
+    ? nextWork.mode === 'reps'
+      ? `×${nextWork.reps}`
+      : `${Math.ceil(nextWork.duration)}s`
+    : '';
 
   // Anton digits are ~0.52em wide and the line box is 0.8em tall; the count must
   // fit both the width left of the REPS label and the measured height.
@@ -750,7 +759,7 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
             {engine.currentPhase.exerciseName}
           </Display>
           <Label style={[styles.cue, { color: field.fg }]}>
-            Hold — {Math.round(engine.currentPhaseDuration)} sec
+            {timedWorkLabel(engine.currentPhase.exerciseName, engine.currentPhaseDuration)}
           </Label>
           <View style={styles.timerRow}>
             <Display
@@ -771,9 +780,9 @@ export function ActiveSessionScreen({ route, navigation }: Props) {
           <View style={styles.nextRow}>
             <Label style={styles.nextLabel}>Next</Label>
             <Display style={styles.nextName} numberOfLines={1}>
-              {nextPhase?.exerciseName ?? 'Finish'}
+              {nextWork?.exerciseName ?? 'Finish'}
             </Display>
-            {nextMeta ? <Display style={styles.nextMeta}>{nextMeta}</Display> : null}
+            {nextWorkMeta ? <Display style={styles.nextMeta}>{nextWorkMeta}</Display> : null}
           </View>
         )}
         <View style={styles.transport}>
