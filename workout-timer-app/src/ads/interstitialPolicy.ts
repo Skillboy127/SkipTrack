@@ -5,6 +5,7 @@
 export type InterstitialTrigger = 'library' | 'editor-save' | 'completion';
 
 export type SkipReason =
+  | 'disabled'
   | 'ad-free'
   | 'workout-active'
   | 'already-showing'
@@ -16,6 +17,8 @@ export type SkipReason =
 export type InterstitialDecision = { show: true } | { show: false; reason: SkipReason };
 
 export type InterstitialState = {
+  /** The INTERSTITIAL_ADS_ENABLED switch in adConfig.ts. */
+  interstitialsEnabled: boolean;
   /** The user bought Remove Ads. */
   adFree: boolean;
   /** A workout is running: exercise, rest, pause or the get-ready countdown. */
@@ -41,6 +44,7 @@ export type InterstitialState = {
  * impossible or unacceptable come before the frequency limits.
  */
 export function decideInterstitial(state: InterstitialState): InterstitialDecision {
+  if (!state.interstitialsEnabled) return { show: false, reason: 'disabled' };
   if (state.adFree) return { show: false, reason: 'ad-free' };
   if (state.workoutActive) return { show: false, reason: 'workout-active' };
   if (state.isShowing) return { show: false, reason: 'already-showing' };
@@ -56,4 +60,14 @@ export function decideInterstitial(state: InterstitialState): InterstitialDecisi
 
   if (!state.adLoaded) return { show: false, reason: 'ad-not-loaded' };
   return { show: true };
+}
+
+/** Whether to start loading an interstitial at all. */
+export function shouldLoadInterstitial(interstitialsEnabled: boolean, adFree: boolean): boolean {
+  return interstitialsEnabled && !adFree;
+}
+
+/** The Remove Ads offer only makes sense while there are interstitials to remove. */
+export function showRemoveAdsOffer(interstitialsEnabled: boolean): boolean {
+  return interstitialsEnabled;
 }

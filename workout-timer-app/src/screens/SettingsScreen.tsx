@@ -3,6 +3,7 @@ import { View, StyleSheet, Pressable, StatusBar, Alert, ActivityIndicator, Scrol
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Constants from 'expo-constants';
 import mobileAds from 'react-native-google-mobile-ads';
+import { showRemoveAdsOffer } from '../ads/interstitialPolicy';
 import { RootStackParamList, CountdownSoundMode, WeightUnit } from '../types';
 import {
   loadCountdownSoundMode,
@@ -19,7 +20,7 @@ import {
 import { BillingNotice, buyRemoveAds, getBillingSnapshot, restoreRemoveAds, subscribeBilling, useBilling } from '../billing';
 import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 import { BottomTabBar } from '../components/BottomTabBar';
-import { REWARDED_AD_IS_TEST_UNIT, REWARDED_AD_UNIT_ID } from '../adConfig';
+import { INTERSTITIAL_ADS_ENABLED, REWARDED_AD_IS_TEST_UNIT, REWARDED_AD_UNIT_ID } from '../adConfig';
 import { IS_PREVIEW_BUILD } from '../buildInfo';
 import { getLastRewardedError } from '../rewardedAd';
 import { Display, Label, Body } from '../components/PosterText';
@@ -278,6 +279,8 @@ export function SettingsScreen({ navigation }: Props) {
             )}
           </View>
 
+          {showRemoveAdsOffer(INTERSTITIAL_ADS_ENABLED) && (
+          <>
           <Label style={styles.sectionHeader}>Support Flex</Label>
           {billing.adFree ? (
             <View style={[styles.card, styles.cardAccent]}>
@@ -320,6 +323,8 @@ export function SettingsScreen({ navigation }: Props) {
                 <Label style={styles.linkLabel}>Restore purchases</Label>
               </Pressable>
             </View>
+          )}
+          </>
           )}
 
           <Label style={styles.sectionHeader}>About</Label>

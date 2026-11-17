@@ -1,5 +1,5 @@
 import { AdEventType, InterstitialAd } from 'react-native-google-mobile-ads';
-import { INTERSTITIAL_AD_UNIT_ID } from '../adConfig';
+import { INTERSTITIAL_ADS_ENABLED, INTERSTITIAL_AD_UNIT_ID } from '../adConfig';
 import {
   loadAdFreeStatus,
   loadHasCompletedFirstWorkout,
@@ -8,7 +8,7 @@ import {
   saveHasCompletedFirstWorkout,
   saveLastAdShownAt,
 } from '../storage';
-import { decideInterstitial, InterstitialTrigger } from './interstitialPolicy';
+import { decideInterstitial, InterstitialTrigger, shouldLoadInterstitial } from './interstitialPolicy';
 
 // ─── Frequency control ───────────────────────────────────────────────────────
 export const TRANSITIONS_NEEDED = 4;
@@ -70,7 +70,11 @@ function scheduleReload() {
 /** Starts loading the next ad, if there isn't one loaded or loading already. */
 async function preload() {
   if (ad) return;
-  if (await loadAdFreeStatus()) {
+  if (!INTERSTITIAL_ADS_ENABLED) {
+    log('not loading an ad: interstitials are switched off (adConfig.ts)');
+    return;
+  }
+  if (!shouldLoadInterstitial(INTERSTITIAL_ADS_ENABLED, await loadAdFreeStatus())) {
     log('not loading an ad: Remove Ads is active');
     return;
   }
@@ -138,6 +142,7 @@ async function evaluate(trigger: InterstitialTrigger, isFirstCompletion = false)
   // landing together can't both pass.
   const now = Date.now();
   const decision = decideInterstitial({
+    interstitialsEnabled: INTERSTITIAL_ADS_ENABLED,
     adFree,
     workoutActive,
     isShowing: showing,

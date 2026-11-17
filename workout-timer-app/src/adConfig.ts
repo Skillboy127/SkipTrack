@@ -3,6 +3,14 @@
 // false = real units in release builds; dev builds still use the sample units.
 export const USE_GOOGLE_TEST_ADS = false;
 
+// ─── Interstitial ads (between screen changes) on/off ─────────────────────────
+// false = no interstitial is ever loaded or shown, and the Remove Ads offer in
+//         Settings is hidden (the billing code itself still runs, so a purchase
+//         is still restored and remembered).
+// true  = interstitials and the Remove Ads offer behave exactly as before.
+// The rewarded "watch a video for +2 imports" ad is NOT affected by this switch.
+export const INTERSTITIAL_ADS_ENABLED = false;
+
 // Google's sample units for Android, from
 // https://developers.google.com/admob/android/test-ads
 const TEST_INTERSTITIAL_AD_UNIT_ID = 'ca-app-pub-3940256099942544/1033173712';

@@ -1,13 +1,14 @@
 // Run with: npm test
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { decideInterstitial } from './interstitialPolicy.ts';
+import { decideInterstitial, shouldLoadInterstitial, showRemoveAdsOffer } from './interstitialPolicy.ts';
 
 const MINUTE = 60000;
 const NOW = 1_000_000_000_000;
 
 // A state in which an ad is allowed; each test breaks exactly one thing.
 const allowed = {
+  interstitialsEnabled: true,
   adFree: false,
   workoutActive: false,
   isShowing: false,
@@ -101,4 +102,39 @@ test('reports the most important failing reason first', () => {
 test('thresholds are parameters, not baked in', () => {
   assert.deepEqual(decide({ transitionsNeeded: 2, transitions: 2 }), { show: true });
   assert.deepEqual(decide({ minMinutesBetweenAds: 30, lastAdShownAt: NOW - 10 * MINUTE }), skipped('cooldown'));
+});
+
+// ─── The INTERSTITIAL_ADS_ENABLED switch (adConfig.ts) ─────────────────────────
+
+test('switched off: never shows, whatever else is true', () => {
+  const off = { interstitialsEnabled: false };
+  assert.deepEqual(decide(off), skipped('disabled'));
+  assert.deepEqual(decide({ ...off, transitions: 99, lastAdShownAt: null }), skipped('disabled'));
+  assert.deepEqual(decide({ ...off, isFirstCompletion: true }), skipped('disabled'));
+  assert.deepEqual(decide({ ...off, adFree: true }), skipped('disabled'));
+});
+
+test('switched off: nothing is loaded and the Remove Ads offer is hidden', () => {
+  assert.equal(shouldLoadInterstitial(false, false), false);
+  assert.equal(shouldLoadInterstitial(false, true), false);
+  assert.equal(showRemoveAdsOffer(false), false);
+});
+
+test('switched on: exactly the old behaviour', () => {
+  assert.deepEqual(decide({}), { show: true });
+  assert.deepEqual(decide({ adFree: true }), skipped('ad-free'));
+  assert.deepEqual(decide({ workoutActive: true }), skipped('workout-active'));
+  assert.deepEqual(decide({ transitions: 3 }), skipped('not-enough-transitions'));
+  assert.deepEqual(decide({ adLoaded: false }), skipped('ad-not-loaded'));
+  assert.equal(shouldLoadInterstitial(true, false), true);
+  assert.equal(shouldLoadInterstitial(true, true), false); // Remove Ads buyers still get nothing loaded
+  assert.equal(showRemoveAdsOffer(true), true);
+});
+
+test('the app currently ships with interstitials off, and the rewarded unit is untouched', async () => {
+  globalThis.__DEV__ = false; // adConfig.ts reads React Native's __DEV__
+  const config = await import('../adConfig.ts');
+  assert.equal(config.INTERSTITIAL_ADS_ENABLED, false);
+  assert.equal(config.REWARDED_AD_UNIT_ID, 'ca-app-pub-9013066559297172/1961830145');
+  assert.equal(config.INTERSTITIAL_AD_UNIT_ID, 'ca-app-pub-9013066559297172/3697937890');
 });
