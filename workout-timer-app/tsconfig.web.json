@@ -1,0 +1,12 @@
+// Type-checks the web build: imports resolve to .web files first, exactly as Metro
+// does for the web, starting from the web entry. Run: npx tsc -p tsconfig.web.json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "moduleSuffixes": [".web", ""],
+    "lib": ["dom", "esnext"],
+    "noEmit": true
+  },
+  "include": [],
+  "files": ["index.ts", "App.web.tsx", "src/web/stubs/googleMobileAds.ts"]
+}

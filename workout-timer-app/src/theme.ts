@@ -3,6 +3,7 @@
  * and the heavy rules this direction is built on. Screens import from here;
  * nothing hardcodes a colour.
  */
+import { Platform } from 'react-native';
 
 export const colors = {
   /** Page background. */
@@ -94,7 +95,9 @@ export const rule = {
 } as const;
 
 export const band = {
-  statusBar: 44,
+  // The band left for the system status bar. On the web the page already starts
+  // below the status bar (in Safari and in the Home Screen app), so there is none.
+  statusBar: Platform.OS === 'web' ? 0 : 44,
   cta: 58,
   tabBar: 54,
   transport: 88,

@@ -18,19 +18,11 @@ import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { Display, Label, Body } from '../components/PosterText';
 import { ChevronIcon } from '../components/WorkoutIcons';
+import { ONBOARDING_SLIDES } from '../platformCopy';
 import { BUILT_IN_WORKOUTS, BuiltInWorkout, builtInSummary, builtInToWorkout } from '../programs/builtInWorkouts';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
-
-type Slide = {
-  title: string;
-  body: string;
-  // Shows the countdown-sound and weight-unit pickers under the body text.
-  preferences?: boolean;
-  // Offers the built-in starter workouts under the body text.
-  starters?: boolean;
-};
 
 const SOUND_OPTIONS: { id: CountdownSoundMode; title: string; description: string }[] = [
   { id: 'speech', title: 'Spoken', description: 'Counts down out loud.' },
@@ -50,34 +42,7 @@ const UNIT_OPTIONS: { id: WeightUnit; title: string }[] = [
   { id: 'lb', title: 'LB' },
 ];
 
-const SLIDES: Slide[] = [
-  {
-    title: 'Welcome to Flex',
-    body: 'Your workout companion.',
-  },
-  {
-    title: 'Import any workout',
-    body: 'Snap a photo of a workout plan or card, or paste the exercises as text. Flex turns it into a timed routine you can start right away.',
-  },
-  {
-    title: 'Build your own',
-    body: 'Create a workout from scratch. Add exercises, set work and rest times, or use reps instead of a timer. Reorder and edit anytime.',
-  },
-  {
-    title: 'Choose your countdown',
-    body: 'Pick how Flex guides you.',
-    preferences: true,
-  },
-  {
-    title: 'Adjust on the fly',
-    body: 'Edit any exercise, and drag its handle to reorder. During a rest, nudge the timer up or down by 5 seconds.',
-  },
-  {
-    title: 'Free, with ads',
-    body: 'Flex is free to use and supported by ads. Free users get 7 imports each month. Building your own workouts and running sessions is always unlimited.',
-    starters: true,
-  },
-];
+const SLIDES = ONBOARDING_SLIDES;
 
 export function OnboardingScreen({ navigation }: Props) {
   const { width } = useWindowDimensions();

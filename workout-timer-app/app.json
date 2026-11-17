@@ -39,7 +39,14 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/icon.png",
+      "name": "Flex",
+      "shortName": "Flex",
+      "description": "Workout timer. Private: no account, no ads, nothing collected.",
+      "themeColor": "#F2EEE3",
+      "backgroundColor": "#F2EEE3"
     },
     "plugins": [
       [

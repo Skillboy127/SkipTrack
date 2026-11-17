@@ -22,6 +22,7 @@ import { ChevronIcon, CheckIcon } from '../components/WorkoutIcons';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { INTERSTITIAL_ADS_ENABLED, REWARDED_AD_IS_TEST_UNIT, REWARDED_AD_UNIT_ID } from '../adConfig';
 import { IS_PREVIEW_BUILD } from '../buildInfo';
+import { PRIVACY_POLICY_URL } from '../platformCopy';
 import { getLastRewardedError } from '../rewardedAd';
 import { Display, Label, Body } from '../components/PosterText';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
@@ -29,7 +30,6 @@ import { band, colors, display, label, leading, rule, space, tracking } from '..
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 
-const PRIVACY_POLICY_URL = 'https://harshtalnikar.github.io/flex/privacy/';
 const CONTACT_EMAIL = 'flexbyht@gmail.com';
 
 // What to tell the user after a purchase or restore attempt. Short on purpose.

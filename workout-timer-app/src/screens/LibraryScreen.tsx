@@ -12,6 +12,7 @@ import { useUsage } from '../useUsage';
 import { PlayIcon, PlusIcon, DownloadIcon, SearchIcon, CloseIcon, DragHandleIcon, ChevronIcon } from '../components/WorkoutIcons';
 import { StarterWorkouts } from '../components/StarterWorkouts';
 import { BuiltInWorkout, builtInToWorkout } from '../programs/builtInWorkouts';
+import { LIBRARY_EMPTY_BODY, LIBRARY_IMPORT_LABEL } from '../platformCopy';
 import { ReorderableList, ReorderItemInfo, ReorderScrollView } from '../components/ReorderableList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -295,7 +296,7 @@ export function LibraryScreen({ navigation }: Props) {
       <View style={styles.emptyIntro}>
         <Display style={styles.emptyTitle}>No{'\n'}workouts{'\n'}yet</Display>
         <Body style={styles.emptyBody}>
-          Start with a free starter workout, import one from a photo or text, or build your own.
+          {LIBRARY_EMPTY_BODY}
         </Body>
       </View>
       <StarterWorkouts onOpen={openBuiltIn} />
@@ -496,7 +497,7 @@ export function LibraryScreen({ navigation }: Props) {
           style={({ pressed }) => [styles.ctaButton, styles.ctaImport, pressed && styles.ctaImportPressed]}
           onPress={() => navigation.navigate('Import')}
           accessibilityRole="button"
-          accessibilityLabel="Import a workout from a photo or text"
+          accessibilityLabel={LIBRARY_IMPORT_LABEL}
         >
           <DownloadIcon color={colors.accent} size={22} />
           <Display style={[styles.ctaLabel, styles.ctaImportLabel]}>Import</Display>
