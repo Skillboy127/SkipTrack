@@ -68,6 +68,10 @@ function PosterTextWeb({
   const fitNow = useCallback(() => {
     const el = ref.current;
     if (!el || !fit) return;
+    // Never break inside a word (react-native-web allows it): a word that is too
+    // wide then overflows, which the check below sees, and the text shrinks instead.
+    el.style.overflowWrap = 'normal';
+    el.style.wordBreak = 'normal';
     const apply = (s: number) => {
       el.style.fontSize = `${fontSize * s}px`;
       if (lineHeight !== undefined) el.style.lineHeight = `${lineHeight * s}px`;
