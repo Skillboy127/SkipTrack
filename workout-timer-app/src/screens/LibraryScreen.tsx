@@ -9,7 +9,9 @@ import * as Haptics from 'expo-haptics';
 import { getWorkoutDuration, workoutHasReps } from '../workoutLogic';
 import { refreshUsage } from '../api';
 import { useUsage } from '../useUsage';
-import { PlayIcon, PlusIcon, DownloadIcon, SearchIcon, CloseIcon, DragHandleIcon } from '../components/WorkoutIcons';
+import { PlayIcon, PlusIcon, DownloadIcon, SearchIcon, CloseIcon, DragHandleIcon, ChevronIcon } from '../components/WorkoutIcons';
+import { StarterWorkouts } from '../components/StarterWorkouts';
+import { BuiltInWorkout, builtInToWorkout } from '../programs/builtInWorkouts';
 import { ReorderableList, ReorderItemInfo, ReorderScrollView } from '../components/ReorderableList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -49,6 +51,7 @@ export function LibraryScreen({ navigation }: Props) {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
   const [reorderMode, setReorderMode] = useState(false);
+  const [startersOpen, setStartersOpen] = useState(false);
   const { usage, status: usageStatus } = useUsage();
   const pendingDeleteIdRef = useRef<string | null>(null);
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -283,19 +286,28 @@ export function LibraryScreen({ navigation }: Props) {
     );
   };
 
+  // Built-in workouts open in the normal preview; starting one runs locally, with no
+  // server call and no import used.
+  const openBuiltIn = (b: BuiltInWorkout) => navigation.navigate('WorkoutPreview', { workout: builtInToWorkout(b) });
+
   const emptyState = workouts.length === 0 ? (
-    <View style={styles.emptyState}>
-      <Display style={styles.emptyTitle}>No{'\n'}workouts{'\n'}yet</Display>
-      <Body style={styles.emptyBody}>
-        Import a workout from a photo or text, or build your exercises by hand.
-      </Body>
-      <Pressable
-        style={({ pressed }) => [styles.emptyAction, pressed && styles.emptyActionPressed]}
-        onPress={() => navigation.navigate('WorkoutEditor', {})}
-        accessibilityRole="button"
-      >
-        <Label style={styles.emptyActionLabel}>+ Build a workout</Label>
-      </Pressable>
+    <View style={styles.emptyStateNew}>
+      <View style={styles.emptyIntro}>
+        <Display style={styles.emptyTitle}>No{'\n'}workouts{'\n'}yet</Display>
+        <Body style={styles.emptyBody}>
+          Start with a free starter workout, import one from a photo or text, or build your own.
+        </Body>
+      </View>
+      <StarterWorkouts onOpen={openBuiltIn} />
+      <View style={styles.emptyIntro}>
+        <Pressable
+          style={({ pressed }) => [styles.emptyAction, pressed && styles.emptyActionPressed]}
+          onPress={() => navigation.navigate('WorkoutEditor', {})}
+          accessibilityRole="button"
+        >
+          <Label style={styles.emptyActionLabel}>+ Build a workout</Label>
+        </Pressable>
+      </View>
     </View>
   ) : (
     <View style={styles.emptyState}>
@@ -310,6 +322,23 @@ export function LibraryScreen({ navigation }: Props) {
       </Pressable>
     </View>
   );
+
+  // Once the user has workouts of their own, the starters stay one tap away under the list.
+  const startersFooter = workouts.length > 0 && !isFiltering && !searchOpen ? (
+    <View>
+      <Pressable
+        style={({ pressed }) => [styles.startersToggle, pressed && styles.rowPressed]}
+        onPress={() => setStartersOpen(open => !open)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: startersOpen }}
+        accessibilityLabel={startersOpen ? 'Hide starter workouts' : 'Show starter workouts'}
+      >
+        <Label style={styles.startersToggleLabel}>Starter workouts</Label>
+        <ChevronIcon color={colors.ink} size={14} direction={startersOpen ? 'up' : 'down'} />
+      </Pressable>
+      {startersOpen && <StarterWorkouts onOpen={openBuiltIn} showHeading={false} bottomRule={false} />}
+    </View>
+  ) : null;
 
   // Everything between the pinned wordmark row and the list scrolls with the list.
   const listHeader = (
@@ -456,6 +485,7 @@ export function LibraryScreen({ navigation }: Props) {
         contentContainerStyle={displayedWorkouts.length === 0 ? styles.emptyListContainer : styles.listContainer}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={emptyState}
+        ListFooterComponent={startersFooter}
         keyboardShouldPersistTaps="handled"
       />
       )}
@@ -728,7 +758,32 @@ const styles = StyleSheet.create({
     borderLeftWidth: rule.heavy,
     borderLeftColor: colors.ink,
   },
+  // ── Starter workouts (under the user's own list) ─────────────────────────
+  startersToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.gutter,
+    minHeight: band.actionHeight,
+    borderTopWidth: rule.heavy,
+    borderTopColor: colors.ink,
+  },
+  startersToggleLabel: {
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+  },
   // ── Empty states ──────────────────────────────────────────────────────────
+  // A new user's empty state: full-width starter rows between padded text.
+  emptyStateNew: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: space.block,
+    gap: space.block,
+  },
+  emptyIntro: {
+    paddingHorizontal: space.gutter,
+    gap: space.block,
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',

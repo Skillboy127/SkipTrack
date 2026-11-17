@@ -12,6 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,7 +29,9 @@ import {
   RewardStartError,
   confirmReward,
   startReward,
+  suggestWorkoutName,
 } from '../api';
+import { MAX_PLAN_CHARS, OWN_AI_PROMPT, OwnAiPlan, parseOwnAiPlan } from '../import/ownAiFormat';
 import { REWARDED_ADS_CONFIGURED, showRewardedAd } from '../rewardedAd';
 import { getUsageSnapshot, patchUsage, subscribeUsage } from '../usageStore';
 import { useUsage } from '../useUsage';
@@ -39,6 +42,9 @@ import { band, colors, display, font, label, leading, rule, space, tracking } fr
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Import'>;
 type Tab = 'image' | 'text';
+// 'ownAi': the user's own assistant writes the plan and it is read on the phone.
+// It never calls the server and never uses an import.
+type Mode = Tab | 'ownAi';
 
 const LOADING_MESSAGES: Record<Tab, string[]> = {
   image: ['Scanning the image...', 'Reading exercise names...', 'Extracting sets and reps...', 'Structuring your workout...'],
@@ -55,10 +61,25 @@ const ERROR_ALT_ACTION: Record<Tab, string | null> = {
   text: null,
 };
 
-const TABS: { key: Tab; title: string }[] = [
+const TABS: { key: Mode; title: string }[] = [
   { key: 'image', title: 'Image' },
   { key: 'text', title: 'Text' },
+  { key: 'ownAi', title: 'Your AI' },
 ];
+
+const generateId = () => Math.random().toString(36).substring(2, 9);
+
+/** A parsed own-AI plan as an unsaved workout for the review-and-edit screen. */
+function ownAiPlanToWorkout(plan: OwnAiPlan): Workout {
+  const exercises = plan.exercises.map(ex => ({ id: generateId(), ...ex }));
+  return {
+    id: generateId(),
+    name: plan.name ?? suggestWorkoutName(exercises),
+    exercises,
+    rounds: plan.rounds,
+    restBetweenRoundsSeconds: plan.restBetweenRoundsSeconds,
+  };
+}
 
 type ImportError = { tab: Tab; message: string };
 
@@ -70,7 +91,7 @@ const bonusVideosLeft = (n: number) => (n > 0 ? `${n} bonus ${n === 1 ? 'video' 
 const REWARD_FOREGROUND_WAIT_MS = 30_000;
 
 export function ImportScreen({ navigation }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('image');
+  const [activeTab, setActiveTab] = useState<Mode>('image');
   const [loading, setLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [importError, setImportError] = useState<ImportError | null>(null);
@@ -131,6 +152,15 @@ export function ImportScreen({ navigation }: Props) {
 
   // Text tab state
   const [workoutText, setWorkoutText] = useState('');
+
+  // "Your AI" tab state
+  const [ownAiText, setOwnAiText] = useState('');
+  const [ownAiError, setOwnAiError] = useState<string | null>(null);
+  const [promptCopied, setPromptCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  }, []);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -233,6 +263,45 @@ export function ImportScreen({ navigation }: Props) {
       return;
     }
     runImport('text', options => extractWorkoutFromText(text, options), 'Something went wrong reading that workout.');
+  };
+
+  // ─── Your own AI (local only: no server, no import used) ──────────────────────
+
+  const handleCopyPrompt = async () => {
+    try {
+      await Clipboard.setStringAsync(OWN_AI_PROMPT);
+      setPromptCopied(true);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setPromptCopied(false), 2500);
+    } catch {
+      Alert.alert("Couldn't copy", 'Press and hold the prompt text to select and copy it.');
+    }
+  };
+
+  const handleOwnAiReview = () => {
+    const result = parseOwnAiPlan(ownAiText);
+    if (!result.ok) {
+      setOwnAiError(result.message);
+      return;
+    }
+    setOwnAiError(null);
+    const workout = ownAiPlanToWorkout(result.plan);
+    const review = () => navigation.replace('WorkoutEditor', { draftWorkout: workout });
+    if (result.plan.notes.length > 0) {
+      Alert.alert('Check your workout', result.plan.notes.join('\n\n'), [{ text: 'Review', onPress: review }], {
+        cancelable: false,
+      });
+    } else {
+      review();
+    }
+  };
+
+  // The fallback: hand the same text to the normal AI import, which uses an import
+  // once the user taps Import there.
+  const handleOwnAiFallback = () => {
+    setWorkoutText(ownAiText);
+    setOwnAiError(null);
+    setActiveTab('text');
   };
 
   // ─── Rewarded video (+2 imports) ────────────────────────────────────────────
@@ -418,7 +487,11 @@ export function ImportScreen({ navigation }: Props) {
   // Held back until the server has answered (or 10s have passed), so an import is
   // never started on a stale count. Building by hand is never held back.
   const canImport = (activeTab === 'image' ? canImportImage : canImportText) && usageSettled;
-  const activeLoadingMessages = LOADING_MESSAGES[activeTab];
+  // The own-AI review is local, so it is never held back by the server or the limit.
+  const isOwnAi = activeTab === 'ownAi';
+  const canReviewOwnAi = ownAiText.trim().length > 0;
+  const footerEnabled = isOwnAi ? canReviewOwnAi : canImport;
+  const activeLoadingMessages = LOADING_MESSAGES[activeTab === 'image' ? 'image' : 'text'];
   const loadingMessage = activeLoadingMessages[loadingMessageIndex % activeLoadingMessages.length];
   const processingSource = activeTab === 'image' ? 'Workout image' : 'Workout description';
 
@@ -571,7 +644,7 @@ export function ImportScreen({ navigation }: Props) {
                 </Pressable>
                 <Label style={styles.hint}>A workout plan, a class card, a whiteboard</Label>
               </>
-            ) : (
+            ) : activeTab === 'text' ? (
               <>
                 <TextInput
                   style={styles.textArea}
@@ -584,6 +657,60 @@ export function ImportScreen({ navigation }: Props) {
                   textAlignVertical="top"
                 />
                 <Label style={styles.hint}>Exercise names, times, reps and rest</Label>
+              </>
+            ) : null}
+            {activeTab === 'ownAi' && (
+              <>
+                <Body style={styles.ownAiIntro}>
+                  Let ChatGPT, Claude or Gemini plan it. Your AI already knows your goals, equipment and limits,
+                  and reading its plan here doesn&apos;t use any imports.
+                </Body>
+
+                <Label style={styles.stepLabel}>1. Copy this prompt into your AI</Label>
+                <ScrollView style={styles.promptBox} nestedScrollEnabled>
+                  <Body style={styles.promptText} selectable>{OWN_AI_PROMPT}</Body>
+                </ScrollView>
+                <Pressable
+                  style={({ pressed }) => [styles.ghostBar, styles.copyBar, pressed && styles.squarePressed]}
+                  onPress={handleCopyPrompt}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy the prompt"
+                >
+                  <Label style={styles.ghostBarLabel}>{promptCopied ? 'Copied' : 'Copy prompt'}</Label>
+                </Pressable>
+                <Label style={styles.hint}>Then add what you want, e.g. 30 minutes, dumbbells, easy on my knees</Label>
+
+                <Label style={styles.stepLabel}>2. Paste your AI&apos;s answer here</Label>
+                <TextInput
+                  style={styles.textArea}
+                  placeholder={'WORKOUT: ...\n- Push-ups | 3 sets | 10 reps | rest 60s'}
+                  placeholderTextColor={colors.placeholder}
+                  value={ownAiText}
+                  onChangeText={text => {
+                    setOwnAiText(text);
+                    if (ownAiError) setOwnAiError(null);
+                  }}
+                  // One over the limit, so an oversized paste is reported instead of silently cut.
+                  maxLength={MAX_PLAN_CHARS + 1}
+                  multiline
+                  numberOfLines={8}
+                  textAlignVertical="top"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+
+                {ownAiError && (
+                  <View style={styles.ownAiError} accessibilityLiveRegion="polite">
+                    <Body style={styles.errorMessage}>{ownAiError}</Body>
+                    <Pressable
+                      style={({ pressed }) => [styles.ghostBar, pressed && styles.squarePressed]}
+                      onPress={handleOwnAiFallback}
+                      accessibilityRole="button"
+                    >
+                      <Label style={styles.ghostBarLabel}>Use Flex AI import instead (uses 1 import)</Label>
+                    </Pressable>
+                  </View>
+                )}
               </>
             )}
 
@@ -611,16 +738,18 @@ export function ImportScreen({ navigation }: Props) {
               styles.primaryBar,
               styles.footerBar,
               { marginBottom: space.row + insets.bottom },
-              !canImport && styles.primaryBarDisabled,
-              pressed && canImport && styles.primaryBarPressed,
+              !footerEnabled && styles.primaryBarDisabled,
+              pressed && footerEnabled && styles.primaryBarPressed,
             ]}
-            onPress={activeTab === 'image' ? handleImageExtract : handleTextExtract}
-            disabled={!canImport}
+            onPress={isOwnAi ? handleOwnAiReview : activeTab === 'image' ? handleImageExtract : handleTextExtract}
+            disabled={!footerEnabled}
             accessibilityRole="button"
-            accessibilityState={{ disabled: !canImport }}
+            accessibilityState={{ disabled: !footerEnabled }}
           >
-            <Display style={[styles.primaryBarLabel, !canImport && styles.primaryBarLabelDisabled]}>
-              {rewardPending
+            <Display style={[styles.primaryBarLabel, !footerEnabled && styles.primaryBarLabelDisabled]}>
+              {isOwnAi
+                ? 'Review workout'
+                : rewardPending
                 ? 'Confirming video…'
                 : usageSettled
                   ? 'Import'
@@ -771,6 +900,35 @@ const styles = StyleSheet.create({
     fontFamily: font.medium,
     fontSize: label.cue,
     lineHeight: label.cue * 1.4,
+  },
+  // ── Your AI ───────────────────────────────────────────────────────────────
+  ownAiIntro: {
+    fontSize: label.base,
+    lineHeight: label.base * 1.5,
+  },
+  stepLabel: {
+    marginTop: space.block,
+    marginBottom: space.tight,
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+  },
+  promptBox: {
+    maxHeight: 170,
+    borderWidth: rule.thin,
+    borderColor: colors.ink,
+    padding: space.row,
+  },
+  promptText: {
+    fontSize: label.small,
+    lineHeight: label.small * 1.45,
+    paddingBottom: space.row,
+  },
+  copyBar: {
+    marginTop: space.tight,
+  },
+  ownAiError: {
+    marginTop: space.row,
+    gap: space.tight,
   },
   hint: {
     marginTop: space.tight,

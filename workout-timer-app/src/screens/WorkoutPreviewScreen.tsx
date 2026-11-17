@@ -15,10 +15,13 @@ import {
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { primeSpeechEngine } from '../useSpeech';
 import { getWorkoutDuration, isRepExercise } from '../workoutLogic';
-import { Display, Label } from '../components/PosterText';
+import { Body, Display, Label } from '../components/PosterText';
+import { SAFETY_NOTE, builtInSummary, findBuiltInWorkout } from '../programs/builtInWorkouts';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutPreview'>;
+
+const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export function WorkoutPreviewScreen({ route, navigation }: Props) {
   const [workout, setWorkout] = useState<Workout>(route.params.workout);
@@ -76,13 +79,28 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
     startWorkout();
   };
 
+  // A built-in workout is never edited in place: "Edit a copy" opens the editor on a
+  // copy with fresh ids, and saving it adds a normal workout to the user's library.
+  const builtIn = findBuiltInWorkout(workout.id);
+
   // Pass the current copy too, so a workout that's no longer in the library
   // (opened via History's Repeat) still opens populated instead of blank.
   const handleEdit = () => {
+    if (builtIn) {
+      const copy: Workout = {
+        ...workout,
+        id: generateId(),
+        exercises: workout.exercises.map(ex => ({ ...ex, id: generateId() })),
+        createdAt: undefined,
+      };
+      navigation.navigate('WorkoutEditor', { draftWorkout: copy });
+      return;
+    }
     navigation.navigate('WorkoutEditor', { workoutId: workout.id, draftWorkout: workout });
   };
 
-  const totalMinutes = Math.max(1, Math.round(getWorkoutDuration(workout) / 60));
+  // Rep sets count as 0s in getWorkoutDuration, so a built-in shows its stated length.
+  const totalMinutes = builtIn ? builtIn.minutes : Math.max(1, Math.round(getWorkoutDuration(workout) / 60));
   const rounds = workout.rounds && workout.rounds > 1 ? ` · ${workout.rounds} Rounds` : '';
 
   return (
@@ -103,9 +121,9 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
           style={({ pressed }) => [styles.editBtn, pressed && styles.squarePressed]}
           onPress={handleEdit}
           accessibilityRole="button"
-          accessibilityLabel="Edit workout"
+          accessibilityLabel={builtIn ? 'Edit a copy of this workout' : 'Edit workout'}
         >
-          <Label style={styles.editLabel}>Edit</Label>
+          <Label style={styles.editLabel}>{builtIn ? 'Edit a copy' : 'Edit'}</Label>
         </Pressable>
       </View>
 
@@ -114,6 +132,13 @@ export function WorkoutPreviewScreen({ route, navigation }: Props) {
         <Label style={styles.meta}>
           {workout.exercises.length} Exercise{workout.exercises.length !== 1 ? 's' : ''}{rounds} · ~{totalMinutes} Min
         </Label>
+        {builtIn && (
+          <View style={styles.about}>
+            <Label style={styles.aboutTags}>{builtInSummary(builtIn)}</Label>
+            <Body style={styles.aboutText}>{builtIn.description}</Body>
+            <Body style={styles.aboutNote}>{SAFETY_NOTE}</Body>
+          </View>
+        )}
 
         <View style={styles.list}>
           {workout.exercises.map((ex, index) => (
@@ -223,6 +248,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.gutter,
     marginTop: space.tight,
     fontSize: label.base,
+  },
+  about: {
+    paddingHorizontal: space.gutter,
+    marginTop: space.block,
+    gap: space.tight,
+  },
+  aboutTags: {
+    fontSize: label.small,
+    letterSpacing: tracking.wide,
+  },
+  aboutText: {
+    fontSize: label.base,
+    lineHeight: label.base * 1.5,
+  },
+  aboutNote: {
+    fontSize: label.small,
+    lineHeight: label.small * 1.5,
+    color: colors.inkMuted,
   },
   list: {
     marginTop: space.block,

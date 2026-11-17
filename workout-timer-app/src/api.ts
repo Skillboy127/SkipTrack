@@ -87,7 +87,7 @@ function nameFromExerciseList(exercises: Exercise[]): string {
 }
 
 /** Suggests a default title based on which muscle groups the extracted exercises target. */
-function suggestWorkoutName(exercises: Exercise[]): string {
+export function suggestWorkoutName(exercises: Exercise[]): string {
   const counts: Record<MuscleBucket, number> = { legs: 0, push: 0, pull: 0, core: 0, cardio: 0 };
   for (const ex of exercises) {
     const bucket = classifyExercise(ex.name);
@@ -551,17 +551,6 @@ async function postJson(
   const usage = parseUsage(payload?.usage);
   if (usage) rememberUsage(usage);
   return { workout: mapResponseToWorkout(payload), usage };
-}
-
-/** Phase 3 — YouTube video URL */
-export async function extractWorkoutFromVideo(url: string): Promise<Workout> {
-  // Video analysis genuinely takes longer than an image/text call — it reads
-  // the actual video content, and can fall back through multiple models on
-  // transient errors (see VIDEO_MODEL_FALLBACK_CHAIN server-side). The
-  // default 60s budget was firing the client's own abort ("Fetch request
-  // has been canceled") on perfectly successful-but-slow extractions,
-  // especially layered on top of a Render free-tier cold start.
-  return (await postJson('/extract', { url }, 150000)).workout;
 }
 
 // An image or text import, once the server is awake: the extraction itself can

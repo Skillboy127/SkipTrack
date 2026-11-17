@@ -17,6 +17,8 @@ import {
 import { useAudio } from '../useAudio';
 import { useSpeech } from '../useSpeech';
 import { Display, Label, Body } from '../components/PosterText';
+import { ChevronIcon } from '../components/WorkoutIcons';
+import { BUILT_IN_WORKOUTS, BuiltInWorkout, builtInSummary, builtInToWorkout } from '../programs/builtInWorkouts';
 import { band, colors, display, label, leading, rule, space, tracking } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
@@ -26,6 +28,8 @@ type Slide = {
   body: string;
   // Shows the countdown-sound and weight-unit pickers under the body text.
   preferences?: boolean;
+  // Offers the built-in starter workouts under the body text.
+  starters?: boolean;
 };
 
 const SOUND_OPTIONS: { id: CountdownSoundMode; title: string; description: string }[] = [
@@ -71,6 +75,7 @@ const SLIDES: Slide[] = [
   {
     title: 'Free, with ads',
     body: 'Flex is free to use and supported by ads. Free users get 7 imports each month. Building your own workouts and running sessions is always unlimited.',
+    starters: true,
   },
 ];
 
@@ -133,6 +138,15 @@ export function OnboardingScreen({ navigation }: Props) {
   const finish = async () => {
     await saveHasSeenOnboarding();
     navigation.reset({ index: 0, routes: [{ name: 'Library' }] });
+  };
+
+  // Straight into a starter workout's preview, with the Library underneath it.
+  const startWith = async (b: BuiltInWorkout) => {
+    await saveHasSeenOnboarding();
+    navigation.reset({
+      index: 1,
+      routes: [{ name: 'Library' }, { name: 'WorkoutPreview', params: { workout: builtInToWorkout(b) } }],
+    });
   };
 
   const goToSlide = (next: number) => {
@@ -281,6 +295,26 @@ export function OnboardingScreen({ navigation }: Props) {
 
                 <Body style={styles.note}>You can change these anytime in Settings.</Body>
               </>
+            )}
+            {slide.starters && (
+              <View style={styles.starters}>
+                <Label style={styles.unitLabel}>Or start with a free starter workout</Label>
+                {BUILT_IN_WORKOUTS.map(b => (
+                  <Pressable
+                    key={b.id}
+                    style={({ pressed }) => [styles.optionCard, pressed && styles.pressed]}
+                    onPress={() => startWith(b)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Start with ${b.name}. ${builtInSummary(b)}`}
+                  >
+                    <View style={styles.optionText}>
+                      <Label style={styles.optionTitle}>{b.name}</Label>
+                      <Body style={styles.optionDescription}>{builtInSummary(b)}</Body>
+                    </View>
+                    <ChevronIcon color={colors.ink} size={14} direction="right" />
+                  </Pressable>
+                ))}
+              </View>
             )}
           </ScrollView>
         ))}
@@ -446,6 +480,10 @@ const styles = StyleSheet.create({
   unitButtonLabel: {
     fontSize: label.base,
     letterSpacing: tracking.wide,
+  },
+  starters: {
+    marginTop: space.block,
+    gap: space.hair,
   },
   restBlock: {
     marginTop: space.tight,
